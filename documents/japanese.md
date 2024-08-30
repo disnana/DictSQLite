@@ -2,6 +2,39 @@
 
 `DictSQLite`は、SQLiteデータベースを辞書のように扱えるPythonクラスです。スレッドセーフで、トランザクション管理やデータベース操作をキューで処理します。
 
+## クラス `DictSQLite`
+
+### コンストラクタ
+
+```python
+DictSQLite(db_name: str, table_name: str = 'main', schema: bool = None, conflict_resolver: bool = False, journal_mode: str = None, lock_file: str = None)
+```
+
+- **db_name**: データベースファイルの名前
+- **table_name**: 使用するテーブルの名前 (デフォルト: 'main')
+- **schema**: テーブルのスキーマ (デフォルト: `'(key TEXT PRIMARY KEY, value TEXT)'`)
+- **conflict_resolver**: コンフリクト解決機能の有無
+- **journal_mode**: SQLiteのジャーナルモード
+- **lock_file**: ロックファイルの名前
+
+### メソッド
+
+- `__setitem__(self, key, value)`: データを追加または更新します。
+- `__getitem__(self, key)`: データを取得します。
+- `__delitem__(self, key)`: データを削除します。
+- `__contains__(self, key)`: キーが存在するか確認します。
+- `__repr__(self)`: データベースの内容を辞書形式で表示します。
+- `keys(self)`: 全てのキーを取得します。
+- `begin_transaction(self)`: トランザクションを開始します。
+- `commit_transaction(self)`: トランザクションをコミットします。
+- `rollback_transaction(self)`: トランザクションをロールバックします。
+- `switch_table(self, new_table_name, schema=None)`: テーブルを切り替えます。
+- `clear_db(self)`: データベース全体をクリアします。
+- `clear_table(self, table_name=None)`: 現在のテーブルまたは指定したテーブルのデータをクリアします。
+- `tables(self)`: 全てのテーブル名を取得します。
+- `close(self)`: データベース接続を閉じます。
+
+
 
 ## 使用方法
 
@@ -77,35 +110,3 @@ def test_dict_sqlite():
 # テストを実行
 test_dict_sqlite()
 ```
-
-## クラス `DictSQLite`
-
-### コンストラクタ
-
-```python
-DictSQLite(db_name: str, table_name: str = 'main', schema: bool = None, conflict_resolver: bool = False, journal_mode: str = None, lock_file: str = None)
-```
-
-- **db_name**: データベースファイルの名前
-- **table_name**: 使用するテーブルの名前 (デフォルト: 'main')
-- **schema**: テーブルのスキーマ (デフォルト: `'(key TEXT PRIMARY KEY, value TEXT)'`)
-- **conflict_resolver**: コンフリクト解決機能の有無
-- **journal_mode**: SQLiteのジャーナルモード
-- **lock_file**: ロックファイルの名前
-
-### メソッド
-
-- `__setitem__(self, key, value)`: データを追加または更新します。
-- `__getitem__(self, key)`: データを取得します。
-- `__delitem__(self, key)`: データを削除します。
-- `__contains__(self, key)`: キーが存在するか確認します。
-- `__repr__(self)`: データベースの内容を辞書形式で表示します。
-- `keys(self)`: 全てのキーを取得します。
-- `begin_transaction(self)`: トランザクションを開始します。
-- `commit_transaction(self)`: トランザクションをコミットします。
-- `rollback_transaction(self)`: トランザクションをロールバックします。
-- `switch_table(self, new_table_name, schema=None)`: テーブルを切り替えます。
-- `clear_db(self)`: データベース全体をクリアします。
-- `clear_table(self, table_name=None)`: 現在のテーブルまたは指定したテーブルのデータをクリアします。
-- `tables(self)`: 全てのテーブル名を取得します。
-- `close(self)`: データベース接続を閉じます。
