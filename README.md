@@ -11,6 +11,10 @@ Install [DictSQLite](https://pypi.org/project/DictSQLite/) with pip
   pip install dictsqlite
 ```
 
+## Documents
+[日本語のドキュメント](./documents/japanese.md)
+[English Document](./documents/english.md)
+
 ## Authors
 
 - [@harumaki4649](https://www.github.com/harumaki4649)
