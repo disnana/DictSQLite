@@ -2,7 +2,7 @@
 # DictSQLite
 
 You can handle basic SQLite operations in Python like Dict.<br>
-[日本語のREADMEはこちら](./README_JP.md)
+- [日本語のREADMEはこちら](./README_JP.md)
 
 ## Installation
 
