@@ -12,8 +12,9 @@ Install [DictSQLite](https://pypi.org/project/DictSQLite/) with pip
 ```
 
 ## Documents
-[日本語のドキュメント](./documents/japanese.md)
-[English Document](./documents/english.md)
+- [日本語のドキュメント](./documents/japanese.md)
+
+- [English Document](./documents/english.md)
 
 ## Authors
 
