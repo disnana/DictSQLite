@@ -15,10 +15,6 @@ Install [DictSQLite](https://pypi.org/project/DictSQLite/) with pip
 
 - [@harumaki4649](https://www.github.com/harumaki4649)
 
-## Contributers
-
-See [CONTRIBUTERS.md](./CONTRIBUTORS.md).
-
 ## Feedback
 
 Pls create Issues.
