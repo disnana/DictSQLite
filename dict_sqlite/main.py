@@ -1,108 +1,251 @@
-_C=True
-_B=False
-_A=None
-import random,sqlite3,threading,queue,secrets,string,portalocker
-__version__='1.3.3'
-def randomstrings(n):return''.join(secrets.choice(string.ascii_letters)for A in range(n))
-class DictSQLite_beta:
-	def __init__(A,db_name,table_name='main',schema=_A,conflict_resolver=_B,journal_mode=_A,lock_file=_A):
-		D=lock_file;C=journal_mode;B=db_name;A.db_name=B;A.table_name=table_name;A.conn=sqlite3.connect(B,check_same_thread=_B);A.cursor=A.conn.cursor();A.in_transaction=_B
-		if D is _A:A.lock_file=f"{B}.lock"
-		else:A.lock_file=D
-		A.operation_queue=queue.Queue();A.conflict_resolver=conflict_resolver
-		if A.conflict_resolver:A.worker_thread=threading.Thread(target=A._process_queue_conflict_resolver);A.worker_thread.daemon=_C;A.worker_thread.start()
-		else:A.worker_thread=threading.Thread(target=A._process_queue);A.worker_thread.daemon=_C;A.worker_thread.start()
-		A.create_table(schema=schema)
-		if not C is _A:A.conn.execute(f"PRAGMA journal_mode={C};")
-	def _process_queue(B):
-		while _C:
-			D,E,F,A=B.operation_queue.get()
-			try:
-				G=D(*E,**F)
-				if A is not _A:A.put(G)
-			except Exception as C:
-				print(f"An error occurred while processing the queue: {C}")
-				if A is not _A:A.put(C)
-			finally:B.operation_queue.task_done()
-	def _process_queue_conflict_resolver(A):
-		while _C:
-			D,E,F,B=A.operation_queue.get()
-			with open(A.lock_file,'w')as G:
-				portalocker.lock(G,portalocker.LOCK_EX);A._process_queue()
-				try:
-					H=D(*E,**F)
-					if B is not _A:B.put(H)
-				except Exception as C:
-					print(f"An error occurred while processing the queue: {C}")
-					if B is not _A:B.put(C)
-				finally:A.operation_queue.task_done()
-	def create_table(B,table_name=_A,schema=_A):
-		C=table_name;A=schema
-		if not C is _A:B.table_name=C
-		A=A if A else'(key TEXT PRIMARY KEY, value TEXT)';D=f"CREATE TABLE IF NOT EXISTS {B.table_name} {A}"
-		if not B._validate_schema(A):raise ValueError(f"Invalid schema provided: {A}")
-		B.operation_queue.put((B._execute,(D,),{},_A))
-	def _validate_schema(A,schema):
-		'一時的なテーブルを作成してスキーマを検証します。'
-		try:
-			def C():A.cursor.execute("\n                        SELECT name FROM sqlite_master WHERE type='table'\n                    ");B=A.cursor.fetchall();return[A[0]for A in B]
-			B=randomstrings(random.randint(1,30))
-			while B in C():B=randomstrings(random.randint(1,30))
-			A.cursor.execute(f"CREATE TABLE {B} {schema}");A.cursor.execute(f"DROP TABLE {B}");return _C
-		except Exception as D:print(f"Schema validation failed: {D}");return _B
-	def _execute(A,query,params=()):
-		A.cursor.execute(query,params)
-		if not A.in_transaction:A.conn.commit()
-	def __setitem__(A,key,value):A.operation_queue.put((A._execute,(f"\n            INSERT OR REPLACE INTO {A.table_name} (key, value)\n            VALUES (?, ?)\n        ",(key,value)),{},_A))
-	def __getitem__(B,key):
-		C=queue.Queue();B.operation_queue.put((B._fetchone,(f"\n            SELECT value FROM {B.table_name} WHERE key = ?\n        ",(key,)),{},C));A=C.get()
-		if isinstance(A,Exception):raise A
-		if A is _A:raise KeyError(f"Key {key} not found.")
-		return A[0]
-	def _fetchone(A,query,params=()):A.cursor.execute(query,params);return A.cursor.fetchone()
-	def __delitem__(A,key):A.operation_queue.put((A._execute,(f"\n            DELETE FROM {A.table_name} WHERE key = ?\n        ",(key,)),{},_A))
-	def __contains__(A,key):
-		C=queue.Queue();A.operation_queue.put((A._fetchone,(f"\n            SELECT 1 FROM {A.table_name} WHERE key = ?\n        ",(key,)),{},C));B=C.get()
-		if isinstance(B,Exception):raise B
-		return B is not _A
-	def __repr__(A):
-		C=queue.Queue();A.operation_queue.put((A._fetchall,(f"\n            SELECT key, value FROM {A.table_name}\n        ",),{},C));B=C.get()
-		if isinstance(B,Exception):raise B
-		return str(dict(B))
-	def _fetchall(A,query,params=()):A.cursor.execute(query,params);return A.cursor.fetchall()
-	def keys(A):
-		C=queue.Queue();A.operation_queue.put((A._fetchall,(f"\n            SELECT key FROM {A.table_name}\n        ",),{},C));B=C.get()
-		if isinstance(B,Exception):raise B
-		return[A[0]for A in B]
-	def begin_transaction(A):A.operation_queue.put((A._begin_transaction,(),{},_A))
-	def _begin_transaction(A):A.conn.execute('BEGIN TRANSACTION');A.in_transaction=_C
-	def commit_transaction(A):A.operation_queue.put((A._commit_transaction,(),{},_A))
-	def _commit_transaction(A):
-		try:
-			if A.in_transaction:A.conn.execute('COMMIT')
-		finally:A.in_transaction=_B
-	def rollback_transaction(A):A.operation_queue.put((A._rollback_transaction,(),{},_A))
-	def _rollback_transaction(A):
-		try:
-			if A.in_transaction:A.conn.execute('ROLLBACK')
-		finally:A.in_transaction=_B
-	def switch_table(A,new_table_name,schema=_A):A.operation_queue.put((A._switch_table,(new_table_name,schema),{},_A));A.operation_queue.join()
-	def _switch_table(A,new_table_name,schema):A.table_name=new_table_name;A.create_table(schema)
-	def has_key(A,key):return key in A
-	def clear_db(A):A.operation_queue.put((A._clear_db,(),{},_A));A.operation_queue.join()
-	def _clear_db(A):
-		A.cursor.execute(f"\n            SELECT name FROM sqlite_master WHERE type='table'\n        ");B=A.cursor.fetchall()
-		for C in B:A.cursor.execute(f"DROP TABLE IF EXISTS {C[0]}")
-		if not A.in_transaction:A.conn.commit()
-		A.table_name='main';A.create_table()
-	def tables(B):
-		C=queue.Queue();B.operation_queue.put((B._fetchall,(f"\n            SELECT name FROM sqlite_master WHERE type='table'\n        ",),{},C));A=C.get()
-		if isinstance(A,Exception):raise A
-		return[A[0]for A in A]
-	def clear_table(A,table_name=_A):
-		B=table_name
-		if B is _A:B=A.table_name
-		A.operation_queue.put((A._execute,(f"\n            DELETE FROM {B}\n        ",),{},_A))
-	def __enter__(A):return A
-	def __exit__(A,exc_type,exc_val,exc_tb):A.close()
-	def close(A):A.operation_queue.join();A.conn.close()
+import random
+import sqlite3
+import threading
+import queue
+import secrets
+import string
+import portalocker
+
+__version__ = '1.3.3'
+
+
+def randomstrings(n):
+    return ''.join(secrets.choice(string.ascii_letters) for _ in range(n))
+
+
+class DictSQLite:
+    def __init__(self, db_name: str, table_name: str = 'main', schema: bool = None, conflict_resolver: bool = False, journal_mode: str = None, lock_file: str = None):
+        self.db_name = db_name
+        self.table_name = table_name
+        self.conn = sqlite3.connect(db_name, check_same_thread=False)
+        self.cursor = self.conn.cursor()
+        self.in_transaction = False
+        if lock_file is None:
+            self.lock_file = f"{db_name}.lock"
+        else:
+            self.lock_file = lock_file
+        self.operation_queue = queue.Queue()
+        self.conflict_resolver = conflict_resolver
+        if self.conflict_resolver:
+            self.worker_thread = threading.Thread(target=self._process_queue_conflict_resolver)
+            self.worker_thread.daemon = True
+            self.worker_thread.start()
+        else:
+            self.worker_thread = threading.Thread(target=self._process_queue)
+            self.worker_thread.daemon = True
+            self.worker_thread.start()
+        self.create_table(schema=schema)
+        if not journal_mode is None:
+            self.conn.execute(f'PRAGMA journal_mode={journal_mode};')
+
+    def _process_queue(self):
+        while True:
+            operation, args, kwargs, result_queue = self.operation_queue.get()
+            try:
+                result = operation(*args, **kwargs)
+                if result_queue is not None:
+                    result_queue.put(result)
+            except Exception as e:
+                print(f"An error occurred while processing the queue: {e}")
+                if result_queue is not None:
+                    result_queue.put(e)
+            finally:
+                self.operation_queue.task_done()
+
+    def _process_queue_conflict_resolver(self):
+        while True:
+            operation, args, kwargs, result_queue = self.operation_queue.get()
+            with open(self.lock_file, "w") as f:
+                portalocker.lock(f, portalocker.LOCK_EX)
+                self._process_queue()
+                try:
+                    result = operation(*args, **kwargs)
+                    if result_queue is not None:
+                        result_queue.put(result)
+                except Exception as e:
+                    print(f"An error occurred while processing the queue: {e}")
+                    if result_queue is not None:
+                        result_queue.put(e)
+                finally:
+                    self.operation_queue.task_done()
+
+    def create_table(self, table_name=None, schema=None):
+        if not table_name is None:
+            self.table_name = table_name
+        schema = schema if schema else '(key TEXT PRIMARY KEY, value TEXT)'
+        create_table_sql = f'CREATE TABLE IF NOT EXISTS {self.table_name} {schema}'
+
+        # スキーマの妥当性をチェック
+        if not self._validate_schema(schema):
+            raise ValueError(f"Invalid schema provided: {schema}")
+
+        self.operation_queue.put((self._execute, (create_table_sql,), {}, None))
+
+    def _validate_schema(self, schema):
+        """一時的なテーブルを作成してスキーマを検証します。"""
+        try:
+            def tables():
+                self.cursor.execute('''
+                        SELECT name FROM sqlite_master WHERE type='table'
+                    ''')
+                result = self.cursor.fetchall()
+                return [row[0] for row in result]
+
+            temp = randomstrings(random.randint(1, 30))
+            while temp in tables():
+                temp = randomstrings(random.randint(1, 30))
+            self.cursor.execute(f'CREATE TABLE {temp} {schema}')
+            self.cursor.execute(f'DROP TABLE {temp}')
+            return True
+        except Exception as e:
+            print(f"Schema validation failed: {e}")
+            return False
+
+    def _execute(self, query, params=()):
+        self.cursor.execute(query, params)
+        if not self.in_transaction:
+            self.conn.commit()
+
+    def __setitem__(self, key, value):
+        self.operation_queue.put((self._execute, (f'''
+            INSERT OR REPLACE INTO {self.table_name} (key, value)
+            VALUES (?, ?)
+        ''', (key, value)), {}, None))
+
+    def __getitem__(self, key):
+        result_queue = queue.Queue()
+        self.operation_queue.put((self._fetchone, (f'''
+            SELECT value FROM {self.table_name} WHERE key = ?
+        ''', (key,)), {}, result_queue))
+        result = result_queue.get()
+        if isinstance(result, Exception):
+            raise result
+        if result is None:
+            raise KeyError(f"Key {key} not found.")
+        return result[0]
+
+    def _fetchone(self, query, params=()):
+        self.cursor.execute(query, params)
+        return self.cursor.fetchone()
+
+    def __delitem__(self, key):
+        self.operation_queue.put((self._execute, (f'''
+            DELETE FROM {self.table_name} WHERE key = ?
+        ''', (key,)), {}, None))
+
+    def __contains__(self, key):
+        result_queue = queue.Queue()
+        self.operation_queue.put((self._fetchone, (f'''
+            SELECT 1 FROM {self.table_name} WHERE key = ?
+        ''', (key,)), {}, result_queue))
+        result = result_queue.get()
+        if isinstance(result, Exception):
+            raise result
+        return result is not None
+
+    def __repr__(self):
+        result_queue = queue.Queue()
+        self.operation_queue.put((self._fetchall, (f'''
+            SELECT key, value FROM {self.table_name}
+        ''',), {}, result_queue))
+        result = result_queue.get()
+        if isinstance(result, Exception):
+            raise result
+        return str(dict(result))
+
+    def _fetchall(self, query, params=()):
+        self.cursor.execute(query, params)
+        return self.cursor.fetchall()
+
+    def keys(self):
+        result_queue = queue.Queue()
+        self.operation_queue.put((self._fetchall, (f'''
+            SELECT key FROM {self.table_name}
+        ''',), {}, result_queue))
+        result = result_queue.get()
+        if isinstance(result, Exception):
+            raise result
+        return [row[0] for row in result]
+
+    def begin_transaction(self):
+        self.operation_queue.put((self._begin_transaction, (), {}, None))
+
+    def _begin_transaction(self):
+        self.conn.execute('BEGIN TRANSACTION')
+        self.in_transaction = True
+
+    def commit_transaction(self):
+        self.operation_queue.put((self._commit_transaction, (), {}, None))
+
+    def _commit_transaction(self):
+        try:
+            if self.in_transaction:
+                self.conn.execute('COMMIT')
+        finally:
+            self.in_transaction = False
+
+    def rollback_transaction(self):
+        self.operation_queue.put((self._rollback_transaction, (), {}, None))
+
+    def _rollback_transaction(self):
+        try:
+            if self.in_transaction:
+                self.conn.execute('ROLLBACK')
+        finally:
+            self.in_transaction = False
+
+    def switch_table(self, new_table_name, schema=None):
+        self.operation_queue.put((self._switch_table, (new_table_name, schema,), {}, None))
+        # Add a sync point to wait until table is switched and created
+        self.operation_queue.join()
+
+    def _switch_table(self, new_table_name, schema):
+        self.table_name = new_table_name
+        # Ensure table is created after switching
+        self.create_table(schema)
+
+    def has_key(self, key):
+        return key in self
+
+    def clear_db(self):
+        self.operation_queue.put((self._clear_db, (), {}, None))
+        self.operation_queue.join()
+
+    def _clear_db(self):
+        self.cursor.execute(f'''
+            SELECT name FROM sqlite_master WHERE type='table'
+        ''')
+        tables = self.cursor.fetchall()
+        for table in tables:
+            self.cursor.execute(f'DROP TABLE IF EXISTS {table[0]}')
+        if not self.in_transaction:
+            self.conn.commit()
+        self.table_name = "main"
+        self.create_table()
+
+    def tables(self):
+        result_queue = queue.Queue()
+        self.operation_queue.put((self._fetchall, (f'''
+            SELECT name FROM sqlite_master WHERE type='table'
+        ''',), {}, result_queue))
+        result = result_queue.get()
+        if isinstance(result, Exception):
+            raise result
+        return [row[0] for row in result]
+
+    def clear_table(self, table_name=None):
+        if table_name is None:
+            table_name = self.table_name
+        self.operation_queue.put((self._execute, (f'''
+            DELETE FROM {table_name}
+        ''',), {}, None))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def close(self):
+        self.operation_queue.join()
+        self.conn.close()
