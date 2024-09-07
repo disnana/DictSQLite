@@ -5,8 +5,9 @@ import queue
 import secrets
 import string
 import portalocker
+import json
 
-__version__ = '1.3.3'
+__version__ = '1.3.7'
 
 
 def randomstrings(n):
@@ -107,22 +108,42 @@ class DictSQLite:
             self.conn.commit()
 
     def __setitem__(self, key, value):
+        if isinstance(key, tuple):
+            key, table_name = key
+            temp = self.table_name
+            self.create_table(table_name)
+            self.switch_table(temp)
+        else:
+            table_name = self.table_name
+        # dictをJSON文字列に変換
+        if isinstance(value, dict):
+            value = json.dumps(value)
         self.operation_queue.put((self._execute, (f'''
-            INSERT OR REPLACE INTO {self.table_name} (key, value)
+            INSERT OR REPLACE INTO {table_name} (key, value)
             VALUES (?, ?)
         ''', (key, value)), {}, None))
 
     def __getitem__(self, key):
+        if isinstance(key, tuple):
+            key, table_name = key
+        else:
+            table_name = self.table_name
         result_queue = queue.Queue()
         self.operation_queue.put((self._fetchone, (f'''
-            SELECT value FROM {self.table_name} WHERE key = ?
+            SELECT value FROM {table_name} WHERE key = ?
         ''', (key,)), {}, result_queue))
         result = result_queue.get()
         if isinstance(result, Exception):
-            raise result
+            try:
+                return json.loads(result)
+            except json.JSONDecodeError:
+                return result
         if result is None:
             raise KeyError(f"Key {key} not found.")
-        return result[0]
+        try:
+            return json.loads(result[0])
+        except json.JSONDecodeError:
+            return result[0]
 
     def _fetchone(self, query, params=()):
         self.cursor.execute(query, params)
@@ -157,10 +178,12 @@ class DictSQLite:
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
 
-    def keys(self):
+    def keys(self, table_name=None):
+        if table_name is None:
+            table_name = self.table_name
         result_queue = queue.Queue()
         self.operation_queue.put((self._fetchall, (f'''
-            SELECT key FROM {self.table_name}
+            SELECT key FROM {table_name}
         ''',), {}, result_queue))
         result = result_queue.get()
         if isinstance(result, Exception):
