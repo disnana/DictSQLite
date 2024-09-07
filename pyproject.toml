@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[metadata]
+name = "DictSQLite"
+version = "0.1.0"  # ここには dict_sqlite.main.__version__ の値を直接記載します
+description = "You can handle basic SQLite operations in Python like Dict."
+long_description = "file: README.md"
+long_description_content_type = "text/markdown"
+author = "Disnana"
+author_email = "support@disnana.com"
+url = "https://github.com/disnana/DictSQLite"
+license = "MIT (Custom License with Specific Terms)"
+download_url = "https://github.com/disnana/DictSQLite"
+python_requires = ">=3.6"
+keywords = "sqlite, dict, database, dict_like, dict like, dictsqlite, dict like sqlite"
+
+[options]
+packages = ["dict_sqlite"]
+install_requires = [
+    "portalocker"
+]
+
+[options.extras_require]
+# ここに追加の依存関係を記述できますが、現在は空です
+
+[options.packages.find]
+include = ["dict_sqlite"]
+
+[options.classifiers]
+"Development Status :: 5 - Production/Stable"
+"Intended Audience :: Developers"
+"License :: Other/Proprietary License"
+"Programming Language :: Python :: 3"
+"Programming Language :: Python :: 3.7"
+"Programming Language :: Python :: 3.8"
+"Programming Language :: Python :: 3.9"
+"Programming Language :: Python :: 3.10"
+"Programming Language :: Python :: 3.11"
+"Programming Language :: Python :: 3.12"
