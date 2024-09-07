@@ -48,8 +48,6 @@ DictSQLite(db_name: str, table_name: str = 'main', schema: bool = None, conflict
 - `tables(self)`: 全てのテーブル名を取得します。
 - `close(self)`: データベース接続を閉じます。
 
-
-
 ## 使用方法
 
 以下のコードスニペットは、`DictSQLite`クラスの基本的な使い方を示しています。
