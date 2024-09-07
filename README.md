@@ -1,7 +1,8 @@
 
 # DictSQLite
 
-You can handle basic SQLite operations in Python like Dict.<br>
+You can handle basic SQLite operations in Python like Dict.
+
 - [日本語のREADMEはこちら](./README_JP.md)
 
 ## Installation
@@ -13,6 +14,7 @@ Install [DictSQLite](https://pypi.org/project/DictSQLite/) with pip
 ```
 
 ## Documents
+
 - [日本語のドキュメント](./documents/japanese.md)
 
 - [English Documentation](./documents/english.md)
@@ -23,11 +25,11 @@ Install [DictSQLite](https://pypi.org/project/DictSQLite/) with pip
 
 ## Feedback
 
-Pls create Issues.
+Pls create Issues in [github:disnana/DictSQLite](https://github.com/disnana/DictSQLite).
 
 ## Support
 
-For support, email support@disnana.com or join our [Discord Server](https://discord.gg/KzeHDrgwAz).
+For support, email <support@disnana.com> or join our [Discord Server](https://discord.gg/KzeHDrgwAz).
 
 ## License
 
