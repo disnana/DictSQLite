@@ -15,6 +15,8 @@ def randomstrings(n):
 
 
 class DictSQLite:
+    from numba import jit
+    @jit
     def __init__(self, db_name: str, table_name: str = 'main', schema: bool = None, conflict_resolver: bool = False, journal_mode: str = None, lock_file: str = None):
         self.db_name = db_name
         self.table_name = table_name
