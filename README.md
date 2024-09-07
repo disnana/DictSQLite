@@ -33,6 +33,6 @@ For support, email <support@disnana.com> or join our [Discord Server](https://di
 
 ## License
 
-This project is licensed under the Creative Commons Attribution 4.0 International License. See the [LICENSE](./LICENSE) file for more details.
+This project is licensed under the Custom MIT License. See the [LICENSE](./LICENSE) file for more details.
 
 Please note that while you are free to modify the code, you must give appropriate credit to the original creator and follow the terms of this license.
