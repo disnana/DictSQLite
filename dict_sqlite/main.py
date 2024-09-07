@@ -107,6 +107,14 @@ class DictSQLite:
         if not self.in_transaction:
             self.conn.commit()
 
+    def execute_custom(self, query, params=()):
+        result_queue = queue.Queue()
+        self.operation_queue.put((self._execute, (query, params), {}, result_queue))
+        result = result_queue.get()
+        if isinstance(result, Exception):
+            raise result
+        return result
+
     def __setitem__(self, key, value):
         if isinstance(key, tuple):
             key, table_name = key
