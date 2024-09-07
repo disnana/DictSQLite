@@ -1,12 +1,5 @@
-.idea/.gitignore
-.idea/DictSQLite.iml
-.idea/misc.xml
-.idea/modules.xml
-.idea/vcs.xml
-.idea/inspectionProfiles/profiles_settings.xml
-.idea/inspectionProfiles/Project_Default.xml
-dict_sqlite/__pycache__/__init__.cpython-39.pyc
-dict_sqlite/__pycache__/main.cpython-39.pyc
+.idea/
+dict_sqlite/__pycache__/
 archive/
 *.whl
 *.gz
