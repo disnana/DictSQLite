@@ -31,7 +31,7 @@ pip install dictsqlite
 
 ## ライセンス
 
-このプロジェクトはCreative Commons Attribution 4.0 International Licenseの下でライセンスされています。
+このプロジェクトはカスタム MIT Licenseの下でライセンスされています。
 詳細は[LICENSE](./LICENSE)ファイルを参照してください。
 
 コードを改変することは自由ですが、元の作成者に適切なクレジットを与え、このライセンスの条項に従う必要があることに注意してください。
