@@ -73,23 +73,27 @@ class DictSQLite:
     def create_table(self, table_name=None, schema=None):
         if not table_name is None:
             self.table_name = table_name
-        schema = schema if schema else '(key TEXT PRIMARY KEY, value TEXT)'
+        if schema is None:
+            schema = schema if schema else '(key TEXT PRIMARY KEY, value TEXT)'
+        else:
+            # スキーマの妥当性をチェック
+            if not self._validate_schema(schema):
+                raise ValueError(f"Invalid schema provided: {schema}")
+
         create_table_sql = f'CREATE TABLE IF NOT EXISTS {self.table_name} {schema}'
-
-        # スキーマの妥当性をチェック
-        if not self._validate_schema(schema):
-            raise ValueError(f"Invalid schema provided: {schema}")
-
         self.operation_queue.put((self._execute, (create_table_sql,), {}, None))
 
     def _validate_schema(self, schema):
         """一時的なテーブルを作成してスキーマを検証します。"""
         try:
             def tables():
-                self.cursor.execute('''
-                        SELECT name FROM sqlite_master WHERE type='table'
-                    ''')
-                result = self.cursor.fetchall()
+                result_queue = queue.Queue()
+                self.operation_queue.put((self._fetchall, (f'''
+                    SELECT name FROM sqlite_master WHERE type='table'
+                ''',), {}, result_queue))
+                result = result_queue.get()
+                if isinstance(result, Exception):
+                    raise result
                 return [row[0] for row in result]
 
             temp = randomstrings(random.randint(1, 30))
