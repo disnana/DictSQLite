@@ -6,7 +6,7 @@ NAME = 'DictSQLite'
 AUTHOR = 'Disnana'
 AUTHOR_EMAIL = 'support@disnana.com'
 URL = 'https://github.com/disnana/DictSQLite'
-LICENSE = 'CC BY 4.0 (Custom License with Specific Terms)'
+LICENSE = 'MIT (Custom License with Specific Terms)'
 DOWNLOAD_URL = 'https://github.com/disnana/DictSQLite'
 VERSION = dict_sqlite.main.__version__
 PYTHON_REQUIRES = ">=3.6"
@@ -36,7 +36,7 @@ CLASSIFIERS = [
     'Programming Language :: Python :: 3.12',
 ]
 
-with open('./README.md', 'r') as fp:
+with open('./README.md', 'r', encoding="utf-8") as fp:
     readme = fp.read()
 long_description = readme
 

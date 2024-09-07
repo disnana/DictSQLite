@@ -3,3 +3,6 @@ dict_sqlite/__pycache__/
 archive/
 *.whl
 *.gz
+DictSQLite.egg-info/
+build/
+*.bat

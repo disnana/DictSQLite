@@ -7,7 +7,7 @@ import string
 import portalocker
 import json
 
-__version__ = '1.3.8'
+__version__ = '1.3.9'
 
 
 def randomstrings(n):
