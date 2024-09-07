@@ -29,6 +29,6 @@ jobs:
         webhook_id: ${{ secrets.WEBHOOK_ID }}
         webhook_token: ${{ secrets.WEBHOOK_TOKEN }}
         color: "#48f442"
-        username: "GitHub Bot"
+        username: "DictSQLite Github"
         args: "${{ github.event_name }} by @${{ github.actor }} \nmessage: ${{ env.Commit_Message }}"
 
