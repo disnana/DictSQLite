@@ -1,0 +1,148 @@
+.idea/.gitignore
+.idea/DictSQLite.iml
+.idea/misc.xml
+.idea/modules.xml
+.idea/vcs.xml
+.idea/inspectionProfiles/profiles_settings.xml
+.idea/inspectionProfiles/Project_Default.xml
+dict_sqlite/__pycache__/__init__.cpython-39.pyc
+dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.0.0/context_example.db
+archive/v1.0.0/example.db
+archive/v1.0.0/sample.db
+archive/v1.0.0/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.0.0/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.1.0/sample.db
+archive/v1.1.0/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.1.0/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.1.1/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.1.1/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.2.0/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.2.0/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.2.1/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.2.1/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.2.2/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.2.2/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.2.3/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.2.3/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.2.3/コード間通信 実験/2/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.2.3/コード間通信 実験/2/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.3.0/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.3.0/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.3.0/コード間通信 実験/2/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.3.0/コード間通信 実験/2/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.3.1 - backup/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.3.1 - backup/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.3.1 - backup/コード間通信 実験/2/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.3.1 - backup/コード間通信 実験/2/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.3.1 - backup/コード間通信 実験/5/__pycache__/example_operation.cpython-39.pyc
+archive/v1.3.1/dict_sqlite/__pycache__/__init__.cpython-312.pyc
+archive/v1.3.1/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.3.1/dict_sqlite/__pycache__/main.cpython-312.pyc
+archive/v1.3.1/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.3.1/コード間通信 実験/2/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.3.1/コード間通信 実験/2/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.3.1/コード間通信 実験/5/__pycache__/example_operation.cpython-39.pyc
+archive/v1.3.3/dict_sqlite/__pycache__/__init__.cpython-312.pyc
+archive/v1.3.3/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.3.3/dict_sqlite/__pycache__/main.cpython-312.pyc
+archive/v1.3.3/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.3.3/コード間通信 実験/2/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.3.3/コード間通信 実験/2/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.3.3/コード間通信 実験/5/__pycache__/example_operation.cpython-39.pyc
+archive/v1.3.5/dict_sqlite/__pycache__/__init__.cpython-312.pyc
+archive/v1.3.5/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.3.5/dict_sqlite/__pycache__/main.cpython-312.pyc
+archive/v1.3.5/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.3.5/コード間通信 実験/2/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.3.5/コード間通信 実験/2/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.3.5/コード間通信 実験/5/__pycache__/example_operation.cpython-39.pyc
+archive/v1.3.6/dict_sqlite/__pycache__/__init__.cpython-312.pyc
+archive/v1.3.6/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.3.6/dict_sqlite/__pycache__/main.cpython-312.pyc
+archive/v1.3.6/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.3.6/コード間通信 実験/2/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.3.6/コード間通信 実験/2/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.3.6/コード間通信 実験/5/__pycache__/example_operation.cpython-39.pyc
+archive/v1.3.7/dict_sqlite/__pycache__/__init__.cpython-312.pyc
+archive/v1.3.7/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.3.7/dict_sqlite/__pycache__/main.cpython-312.pyc
+archive/v1.3.7/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.3.7/コード間通信 実験/2/dict_sqlite/__pycache__/__init__.cpython-39.pyc
+archive/v1.3.7/コード間通信 実験/2/dict_sqlite/__pycache__/main.cpython-39.pyc
+archive/v1.3.7/コード間通信 実験/5/__pycache__/example_operation.cpython-39.pyc
+archive/v1.2.0/sample.db
+archive/v1.2.1/sample.db
+archive/v1.2.2/sample.db
+archive/v1.2.3/sample.db
+archive/v1.3.0/sample.db
+archive/v1.3.0/コード間通信 実験/3/sample.db
+archive/v1.3.1/sample.db
+archive/v1.3.1/sample.db.lock
+archive/v1.3.1/temp.db
+archive/v1.3.1/temp.db.lock
+archive/v1.3.1 - backup/sample.db
+archive/v1.3.1 - backup/sample.db.lock
+archive/v1.3.1 - backup/temp.db
+archive/v1.3.1 - backup/temp.db.lock
+archive/v1.3.1 - backup/コード間通信 実験/3/sample.db
+archive/v1.3.1/コード間通信 実験/3/sample.db
+archive/v1.3.3/sample.db
+archive/v1.3.3/sample.db.lock
+archive/v1.3.3/temp.db
+archive/v1.3.3/temp.db.lock
+archive/v1.3.3/コード間通信 実験/3/sample.db
+archive/v1.3.5/example.db
+archive/v1.3.5/sample.db
+archive/v1.3.5/sample.db.lock
+archive/v1.3.5/temp.db
+archive/v1.3.5/temp.db.lock
+archive/v1.3.5/test.db
+archive/v1.3.5/コード間通信 実験/3/sample.db
+archive/v1.3.6/example.db
+archive/v1.3.6/sample.db
+archive/v1.3.6/sample.db.lock
+archive/v1.3.6/temp.db
+archive/v1.3.6/temp.db.lock
+archive/v1.3.6/test.db
+archive/v1.3.6/コード間通信 実験/3/sample.db
+archive/v1.3.7/example.db
+archive/v1.3.7/sample.db
+archive/v1.3.7/sample.db.lock
+archive/v1.3.7/temp.db
+archive/v1.3.7/temp.db.lock
+archive/v1.3.7/test.db
+archive/v1.3.7/コード間通信 実験/3/sample.db
+archive/v1.3.1/test.lock
+archive/v1.3.1 - backup/コード間通信 実験/4/my_lock_file.lock
+archive/v1.3.1/コード間通信 実験/4/my_lock_file.lock
+archive/v1.3.3/test.lock
+archive/v1.3.3/コード間通信 実験/4/my_lock_file.lock
+archive/v1.3.5/test.lock
+archive/v1.3.5/コード間通信 実験/4/my_lock_file.lock
+archive/v1.3.6/test.lock
+archive/v1.3.6/コード間通信 実験/4/my_lock_file.lock
+archive/v1.3.7/test.lock
+archive/v1.3.7/コード間通信 実験/4/my_lock_file.lock
+archive/v1.3.1/DictSQLite.egg-info/dependency_links.txt
+archive/v1.3.1/DictSQLite.egg-info/requires.txt
+archive/v1.3.1/DictSQLite.egg-info/SOURCES.txt
+archive/v1.3.1/DictSQLite.egg-info/top_level.txt
+archive/v1.3.3/DictSQLite.egg-info/dependency_links.txt
+archive/v1.3.3/DictSQLite.egg-info/requires.txt
+archive/v1.3.3/DictSQLite.egg-info/SOURCES.txt
+archive/v1.3.3/DictSQLite.egg-info/top_level.txt
+archive/v1.3.5/DictSQLite.egg-info/dependency_links.txt
+archive/v1.3.5/DictSQLite.egg-info/requires.txt
+archive/v1.3.5/DictSQLite.egg-info/SOURCES.txt
+archive/v1.3.5/DictSQLite.egg-info/top_level.txt
+archive/v1.3.6/DictSQLite.egg-info/dependency_links.txt
+archive/v1.3.6/DictSQLite.egg-info/requires.txt
+archive/v1.3.6/DictSQLite.egg-info/SOURCES.txt
+archive/v1.3.6/DictSQLite.egg-info/top_level.txt
+archive/v1.3.7/DictSQLite.egg-info/dependency_links.txt
+archive/v1.3.7/DictSQLite.egg-info/requires.txt
+archive/v1.3.7/DictSQLite.egg-info/SOURCES.txt
+archive/v1.3.7/DictSQLite.egg-info/top_level.txt
+*.whl
+*.gz

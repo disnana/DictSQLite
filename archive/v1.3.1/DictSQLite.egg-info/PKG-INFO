@@ -1,0 +1,53 @@
+Metadata-Version: 2.1
+Name: DictSQLite
+Version: 1.3.1
+Summary: You can handle basic SQLite operations in Python like Dict.
+Home-page: https://github.com/disnana/DictSQLite
+Download-URL: https://github.com/disnana/DictSQLite
+Author: Disnana
+Author-email: support@disnana.com
+Maintainer: Disnana
+Maintainer-email: support@disnana.com
+License: CC BY 4.0 (Custom License with Specific Terms)
+Keywords: sqlite,dict,database,dict_like,dict like,dictsqlite,dict like sqlite
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: License :: Other/Proprietary License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Python: >=3.6
+Requires-Dist: sqlite3
+Requires-Dist: portalocker
+
+
+# DictSQLite
+
+You can handle basic SQLite operations in Python like Dict.
+
+
+## License
+
+This project is licensed under the Creative Commons Attribution 4.0 International License. See the LICENSE file for more details.
+
+Please note that while you are free to modify the code, you must give appropriate credit to the original creator and follow the terms of this license.
+
+
+## Authors
+
+- [@harumaki4649](https://www.github.com/harumaki4649)
+
+
+## Feedback
+
+If you have any feedback, please reach out to us at support@disnana.com
+
+
+## Support
+
+For support, email support@disnana.com or join our [Discord Server](https://discord.gg/KzeHDrgwAz).
+
