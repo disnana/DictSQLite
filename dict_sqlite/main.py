@@ -115,7 +115,7 @@ class DictSQLite:
             raise result
         return result
 
-    def __setitem__(self, key, value, columns=None):
+    def __setitem__(self, key, value):
         if isinstance(key, tuple):
             key, table_name = key
             temp = self.table_name
