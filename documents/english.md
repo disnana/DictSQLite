@@ -1,6 +1,7 @@
 # DictSQLite
 
 `DictSQLite` is a Python class that allows you to use an SQLite database as a dictionary. It is thread-safe and handles database operations and transactions through a queue.
+
 ## About Automatic Conflict Resolution
 
 Automatic conflict resolution is deprecated due to its potential to significantly degrade performance. Implementing it required considerable time and effort. If a better solution becomes available, it will be considered.
@@ -46,6 +47,7 @@ DictSQLite(db_name: str, table_name: str = 'main', schema: bool = None, conflict
 - `clear_table(self, table_name=None)`: Clear data from the current or specified table.
 - `tables(self)`: Get a list of all table names.
 - `close(self)`: Close the database connection.
+
 ## Usage
 
 The following code snippet demonstrates the basic usage of the `DictSQLite` class:
