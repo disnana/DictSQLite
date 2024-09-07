@@ -36,7 +36,7 @@ class DictSQLite:
             self.worker_thread.daemon = True
             self.worker_thread.start()
         self.create_table(schema=schema)
-        if not journal_mode is None:
+        if journal_mode is not None:
             self.conn.execute(f'PRAGMA journal_mode={journal_mode};')
 
     def _process_queue(self):
@@ -71,7 +71,7 @@ class DictSQLite:
                     self.operation_queue.task_done()
 
     def create_table(self, table_name=None, schema=None):
-        if not table_name is None:
+        if table_name is not None:
             self.table_name = table_name
         if schema is None:
             schema = schema if schema else '(key TEXT PRIMARY KEY, value TEXT)'
