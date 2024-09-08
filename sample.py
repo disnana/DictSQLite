@@ -14,4 +14,13 @@ for _ in range(10):
     db.create_table("A" + str(random.randint(111111, 999999)))
 print(db.tables())
 print(len(db.tables()))
+db["test"] = 0
+print(db)
+db["test"] += 1
+print(db)
+db.close()
+db = dict_sqlite.DictSQLite("./sample.db")
+print(db)
+db["test"] += 1
+print(db)
 db.close()

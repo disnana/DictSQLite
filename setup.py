@@ -12,7 +12,8 @@ VERSION = dict_sqlite.main.__version__
 PYTHON_REQUIRES = ">=3.6"
 
 INSTALL_REQUIRES = [
-    'portalocker'
+    'portalocker',
+    'cryptography'
 ]
 
 EXTRAS_REQUIRE = {

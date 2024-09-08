@@ -6,6 +6,7 @@ import secrets
 import string
 import portalocker
 import json
+import crypt
 
 __version__ = '1.3.9'
 
@@ -15,9 +16,12 @@ def randomstrings(n):
 
 
 class DictSQLite:
-    def __init__(self, db_name: str, table_name: str = 'main', schema: bool = None, conflict_resolver: bool = False, journal_mode: str = None, lock_file: str = None):
+    def __init__(self, db_name: str, table_name: str = 'main', schema: bool = None, conflict_resolver: bool = False, journal_mode: str = None, lock_file: str = None, password: str = None, password_file: str = "./keys.pem"):
         self.db_name = db_name
+        self.password = password
         self.table_name = table_name
+        if self.password is not None:
+
         self.conn = sqlite3.connect(db_name, check_same_thread=False)
         self.cursor = self.conn.cursor()
         self.in_transaction = False
