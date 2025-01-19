@@ -21,7 +21,7 @@ class DictSQLite:
         self.password = password
         self.table_name = table_name
         if self.password is not None:
-
+            crypt.crypt()
         self.conn = sqlite3.connect(db_name, check_same_thread=False)
         self.cursor = self.conn.cursor()
         self.in_transaction = False
