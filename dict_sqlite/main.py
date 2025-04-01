@@ -6,9 +6,9 @@ import secrets
 import string
 import portalocker
 import json
-import crypt
+from .modules import crypto
 
-__version__ = '1.3.9'
+__version__ = '1.4.0'
 
 
 def randomstrings(n):
@@ -16,12 +16,13 @@ def randomstrings(n):
 
 
 class DictSQLite:
-    def __init__(self, db_name: str, table_name: str = 'main', schema: bool = None, conflict_resolver: bool = False, journal_mode: str = None, lock_file: str = None, password: str = None, password_file: str = "./keys.pem"):
+    def __init__(self, db_name: str, table_name: str = 'main', schema: bool = None, conflict_resolver: bool = False, journal_mode: str = None, lock_file: str = None, password: str = None, password_file: str = "./keys.pem", version: int = 1):
+        self.version = version
         self.db_name = db_name
         self.password = password
         self.table_name = table_name
         if self.password is not None:
-            crypt.crypt()
+            crypto.key_create(password, password_file)
         self.conn = sqlite3.connect(db_name, check_same_thread=False)
         self.cursor = self.conn.cursor()
         self.in_transaction = False
@@ -124,42 +125,48 @@ class DictSQLite:
         return result
 
     def __setitem__(self, key, value):
-        if isinstance(key, tuple):
-            key, table_name = key
-            temp = self.table_name
-            self.create_table(table_name)
-            self.switch_table(temp)
+        if self.version == 2:
+            if isinstance(key, tuple):
+                table_name, key = key
+            else:
+                table_name = self.table_name
         else:
             table_name = self.table_name
-        # dictをJSON文字列に変換
+
         if isinstance(value, dict):
             value = json.dumps(value)
+
         self.operation_queue.put((self._execute, (f'''
             INSERT OR REPLACE INTO {table_name} (key, value)
             VALUES (?, ?)
         ''', (key, value)), {}, None))
 
     def __getitem__(self, key):
-        if isinstance(key, tuple):
-            key, table_name = key
+        if self.version == 2:
+            if key not in self.tables():
+                raise KeyError(f"Table {key} not found.")
+            result_queue = queue.Queue()
+            self.operation_queue.put((self._fetchall, (f'''
+                SELECT key, value FROM {key}
+            ''',), {}, result_queue))
+            result = result_queue.get()
+            if isinstance(result, Exception):
+                raise result
+            return {row[0]: json.loads(row[1]) if row[1] else row[1] for row in result}
         else:
-            table_name = self.table_name
-        result_queue = queue.Queue()
-        self.operation_queue.put((self._fetchone, (f'''
-            SELECT value FROM {table_name} WHERE key = ?
-        ''', (key,)), {}, result_queue))
-        result = result_queue.get()
-        if isinstance(result, Exception):
+            result_queue = queue.Queue()
+            self.operation_queue.put((self._fetchone, (f'''
+                SELECT value FROM {self.table_name} WHERE key = ?
+            ''', (key,)), {}, result_queue))
+            result = result_queue.get()
+            if isinstance(result, Exception):
+                raise result
+            if result is None:
+                raise KeyError(f"Key {key} not found.")
             try:
-                return json.loads(result)
+                return json.loads(result[0])
             except json.JSONDecodeError:
-                return result
-        if result is None:
-            raise KeyError(f"Key {key} not found.")
-        try:
-            return json.loads(result[0])
-        except json.JSONDecodeError:
-            return result[0]
+                return result[0]
 
     def _fetchone(self, query, params=()):
         self.cursor.execute(query, params)
@@ -181,14 +188,21 @@ class DictSQLite:
         return result is not None
 
     def __repr__(self):
-        result_queue = queue.Queue()
-        self.operation_queue.put((self._fetchall, (f'''
-            SELECT key, value FROM {self.table_name}
-        ''',), {}, result_queue))
-        result = result_queue.get()
-        if isinstance(result, Exception):
-            raise result
-        return str(dict(result))
+        if self.version == 2:
+            result = {}
+            for table in self.tables():
+                result[table] = self[table]
+            return str(result)
+        else:
+            result_queue = queue.Queue()
+            self.operation_queue.put((self._fetchall, (f'''
+                SELECT key, value FROM {self.table_name}
+            ''',), {}, result_queue))
+            result = result_queue.get()
+            if isinstance(result, Exception):
+                raise result
+            return str(dict(result))
+
 
     def _fetchall(self, query, params=()):
         self.cursor.execute(query, params)

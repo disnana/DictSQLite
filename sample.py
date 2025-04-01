@@ -21,6 +21,6 @@ print(db)
 db.close()
 db = dict_sqlite.DictSQLite("./sample.db")
 print(db)
-db["test"] += 1
+db["John Doe"] += 1
 print(db)
 db.close()
