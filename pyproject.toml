@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [metadata]
 name = "DictSQLite"
-version = "1.4.1"  # ここには dict_sqlite.main.__version__ の値を直接記載します
+version = "1.4.3"  # ここには dict_sqlite.main.__version__ の値を直接記載します
 description = "You can handle basic SQLite operations in Python like Dict."
 long_description = "file: README.md"
 long_description_content_type = "text/markdown"

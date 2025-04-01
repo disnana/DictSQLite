@@ -8,7 +8,7 @@ import portalocker
 import json
 from .modules import crypto
 
-__version__ = '1.4.1'
+__version__ = '1.4.3'
 
 
 def randomstrings(n):

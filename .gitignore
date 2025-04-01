@@ -6,3 +6,4 @@ archive/
 DictSQLite.egg-info/
 build/
 *.bat
+*.pyc

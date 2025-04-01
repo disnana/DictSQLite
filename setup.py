@@ -38,7 +38,7 @@ CLASSIFIERS = [
     'Programming Language :: Python :: 3.13',
 ]
 
-with open('./README.md', 'r', encoding="utf-8") as fp:
+with open('./Pypi.md', 'r', encoding="utf-8") as fp:
     readme = fp.read()
 long_description = readme
 
