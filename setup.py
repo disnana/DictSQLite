@@ -1,5 +1,5 @@
 from setuptools import setup
-import dict_sqlite
+import dictsqlite
 
 DESCRIPTION = "You can handle basic SQLite operations in Python like Dict."
 NAME = 'DictSQLite'
@@ -8,7 +8,7 @@ AUTHOR_EMAIL = 'support@disnana.com'
 URL = 'https://github.com/disnana/DictSQLite'
 LICENSE = 'MIT (Custom License with Specific Terms)'
 DOWNLOAD_URL = 'https://github.com/disnana/DictSQLite'
-VERSION = dict_sqlite.main.__version__
+VERSION = dictsqlite.main.__version__
 PYTHON_REQUIRES = ">=3.6"
 
 INSTALL_REQUIRES = [
@@ -21,7 +21,7 @@ EXTRAS_REQUIRE = {
 }
 
 PACKAGES = [
-    'dict_sqlite'
+    'dictsqlite'
 ]
 
 CLASSIFIERS = [
@@ -35,6 +35,7 @@ CLASSIFIERS = [
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
 ]
 
 with open('./README.md', 'r', encoding="utf-8") as fp:
