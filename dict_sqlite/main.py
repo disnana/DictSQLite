@@ -16,13 +16,15 @@ def randomstrings(n):
 
 
 class DictSQLite:
-    def __init__(self, db_name: str, table_name: str = 'main', schema: bool = None, conflict_resolver: bool = False, journal_mode: str = None, lock_file: str = None, password: str = None, password_file: str = "./keys.pem", version: int = 1):
+    def __init__(self, db_name: str, table_name: str = 'main', schema: bool = None, conflict_resolver: bool = False, journal_mode: str = None, lock_file: str = None, password: str = None, publickey_path: str = "./public_keys.pem", privatekey_path: str = "./private_keys.pem", version: int = 1, key_create: bool = False):
         self.version = version
         self.db_name = db_name
         self.password = password
+        self.publickey_path = publickey_path
+        self.privatekey_path = privatekey_path
         self.table_name = table_name
-        if self.password is not None:
-            crypto.key_create(password, password_file)
+        if self.password is not None and key_create:
+            crypto.key_create(password, publickey_path, privatekey_path)
         self.conn = sqlite3.connect(db_name, check_same_thread=False)
         self.cursor = self.conn.cursor()
         self.in_transaction = False
@@ -43,6 +45,93 @@ class DictSQLite:
         self.create_table(schema=schema)
         if journal_mode is not None:
             self.conn.execute(f'PRAGMA journal_mode={journal_mode};')
+
+    class TableProxy:
+        def __init__(self, db, table_name):
+            self.db = db
+            self.table_name = table_name
+
+        def __getitem__(self, key):
+            result_queue = queue.Queue()
+            self.db.operation_queue.put((
+                self.db._fetchone,
+                (f"SELECT value FROM {self.table_name} WHERE key = ?", (key,)),
+                {}, result_queue
+            ))
+            result = result_queue.get()
+            if isinstance(result, Exception):
+                raise result
+            if result is None:
+                raise KeyError(f"Key {key} not found in table {self.table_name}.")
+            try:
+                if self.db.password is not None:
+                    result = self.db._decrypt(result[0])
+                else:
+                    result = json.loads(result[0])
+                return result
+            except json.JSONDecodeError:
+                return result[0]
+
+        def __setitem__(self, key, value):
+            if isinstance(value, dict):
+                value = json.dumps(value)
+            if self.db.password is not None:
+                value = self.db._encrypt(value)
+            self.db.operation_queue.put((
+                self.db._execute,
+                (f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)", (key, value)),
+                {}, None
+            ))
+
+        def __delitem__(self, key):
+            self.db.operation_queue.put((
+                self.db._execute,
+                (f"DELETE FROM {self.table_name} WHERE key = ?", (key,)),
+                {}, None
+            ))
+
+        def __contains__(self, key):
+            result_queue = queue.Queue()
+            self.db.operation_queue.put((
+                self.db._fetchone,
+                (f"SELECT 1 FROM {self.table_name} WHERE key = ?", (key,)),
+                {}, result_queue
+            ))
+            result = result_queue.get()
+            if isinstance(result, Exception):
+                raise result
+            return result is not None
+
+        def __repr__(self):
+            return f"{dict(self)}"
+
+        def __iter__(self):
+            # TableProxy が保持するデータのキーと値を返すイテレータを実装
+            for row in self.get_all_rows():  # 仮に全行を取得するメソッドを呼び出す
+                if self.db.password is not None:
+                    yield row[0], self.db._decrypt(row[1])  # row[0] はキー、row[1] は値
+                else:
+                    yield row[0], row[1]
+
+        def get_all_rows(self):
+            # 全ての行を取得するクエリを実行
+            result_queue = queue.Queue()
+            self.db.operation_queue.put((
+                self.db._fetchall,
+                (f"SELECT key, value FROM {self.table_name}",),
+                {}, result_queue
+            ))
+            result = result_queue.get()
+            if isinstance(result, Exception):
+                raise result
+            return result  # [(key1, value1), (key2, value2), ...]
+
+    def _encrypt(self, data: bytes) -> bytes:
+        data = json.dumps({"type": str(type(data)), "value": data}).encode("utf-8")
+        return crypto.encrypt_rsa(crypto.load_public_key(self.publickey_path, self.password), data)
+
+    def _decrypt(self, data: bytes) -> bytes:
+        return json.loads(crypto.decrypt_rsa(crypto.load_private_key(self.privatekey_path, self.password), data).decode("utf-8"))["value"]
 
     def _process_queue(self):
         while True:
@@ -126,15 +215,17 @@ class DictSQLite:
 
     def __setitem__(self, key, value):
         if self.version == 2:
-            if isinstance(key, tuple):
-                table_name, key = key
-            else:
-                table_name = self.table_name
+            if self.version == 2:
+                if not isinstance(key, tuple):
+                    raise ValueError("version=2では (key, table_name) の形式で指定してください")
+                key, table_name = key
         else:
             table_name = self.table_name
 
         if isinstance(value, dict):
             value = json.dumps(value)
+        if self.password is not None:
+            value = self._encrypt(value)  # Encrypt the value before storing
 
         self.operation_queue.put((self._execute, (f'''
             INSERT OR REPLACE INTO {table_name} (key, value)
@@ -145,14 +236,7 @@ class DictSQLite:
         if self.version == 2:
             if key not in self.tables():
                 raise KeyError(f"Table {key} not found.")
-            result_queue = queue.Queue()
-            self.operation_queue.put((self._fetchall, (f'''
-                SELECT key, value FROM {key}
-            ''',), {}, result_queue))
-            result = result_queue.get()
-            if isinstance(result, Exception):
-                raise result
-            return {row[0]: json.loads(row[1]) if row[1] else row[1] for row in result}
+            return self.TableProxy(self, key)
         else:
             result_queue = queue.Queue()
             self.operation_queue.put((self._fetchone, (f'''
@@ -164,7 +248,11 @@ class DictSQLite:
             if result is None:
                 raise KeyError(f"Key {key} not found.")
             try:
-                return json.loads(result[0])
+                if self.password is not None:
+                    result = self._decrypt(result[0])
+                else:
+                    result = json.loads(result[0])
+                return result
             except json.JSONDecodeError:
                 return result[0]
 
@@ -201,7 +289,16 @@ class DictSQLite:
             result = result_queue.get()
             if isinstance(result, Exception):
                 raise result
-            return str(dict(result))
+            if self.password is not None:
+                new_dict = {}
+                for key, value in dict(result).items():
+                    if value is not None:
+                        new_dict[key] = self._decrypt(value).decode("utf-8")
+                    else:
+                        new_dict[key] = None
+                return str(new_dict)
+            else:
+                return str(dict(result))
 
 
     def _fetchall(self, query, params=()):

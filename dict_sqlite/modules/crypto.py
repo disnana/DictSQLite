@@ -120,7 +120,7 @@ def load_public_key(pem_file_path: str, password) -> rsa.RSAPublicKey:
     return public_key
 
 
-def key_create(password: str = "test", key_path: str = "./key.pem"):
+def key_create(password: str = "test", pubkey_path: str = "./pubkey.pem", private_key_path: str = "./key.pem"):
     # 4096ビットのRSA鍵ペアの生成
     private_key = rsa.generate_private_key(
         public_exponent=65537,
@@ -144,10 +144,10 @@ def key_create(password: str = "test", key_path: str = "./key.pem"):
     )
 
     # 秘密鍵と公開鍵をファイルに保存（オプション）
-    with open(key_path, 'wb') as f:
+    with open(private_key_path, 'wb') as f:
         f.write(encrypt_aes(private_pem, password))
 
-    with open(key_path, 'wb') as f:
+    with open(pubkey_path, 'wb') as f:
         f.write(encrypt_aes(public_pem, password))
 
 

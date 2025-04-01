@@ -1,7 +1,7 @@
 import random
 import dict_sqlite
 
-db = dict_sqlite.DictSQLite("./sample.db")
+db = dict_sqlite.DictSQLite("./sample.db", version=1)
 db.clear_db()
 print(db)
 db.create_table("main", schema="(key TEXT PRIMARY KEY, value TEXT)")
