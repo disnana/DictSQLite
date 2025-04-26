@@ -1,3 +1,9 @@
+.. image:: https://img.shields.io/pypi/v/dictsqlite.svg
+   :target: https://pypi.python.org/pypi/dictsqlite
+   :alt: PyPI version info
+.. image:: https://img.shields.io/pypi/pyversions/dictsqlite.svg
+   :target: https://pypi.python.org/pypi/dictsqlite
+   :alt: PyPI supported Python versions
 
 # DictSQLite
 
