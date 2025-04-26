@@ -1,9 +1,5 @@
-.. image:: https://img.shields.io/pypi/v/dictsqlite.svg
-   :target: https://pypi.python.org/pypi/dictsqlite
-   :alt: PyPI version info
-.. image:: https://img.shields.io/pypi/pyversions/dictsqlite.svg
-   :target: https://pypi.python.org/pypi/dictsqlite
-   :alt: PyPI supported Python versions
+[![PyPI version info](https://img.shields.io/pypi/v/dictsqlite.svg)](https://pypi.python.org/pypi/dictsqlite)
+[![PyPI supported Python versions](https://img.shields.io/pypi/pyversions/dictsqlite.svg)](https://pypi.python.org/pypi/dictsqlite)
 
 # DictSQLite
 
