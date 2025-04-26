@@ -1,6 +1,8 @@
 
 # DictSQLite
-
+[![PyPI version info](https://img.shields.io/pypi/v/dictsqlite.svg)](https://pypi.python.org/pypi/dictsqlite)
+[![PyPI supported Python versions](https://img.shields.io/pypi/pyversions/dictsqlite.svg)](https://pypi.python.org/pypi/dictsqlite)
+<br>
 PythonでSQLiteの基本的な操作をDictのように扱うことができます。
 
 ## インストール

@@ -1,6 +1,7 @@
-
 # DictSQLite
-
+[![PyPI version info](https://img.shields.io/pypi/v/dictsqlite.svg)](https://pypi.python.org/pypi/dictsqlite)
+[![PyPI supported Python versions](https://img.shields.io/pypi/pyversions/dictsqlite.svg)](https://pypi.python.org/pypi/dictsqlite)
+<br>
 You can handle basic SQLite operations in Python like Dict.
 
 - [日本語のREADMEはこちら](./README_JP.md)
