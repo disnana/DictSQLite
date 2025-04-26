@@ -25,6 +25,7 @@ def test_dict_sqlite_v2():
     db["products"]["product3"] = {"name": "タブレッと", "price": 50000, "stock": 15}
     db["products"]["product3"]["name"] = "タブレット"
     db["products"]["product3"]["price"] = 55000
+    print("stock" in db["products"]["product3"])
     print("商品データ追加後:", db)
     db["products"]["product3"]["stock"] = {"buy": 10, "sell": 5}
     db["products"]["product3"]["stock"]["buy"] = 9

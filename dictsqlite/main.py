@@ -8,7 +8,7 @@ import portalocker
 import json
 from .modules import crypto
 
-__version__ = '1.4.5'
+__version__ = '1.4.6'
 
 
 def randomstrings(n):
@@ -86,6 +86,22 @@ class DictSQLite:
 
         def __repr__(self):
             return repr(self._get_db_value())
+
+        def __contains__(self, key):
+            try:
+                val = self._get_db_value()
+                return key in val
+            except KeyError:
+                return False
+
+        def keys(self):
+            return self._get_db_value().keys()
+
+        def items(self):
+            return self._get_db_value().items()
+
+        def values(self):
+            return self._get_db_value().values()
 
     class TableProxy:
         def __init__(self, db, table_name):
