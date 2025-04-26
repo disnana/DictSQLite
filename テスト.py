@@ -22,7 +22,14 @@ def test_dict_sqlite_v2():
     # products テーブルにデータを追加
     db["products"]["product1"] = {"name": "ノートパソコン", "price": 80000, "stock": 10}
     db["products"]["product2"] = {"name": "スマートフォン", "price": 60000, "stock": 20}
+    db["products"]["product3"] = {"name": "タブレッと", "price": 50000, "stock": 15}
+    db["products"]["product3"]["name"] = "タブレット"
+    db["products"]["product3"]["price"] = 55000
     print("商品データ追加後:", db)
+    db["products"]["product3"]["stock"] = {"buy": 10, "sell": 5}
+    db["products"]["product3"]["stock"]["buy"] = 9
+    db["products"]["product3"]["stock"]["sell"] = 6
+    print("商品データ編集後:", db)
 
     # 特定のテーブルの内容を表示
     print("ユーザーテーブルの内容:", db["users"])

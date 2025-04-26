@@ -8,7 +8,7 @@ import portalocker
 import json
 from .modules import crypto
 
-__version__ = '1.4.3'
+__version__ = '1.4.4'
 
 
 def randomstrings(n):
@@ -46,10 +46,74 @@ class DictSQLite:
         if journal_mode is not None:
             self.conn.execute(f'PRAGMA journal_mode={journal_mode};')
 
+    class RecursiveDict:
+        def __init__(self, proxy, base_key, path=()):
+            self._proxy = proxy
+            self._base_key = base_key
+            self._path = path
+
+        def _get_db_value(self):
+            # dbから「ラップ無し」で純粋dictを取得
+            base_val = self._proxy.get_raw_value(self._base_key)
+            val = base_val
+            for p in self._path:
+                val = val[p]
+            return val
+
+        def __getitem__(self, key):
+            val = self._get_db_value()
+            if isinstance(val[key], dict):
+                # さらにネスト
+                return DictSQLite.RecursiveDict(self._proxy, self._base_key, self._path + (key,))
+            else:
+                return val[key]
+
+        def __setitem__(self, key, value):
+            # まず現在の値を取得（get_db_valueで再帰的に抽出）
+            val = self._get_db_value()
+            val[key] = value  # 更新
+            # データのトップから現在のネスト状況を使って全体を再構築
+            base_val = self._proxy[self._base_key]
+            t = base_val
+            for p in self._path[:-1]:
+                t = t[p]
+            if self._path:
+                t[self._path[-1]] = val
+            else:
+                base_val = val
+            # DBに保存
+            self._proxy[self._base_key] = base_val
+
+        def __repr__(self):
+            return repr(self._get_db_value())
+
     class TableProxy:
         def __init__(self, db, table_name):
             self.db = db
             self.table_name = table_name
+
+        def get_raw_value(self, key):
+            # DBから生のdictだけを返す（RecursiveDictでラップしない！）
+            # ここはTableProxy.__getitem__とほぼ同じだが、ラップなしで返す
+            result_queue = queue.Queue()
+            self.db.operation_queue.put((
+                self.db._fetchone,
+                (f"SELECT value FROM {self.table_name} WHERE key = ?", (key,)),
+                {}, result_queue
+            ))
+            result = result_queue.get()
+            if isinstance(result, Exception):
+                raise result
+            if result is None:
+                raise KeyError(f"Key {key} not found in table {self.table_name}.")
+            try:
+                if self.db.password is not None:
+                    result = self.db._decrypt(result[0])
+                else:
+                    result = json.loads(result[0])
+                return result  # ←ここでラップせずdictそのまま返す
+            except json.JSONDecodeError:
+                return result[0]
 
         def __getitem__(self, key):
             result_queue = queue.Queue()
@@ -68,6 +132,8 @@ class DictSQLite:
                     result = self.db._decrypt(result[0])
                 else:
                     result = json.loads(result[0])
+                if isinstance(result, dict):
+                    return DictSQLite.RecursiveDict(self, key)
                 return result
             except json.JSONDecodeError:
                 return result[0]
