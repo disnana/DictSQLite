@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 import dictsqlite
 
 DESCRIPTION = "You can handle basic SQLite operations in Python like Dict."
@@ -20,9 +20,7 @@ EXTRAS_REQUIRE = {
 
 }
 
-PACKAGES = [
-    'dictsqlite'
-]
+PACKAGES = find_packages(include=["dictsqlite", "dictsqlite.*"])
 
 CLASSIFIERS = [
     'Development Status :: 5 - Production/Stable',
