@@ -17,6 +17,18 @@ def test_dict_sqlite_v2():
     # users テーブルにデータを追加
     db["users"]["user1"] = {"name": "田中太郎", "age": 30, "email": "tanaka@example.com"}
     db["users"]["user2"] = {"name": "佐藤花子", "age": 25, "email": "sato@example.com"}
+    db["users"]["user3"] = [1, 2, 3]  # リストを使用
+    db["users"]["user3"].append(4)  # リストに値を追加
+    db["users"]["user3"].append(5)  # リストに値を追加
+    for i in db["users"]["user3"]:
+        print(i)
+    print(db["users"]["user3"])
+    db["users"]["user3"].remove(2)  # リストから値を削除
+    print(db["users"]["user3"])
+    del db["users"]["user3"][1]
+    print(db["users"]["user3"])
+    db["users"]["user3"].pop(1)
+    print(db["users"]["user3"])
     print("ユーザーデータ追加後:", db)
 
     # products テーブルにデータを追加

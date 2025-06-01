@@ -15,6 +15,69 @@ def randomstrings(n):
     return ''.join(secrets.choice(string.ascii_letters) for _ in range(n))
 
 
+class DBSyncedList(list):
+    """DBと自動同期するListクラス"""
+    def __init__(self, key, proxy, initial=None):
+        super().__init__(initial if initial is not None else [])
+        self._key = key
+        self._proxy = proxy
+
+    def sync(self):
+        """現在のlist内容をDBに保存"""
+        self._proxy[self._key] = list(self)
+
+    def append(self, val):
+        super().append(val)
+        self.sync()
+
+    def extend(self, vals):
+        super().extend(vals)
+        self.sync()
+
+    def remove(self, val):
+        super().remove(val)
+        self.sync()
+
+    def pop(self, idx=-1):
+        val = super().pop(idx)
+        self.sync()
+        return val
+
+    def clear(self):
+        super().clear()
+        self.sync()
+
+    def insert(self, idx, val):
+        super().insert(idx, val)
+        self.sync()
+
+    def reverse(self):
+        super().reverse()
+        self.sync()
+
+    def sort(self, key=None, reverse=False):
+        super().sort(key=key, reverse=reverse)
+        self.sync()
+
+    def __setitem__(self, idx, val):
+        super().__setitem__(idx, val)
+        self.sync()
+
+    def __delitem__(self, idx):
+        super().__delitem__(idx)
+        self.sync()
+
+    def __iadd__(self, other):
+        result = super().__iadd__(other)
+        self.sync()
+        return result
+
+    def __imul__(self, other):
+        result = super().__imul__(other)
+        self.sync()
+        return result
+
+
 class DictSQLite:
     def __init__(self, db_name: str, table_name: str = 'main', schema: bool = None, conflict_resolver: bool = False, journal_mode: str = None, lock_file: str = None, password: str = None, publickey_path: str = "./public_keys.pem", privatekey_path: str = "./private_keys.pem", version: int = 1, key_create: bool = False):
         self.version = version
@@ -148,14 +211,19 @@ class DictSQLite:
                     result = self.db._decrypt(result[0])
                 else:
                     result = json.loads(result[0])
+                # ★★★ 修正点：dictならRecursiveDict、listならDBSyncedListでラップ ★★★
                 if isinstance(result, dict):
                     return DictSQLite.RecursiveDict(self, key)
-                return result
+                elif isinstance(result, list):
+                    return DBSyncedList(key, self, result)
+                else:
+                    return result
             except json.JSONDecodeError:
                 return result[0]
 
         def __setitem__(self, key, value):
-            if isinstance(value, dict):
+            # dictとlistの両方をjson.dumps()で文字列化
+            if isinstance(value, (dict, list)):
                 value = json.dumps(value)
             if self.db.password is not None:
                 value = self.db._encrypt(value)
@@ -193,7 +261,10 @@ class DictSQLite:
                 if self.db.password is not None:
                     yield row[0], self.db._decrypt(row[1])  # row[0] はキー、row[1] は値
                 else:
-                    yield row[0], row[1]
+                    try:
+                        yield row[0], json.loads(row[1])
+                    except json.JSONDecodeError:
+                        yield row[0], row[1]
 
         def get_all_rows(self):
             # 全ての行を取得するクエリを実行
@@ -304,7 +375,8 @@ class DictSQLite:
         else:
             table_name = self.table_name
 
-        if isinstance(value, dict):
+        # dictとlistの両方をjson.dumps()で文字列化
+        if isinstance(value, (dict, list)):
             value = json.dumps(value)
         if self.password is not None:
             value = self._encrypt(value)  # Encrypt the value before storing
@@ -334,7 +406,13 @@ class DictSQLite:
                     result = self._decrypt(result[0])
                 else:
                     result = json.loads(result[0])
-                return result
+                # ★★★ 修正点：dictもlistもそれぞれ適切にラップ ★★★
+                if isinstance(result, dict):
+                    return DictSQLite.RecursiveDict(self.TableProxy(self, self.table_name), key)
+                elif isinstance(result, list):
+                    return DBSyncedList(key, self.TableProxy(self, self.table_name), result)
+                else:
+                    return result
             except json.JSONDecodeError:
                 return result[0]
 
@@ -381,7 +459,6 @@ class DictSQLite:
                 return str(new_dict)
             else:
                 return str(dict(result))
-
 
     def _fetchall(self, query, params=()):
         self.cursor.execute(query, params)
