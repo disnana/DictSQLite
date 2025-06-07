@@ -8,7 +8,7 @@ import portalocker
 import json
 from .modules import crypto
 
-__version__ = '1.5.0'
+__version__ = '1.5.1'
 
 
 def randomstrings(n):
@@ -116,7 +116,6 @@ class DictSQLite:
             self._path = path
 
         def _get_db_value(self):
-            # dbから「ラップ無し」で純粋dictを取得
             base_val = self._proxy.get_raw_value(self._base_key)
             val = base_val
             for p in self._path:
@@ -126,16 +125,13 @@ class DictSQLite:
         def __getitem__(self, key):
             val = self._get_db_value()
             if isinstance(val[key], dict):
-                # さらにネスト
                 return DictSQLite.RecursiveDict(self._proxy, self._base_key, self._path + (key,))
             else:
                 return val[key]
 
         def __setitem__(self, key, value):
-            # まず現在の値を取得（get_db_valueで再帰的に抽出）
             val = self._get_db_value()
-            val[key] = value  # 更新
-            # データのトップから現在のネスト状況を使って全体を再構築
+            val[key] = value
             base_val = self._proxy[self._base_key]
             t = base_val
             for p in self._path[:-1]:
@@ -144,7 +140,6 @@ class DictSQLite:
                 t[self._path[-1]] = val
             else:
                 base_val = val
-            # DBに保存
             self._proxy[self._base_key] = base_val
 
         def __repr__(self):
@@ -172,8 +167,6 @@ class DictSQLite:
             self.table_name = table_name
 
         def get_raw_value(self, key):
-            # DBから生のdictだけを返す（RecursiveDictでラップしない！）
-            # ここはTableProxy.__getitem__とほぼ同じだが、ラップなしで返す
             result_queue = queue.Queue()
             self.db.operation_queue.put((
                 self.db._fetchone,
@@ -190,7 +183,7 @@ class DictSQLite:
                     result = self.db._decrypt(result[0])
                 else:
                     result = json.loads(result[0])
-                return result  # ←ここでラップせずdictそのまま返す
+                return result
             except json.JSONDecodeError:
                 return result[0]
 
@@ -211,7 +204,6 @@ class DictSQLite:
                     result = self.db._decrypt(result[0])
                 else:
                     result = json.loads(result[0])
-                # ★★★ 修正点：dictならRecursiveDict、listならDBSyncedListでラップ ★★★
                 if isinstance(result, dict):
                     return DictSQLite.RecursiveDict(self, key)
                 elif isinstance(result, list):
@@ -222,7 +214,6 @@ class DictSQLite:
                 return result[0]
 
         def __setitem__(self, key, value):
-            # dictとlistの両方をjson.dumps()で文字列化
             if isinstance(value, (dict, list)):
                 value = json.dumps(value)
             if self.db.password is not None:
@@ -256,10 +247,9 @@ class DictSQLite:
             return f"{dict(self)}"
 
         def __iter__(self):
-            # TableProxy が保持するデータのキーと値を返すイテレータを実装
-            for row in self.get_all_rows():  # 仮に全行を取得するメソッドを呼び出す
+            for row in self.get_all_rows():
                 if self.db.password is not None:
-                    yield row[0], self.db._decrypt(row[1])  # row[0] はキー、row[1] は値
+                    yield row[0], self.db._decrypt(row[1])
                 else:
                     try:
                         yield row[0], json.loads(row[1])
@@ -267,7 +257,6 @@ class DictSQLite:
                         yield row[0], row[1]
 
         def get_all_rows(self):
-            # 全ての行を取得するクエリを実行
             result_queue = queue.Queue()
             self.db.operation_queue.put((
                 self.db._fetchall,
@@ -277,7 +266,7 @@ class DictSQLite:
             result = result_queue.get()
             if isinstance(result, Exception):
                 raise result
-            return result  # [(key1, value1), (key2, value2), ...]
+            return result
 
     def _encrypt(self, data: bytes) -> bytes:
         data = json.dumps({"type": str(type(data)), "value": data}).encode("utf-8")
@@ -323,7 +312,6 @@ class DictSQLite:
         if schema is None:
             schema = schema if schema else '(key TEXT PRIMARY KEY, value TEXT)'
         else:
-            # スキーマの妥当性をチェック
             if not self._validate_schema(schema):
                 raise ValueError(f"Invalid schema provided: {schema}")
 
@@ -331,7 +319,6 @@ class DictSQLite:
         self.operation_queue.put((self._execute, (create_table_sql,), {}, None))
 
     def _validate_schema(self, schema):
-        """一時的なテーブルを作成してスキーマを検証します。"""
         try:
             def tables():
                 result_queue = queue.Queue()
@@ -368,18 +355,16 @@ class DictSQLite:
 
     def __setitem__(self, key, value):
         if self.version == 2:
-            if self.version == 2:
-                if not isinstance(key, tuple):
-                    raise ValueError("version=2では (key, table_name) の形式で指定してください")
-                key, table_name = key
+            if not isinstance(key, tuple):
+                raise ValueError("version=2では (key, table_name) の形式で指定してください")
+            key, table_name = key
         else:
             table_name = self.table_name
 
-        # dictとlistの両方をjson.dumps()で文字列化
         if isinstance(value, (dict, list)):
             value = json.dumps(value)
         if self.password is not None:
-            value = self._encrypt(value)  # Encrypt the value before storing
+            value = self._encrypt(value)
 
         self.operation_queue.put((self._execute, (f'''
             INSERT OR REPLACE INTO {table_name} (key, value)
@@ -406,7 +391,6 @@ class DictSQLite:
                     result = self._decrypt(result[0])
                 else:
                     result = json.loads(result[0])
-                # ★★★ 修正点：dictもlistもそれぞれ適切にラップ ★★★
                 if isinstance(result, dict):
                     return DictSQLite.RecursiveDict(self.TableProxy(self, self.table_name), key)
                 elif isinstance(result, list):
@@ -505,12 +489,10 @@ class DictSQLite:
 
     def switch_table(self, new_table_name, schema=None):
         self.operation_queue.put((self._switch_table, (new_table_name, schema,), {}, None))
-        # Add a sync point to wait until table is switched and created
         self.operation_queue.join()
 
     def _switch_table(self, new_table_name, schema):
         self.table_name = new_table_name
-        # Ensure table is created after switching
         self.create_table(schema)
 
     def has_key(self, key):
