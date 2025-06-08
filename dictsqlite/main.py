@@ -8,7 +8,7 @@ import portalocker
 import json
 from .modules import crypto
 
-__version__ = '1.5.1'
+__version__ = '1.5.2'
 
 
 def randomstrings(n):
@@ -115,6 +115,21 @@ class DictSQLite:
             self._base_key = base_key
             self._path = path
 
+        def to_dict(self):
+            """RecursiveDictオブジェクトを通常の辞書に変換"""
+
+            def convert_value(val):
+                if hasattr(val, 'to_dict'):
+                    return val.to_dict()
+                elif isinstance(val, dict):
+                    return {k: convert_value(v) for k, v in val.items()}
+                elif isinstance(val, list):
+                    return [convert_value(v) for v in val]
+                else:
+                    return val
+
+            return convert_value(self._get_db_value())
+
         def _get_db_value(self):
             base_val = self._proxy.get_raw_value(self._base_key)
             val = base_val
@@ -214,6 +229,10 @@ class DictSQLite:
                 return result[0]
 
         def __setitem__(self, key, value):
+            # RecursiveDictオブジェクトを辞書に変換
+            if hasattr(value, 'to_dict'):
+                value = value.to_dict()
+
             if isinstance(value, (dict, list)):
                 value = json.dumps(value)
             if self.db.password is not None:

@@ -22,7 +22,17 @@ db.close()
 db = dictsqlite.DictSQLite("./sample.db")
 print(db)
 db["John Doe"] += 1
+db["dict"] = {"name": "Alice", "age": 25, "city": "Tokyo"}
+db["dict"]["boy"] = False
 print(db)
+if db["dict"]["boy"] is not None:
+    if db["dict"]["boy"]:
+        print("男の子です")
+    else:
+        print("女の子です")
+db["dict_test"] = {"alice": {"age": 25, "city": "Tokyo", "boy": False}, "bob": {"age": 30, "city": "New York", "boy": True}}
+print(db)
+db["dict_test"]["alice"]["boy"] = True
 db["list_test"] = [1, 2, 3]  # リストを使用
 db["list_test"].append(4)  # リストに値を追加
 db["list_test"].append(5)  # リストに値を追加
