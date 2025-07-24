@@ -94,6 +94,10 @@ def test_dict_sqlite_v2():
     db.clear_table("products")
     print("productsテーブルクリア後:", db["products"])
 
+    db["products"]["product1"] = {"name": "ノートパソコン", "price": 80000, "stock": 10}
+    db["products"]["product2"] = set([1, 2, 3])  # setを使用
+    print(db["products"])
+
     # データベース全体のクリア
     db.clear_db()
     print("データベース全体クリア後:", db)
