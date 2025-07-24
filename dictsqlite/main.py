@@ -17,6 +17,7 @@ def randomstrings(n):
 
 
 # vvvvvvvvvvvvvvvv 新規追加: DBSyncedSet vvvvvvvvvvvvvvvv
+# 動作未確認
 class DBSyncedSet(set):
     """DBと自動同期するSetクラス"""
 
