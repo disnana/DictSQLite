@@ -14,6 +14,14 @@ Install [DictSQLite](https://pypi.org/project/DictSQLite/) with pip
   pip install dictsqlite
 ```
 
+## Update
+
+Update [DictSQLite](https://pypi.org/project/DictSQLite/) with pip
+
+```bash
+  pip install dictsqlite -U
+```
+
 ## Documents
 
 - [日本語のドキュメント](./documents/japanese.md)

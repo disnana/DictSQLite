@@ -1,0 +1,418 @@
+name: Auto Release on Commit
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get commit information
+        id: commit_info
+        run: |
+          # 最新のコミット情報を取得
+          commit_hash=$(git rev-parse HEAD)
+          commit_short_hash=$(git rev-parse --short HEAD)
+          commit_author=$(git log -1 --pretty=format:'%an')
+          commit_email=$(git log -1 --pretty=format:'%ae')
+          commit_msg=$(git log -1 --pretty=format:'%s')
+          commit_body=$(git log -1 --pretty=format:'%b' | sed '/^$/d')
+          commit_date=$(git log -1 --pretty=format:'%cd' --date=iso)
+          
+          echo "commit_hash=$commit_hash" >> $GITHUB_OUTPUT
+          echo "commit_short_hash=$commit_short_hash" >> $GITHUB_OUTPUT
+          echo "commit_author=$commit_author" >> $GITHUB_OUTPUT
+          echo "commit_email=$commit_email" >> $GITHUB_OUTPUT
+          echo "commit_msg=$commit_msg" >> $GITHUB_OUTPUT
+          echo "commit_date=$commit_date" >> $GITHUB_OUTPUT
+          
+          # コミットボディをファイルに保存（空行除去、空の場合は何も書かない）
+          if [ -n "$commit_body" ] && [ "$commit_body" != "$commit_msg" ]; then
+            echo "$commit_body" > commit_body.txt
+            echo "has_body=true" >> $GITHUB_OUTPUT
+          else
+            touch commit_body.txt
+            echo "has_body=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "📝 Commit Info:"
+          echo "  Hash: $commit_hash"
+          echo "  Author: $commit_author ($commit_email)"
+          echo "  Message: $commit_msg"
+          echo "  Date: $commit_date"
+
+      - name: Get latest release tag (hex-aware with padding)
+        id: get_latest_tag
+        run: |
+          # 16進数対応のバージョンソート関数（パディング対応）
+          get_latest_hex_tag() {
+            local latest_tag=""
+            local latest_major=0
+            local latest_minor=0
+            local latest_patch=0
+            
+            # デバッグ情報をstderrに出力
+            echo "🔍 Analyzing version tags..." >&2
+            
+            # 全てのタグを取得してループ（パディングあり・なし両対応）
+            for tag in $(git tag -l 'v[0-9a-f]*.[0-9a-f]*.[0-9a-f]*'); do
+              # vを除去
+              version=${tag#v}
+              IFS='.' read -r major minor patch <<< "$version"
+              
+              # パディングを除去して16進数を10進数に変換
+              # 先頭の0を除去してから変換（00a -> a, 0a -> a, a -> a）
+              major_clean=$(echo "$major" | sed 's/^0*//' | sed 's/^$/0/')
+              minor_clean=$(echo "$minor" | sed 's/^0*//' | sed 's/^$/0/')
+              patch_clean=$(echo "$patch" | sed 's/^0*//' | sed 's/^$/0/')
+              
+              major_dec=$((16#$major_clean))
+              minor_dec=$((16#$minor_clean))
+              patch_dec=$((16#$patch_clean))
+              
+              echo "  Checking: $tag (hex: $major.$minor.$patch -> dec: $major_dec.$minor_dec.$patch_dec)" >&2
+              
+              # バージョン比較
+              if [ $major_dec -gt $latest_major ] || \
+                 ([ $major_dec -eq $latest_major ] && [ $minor_dec -gt $latest_minor ]) || \
+                 ([ $major_dec -eq $latest_major ] && [ $minor_dec -eq $latest_minor ] && [ $patch_dec -gt $latest_patch ]); then
+                latest_tag=$tag
+                latest_major=$major_dec
+                latest_minor=$minor_dec
+                latest_patch=$patch_dec
+                echo "    ✅ New latest: $tag" >&2
+              fi
+            done
+            
+            # 結果のみをstdoutに出力
+            echo "$latest_tag"
+          }
+          
+          latest_tag=$(get_latest_hex_tag)
+          echo "latest_tag=$latest_tag" >> $GITHUB_OUTPUT
+          
+          if [ -n "$latest_tag" ]; then
+            echo "🏷️ Latest release tag: $latest_tag"
+          else
+            echo "🏷️ No previous release found"
+          fi
+
+      - name: Get commits in this push
+        id: push_commits
+        run: |
+          # GitHub Actionsのプッシュイベントから、今回のプッシュに含まれるコミットを取得
+          echo "📋 Processing push event commits..."
+          
+          # github.event.commits から今回のプッシュのコミットを取得
+          commits_json='${{ toJson(github.event.commits) }}'
+          
+          if [ "$commits_json" != "null" ] && [ "$commits_json" != "[]" ]; then
+            echo "✅ Found push event commits"
+            echo "$commits_json" | jq -r '.[] | "- **\(.message)** (`\(.id[0:7])`) by \(.author.name)"' > push_commits.txt
+            commits_count=$(echo "$commits_json" | jq '. | length')
+            echo "push_commits_count=$commits_count" >> $GITHUB_OUTPUT
+            echo "has_push_commits=true" >> $GITHUB_OUTPUT
+            
+            echo "📊 This push contains $commits_count commits:"
+            cat push_commits.txt
+          else
+            echo "⚠️ No push event commits found, falling back to git log"
+            echo "has_push_commits=false" >> $GITHUB_OUTPUT
+            echo "push_commits_count=1" >> $GITHUB_OUTPUT
+            echo "- **${{ steps.commit_info.outputs.commit_msg }}** (\`${{ steps.commit_info.outputs.commit_short_hash }}\`) by ${{ steps.commit_info.outputs.commit_author }}" > push_commits.txt
+          fi
+
+      - name: Extract version from commit message or increment by 1 (hex with padding)
+        id: get_version
+        run: |
+          commit_msg="${{ steps.commit_info.outputs.commit_msg }}"
+          
+          # コミットメッセージの最初の行からvx.x.xを抽出（16進数対応、パディング対応）
+          if echo "$commit_msg" | grep -qE '^v?[0-9a-f]+\.[0-9a-f]+\.[0-9a-f]+'; then
+            # バージョンが見つかった場合
+            version=$(echo "$commit_msg" | grep -oE '^v?[0-9a-f]+\.[0-9a-f]+\.[0-9a-f]+')
+            # vがなければ追加
+            if [[ ! "$version" =~ ^v ]]; then
+              version="v$version"
+            fi
+            
+            # パディングを適用
+            version_no_v=${version#v}
+            IFS='.' read -r MA MI PA <<< "$version_no_v"
+            
+            # 各要素をクリーンアップしてから2桁にパディング
+            MA_clean=$(echo "$MA" | sed 's/^0*//' | sed 's/^$/0/')
+            MI_clean=$(echo "$MI" | sed 's/^0*//' | sed 's/^$/0/')
+            PA_clean=$(echo "$PA" | sed 's/^0*//' | sed 's/^$/0/')
+            
+            # 10進数に変換してから16進数でパディング
+            ma_dec=$((16#$MA_clean))
+            mi_dec=$((16#$MI_clean))
+            pa_dec=$((16#$PA_clean))
+            
+            version=$(printf "v%02x.%02x.%02x" $ma_dec $mi_dec $pa_dec)
+            
+            echo "new_tag=$version" >> $GITHUB_OUTPUT
+            echo "from_commit=true" >> $GITHUB_OUTPUT
+            echo "✅ Found version in commit message: $version"
+          else
+            # バージョンが見つからなかった場合、既存タグから16進数で1つ繰り上げ
+            prev="${{ steps.get_latest_tag.outputs.latest_tag }}"
+            if [ -z "$prev" ]; then
+              new_tag="v00.00.01"
+            else
+              # vX.Y.Z を16進数として処理（パディング除去）
+              vers=${prev#v}
+              IFS='.' read -r MA MI PA <<< "$vers"
+              
+              # パディングを除去して16進数を10進数に変換
+              MA_clean=$(echo "$MA" | sed 's/^0*//' | sed 's/^$/0/')
+              MI_clean=$(echo "$MI" | sed 's/^0*//' | sed 's/^$/0/')
+              PA_clean=$(echo "$PA" | sed 's/^0*//' | sed 's/^$/0/')
+              
+              ma_dec=$((16#$MA_clean))
+              mi_dec=$((16#$MI_clean))
+              pa_dec=$((16#$PA_clean))
+              
+              echo "🔄 Previous version: $prev (hex: $MA.$MI.$PA -> dec: $ma_dec.$mi_dec.$pa_dec)"
+              
+              # パッチバージョンに1を足す
+              pa_dec=$((pa_dec + 1))
+              
+              # 16進数の桁上がり処理
+              if [ $pa_dec -ge 16 ]; then
+                mi_dec=$((mi_dec + pa_dec / 16))
+                pa_dec=$((pa_dec % 16))
+              fi
+              
+              if [ $mi_dec -ge 16 ]; then
+                ma_dec=$((ma_dec + mi_dec / 16))
+                mi_dec=$((mi_dec % 16))
+              fi
+              
+              # 10進数を16進数に変換して2桁パディングで出力
+              new_tag=$(printf "v%02x.%02x.%02x" $ma_dec $mi_dec $pa_dec)
+            fi
+            echo "new_tag=$new_tag" >> $GITHUB_OUTPUT
+            echo "from_commit=false" >> $GITHUB_OUTPUT
+            echo "🔄 Incremented version by 1 (hex): $new_tag (from $prev)"
+          fi
+
+      - name: Check if no new commits  
+        id: check_commits
+        run: |
+          latest_tag="${{ steps.get_latest_tag.outputs.latest_tag }}"
+          push_commits_count="${{ steps.push_commits.outputs.push_commits_count }}"
+          
+          if [ -n "$latest_tag" ] && [ "$push_commits_count" -eq "0" ]; then
+            echo "⚠️ No new commits since $latest_tag. Skipping release."
+            echo "skip_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Found $push_commits_count commits in this push. Proceeding with release."
+            echo "skip_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Find available tag version
+        if: steps.check_commits.outputs.skip_release == 'false'
+        id: find_available_tag
+        run: |
+          initial_tag="${{ steps.get_version.outputs.new_tag }}"
+          echo "🔍 Starting tag search from: $initial_tag"
+          
+          # 初期タグから始めて、利用可能なタグを見つける
+          base_tag=${initial_tag#v}
+          IFS='.' read -r MA MI PA <<< "$base_tag"
+          
+          # パディングを除去して10進数に変換
+          MA_clean=$(echo "$MA" | sed 's/^0*//' | sed 's/^$/0/')
+          MI_clean=$(echo "$MI" | sed 's/^0*//' | sed 's/^$/0/')
+          PA_clean=$(echo "$PA" | sed 's/^0*//' | sed 's/^$/0/')
+          
+          ma_dec=$((16#$MA_clean))
+          mi_dec=$((16#$MI_clean))
+          pa_dec=$((16#$PA_clean))
+          
+          max_attempts=50  # 最大50回まで試行
+          attempts=0
+          
+          while [ $attempts -lt $max_attempts ]; do
+            current_tag=$(printf "v%02x.%02x.%02x" $ma_dec $mi_dec $pa_dec)
+            
+            echo "🔍 Checking tag: $current_tag"
+            
+            if ! git rev-parse -q --verify "refs/tags/${current_tag}" >/dev/null 2>&1; then
+              echo "✅ Found available tag: $current_tag"
+              echo "available_tag=$current_tag" >> $GITHUB_OUTPUT
+              echo "found=true" >> $GITHUB_OUTPUT
+              exit 0
+            else
+              echo "⚠️ Tag $current_tag already exists"
+            fi
+            
+            # 次のバージョンを計算
+            pa_dec=$((pa_dec + 1))
+            
+            # 16進数の桁上がり処理
+            if [ $pa_dec -ge 16 ]; then
+              mi_dec=$((mi_dec + pa_dec / 16))
+              pa_dec=$((pa_dec % 16))
+            fi
+            
+            if [ $mi_dec -ge 16 ]; then
+              ma_dec=$((ma_dec + mi_dec / 16))
+              mi_dec=$((mi_dec % 16))
+            fi
+            
+            attempts=$((attempts + 1))
+          done
+          
+          echo "❌ Could not find available tag after $max_attempts attempts"
+          echo "found=false" >> $GITHUB_OUTPUT
+          exit 1
+
+      - name: Verify final tag availability
+        if: steps.check_commits.outputs.skip_release == 'false' && steps.find_available_tag.outputs.found == 'true'
+        id: verify_tag
+        run: |
+          final_tag="${{ steps.find_available_tag.outputs.available_tag }}"
+          
+          echo "🔍 Final verification for tag: $final_tag"
+          
+          if git rev-parse -q --verify "refs/tags/${final_tag}" >/dev/null 2>&1; then
+            echo "❌ ERROR: Tag $final_tag exists during final check!"
+            echo "This should not happen. Please check for race conditions."
+            exit 1
+          else
+            echo "✅ Final tag verification passed: $final_tag"
+            echo "verified_tag=$final_tag" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create and push tag
+        if: steps.check_commits.outputs.skip_release == 'false' && steps.find_available_tag.outputs.found == 'true'
+        run: |
+          new_tag="${{ steps.verify_tag.outputs.verified_tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          echo "🏷️ Creating tag: $new_tag"
+          
+          if [ "${{ steps.get_version.outputs.from_commit }}" == "true" ]; then
+            git tag -a "$new_tag" -m "Release $new_tag (from commit message)"
+          else
+            git tag -a "$new_tag" -m "Release $new_tag (auto-incremented hex with padding)"
+          fi
+          
+          echo "📤 Pushing tag: $new_tag"
+          git push origin "$new_tag"
+          echo "✅ Successfully created and pushed tag: $new_tag"
+
+      - name: Create ZIP of current commit
+        if: steps.check_commits.outputs.skip_release == 'false' && steps.find_available_tag.outputs.found == 'true'
+        id: zip
+        run: |
+          zipname="site-${{ steps.verify_tag.outputs.verified_tag }}.zip"
+          zip -r "$zipname" . -x "./.git/*" "./.github/*"
+          echo "zipname=$zipname" >> $GITHUB_OUTPUT
+          echo "📦 Created ZIP: $zipname"
+
+      - name: Generate release notes
+        if: steps.check_commits.outputs.skip_release == 'false' && steps.find_available_tag.outputs.found == 'true'
+        id: release_notes
+        run: |
+          tag="${{ steps.verify_tag.outputs.verified_tag }}"
+          initial_tag="${{ steps.get_version.outputs.new_tag }}"
+          commit_msg="${{ steps.commit_info.outputs.commit_msg }}"
+          commit_author="${{ steps.commit_info.outputs.commit_author }}"
+          commit_hash="${{ steps.commit_info.outputs.commit_short_hash }}"
+          commit_date="${{ steps.commit_info.outputs.commit_date }}"
+          push_commits_count="${{ steps.push_commits.outputs.push_commits_count }}"
+          has_push_commits="${{ steps.push_commits.outputs.has_push_commits }}"
+          latest_tag="${{ steps.get_latest_tag.outputs.latest_tag }}"
+          has_body="${{ steps.commit_info.outputs.has_body }}"
+          
+          # リリースノートをファイルに直接書き込み
+          {
+            echo "## 📋 Release Information"
+            echo ""
+            echo "**Version**: $tag"
+            echo "**Release Date**: $(date '+%Y-%m-%d %H:%M:%S JST')"
+            
+            if [ "$has_push_commits" == "true" ]; then
+              echo "**Commits in this push**: $push_commits_count commits"
+            else
+              echo "**Commits included**: 1 commit"
+            fi
+            
+            # バージョン自動調整の説明
+            if [ "$initial_tag" != "$tag" ]; then
+              echo ""
+              echo "> **Note**: Originally planned as $initial_tag, but automatically adjusted to $tag due to existing tags."
+            fi
+            
+            echo ""
+            echo "## 📝 Latest Commit"
+            echo ""
+            echo "- **Message**: $commit_msg"
+            echo "- **Author**: $commit_author"
+            echo "- **Hash**: \`$commit_hash\`"
+            echo "- **Date**: $commit_date"
+            
+            echo ""
+            if [ "$has_push_commits" == "true" ] && [ "$push_commits_count" -gt 1 ]; then
+              echo "## 📦 Commits in This Push"
+              echo ""
+              cat push_commits.txt
+            else
+              echo "## 📦 Changes in This Release"
+              echo ""
+              echo "- **$commit_msg** (\`$commit_hash\`) by $commit_author"
+            fi
+            
+            echo ""
+            echo "## 📦 Assets"
+            echo ""
+            echo "- Source code archive (ZIP)"
+            echo "- All source files as of commit \`$commit_hash\`"
+            
+            # コミットボディがある場合のみ追加
+            if [ "$has_body" == "true" ] && [ -s commit_body.txt ]; then
+              echo ""
+              echo "## 📖 Additional Commit Details"
+              echo ""
+              echo "\`\`\`"
+              cat commit_body.txt
+              echo "\`\`\`"
+            fi
+            
+            echo ""
+            echo "---"
+            echo "*Generated automatically by GitHub Actions with hex versioning and 2-digit padding*"
+            
+          } > release_notes.md
+          
+          echo "📝 Generated release notes for push with $push_commits_count commits"
+
+      - name: Create GitHub Release
+        if: steps.check_commits.outputs.skip_release == 'false' && steps.find_available_tag.outputs.found == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.verify_tag.outputs.verified_tag }}
+          name: "🚀 Release ${{ steps.verify_tag.outputs.verified_tag }}"
+          draft: false
+          prerelease: false
+          body_path: release_notes.md
+          files: ${{ steps.zip.outputs.zipname }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
