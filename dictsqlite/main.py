@@ -1,3 +1,5 @@
+import base64
+import pickle
 import random
 import sqlite3
 import threading
@@ -9,7 +11,7 @@ import json
 from .modules import crypto
 import collections.abc
 
-__version__ = '1.6.0'  # バージョンアップ
+__version__ = '1.7.0'  # バージョンアップ
 
 
 def randomstrings(n):
@@ -290,11 +292,23 @@ class DictSQLite:
             if self.db.password is not None:
                 value_str = self.db._decrypt(value_str)
 
+            # データ形式を自動判定
             try:
-                # カスタムデコーダーフックを使用してJSONをパース
+                # まずJSONとして試行（既存データ）
                 return json.loads(value_str, object_hook=self.db._extended_json_decoder_hook)
-            except json.JSONDecodeError:
-                return value_str  # JSONではないプレーンテキストかもしれない
+            except (json.JSONDecodeError, TypeError):
+                try:
+                    # JSONが失敗したらpickleとして試行（新しいデータ）
+                    if isinstance(value_str, str):
+                        # base64またはlatin1でエンコードされたpickleデータ
+                        value_bytes = base64.b64decode(value_str)
+                        # または: value_bytes = value_str.encode('latin1')
+                    else:
+                        value_bytes = value_str
+                    return pickle.loads(value_bytes)
+                except:
+                    # どちらも失敗した場合は文字列として返す
+                    return value_str
 
         def __getitem__(self, key):
             raw_value = self.get_raw_value(key)
@@ -302,8 +316,12 @@ class DictSQLite:
             return self.db._wrap_in_proxy(key, self, raw_value)
 
         def __setitem__(self, key, value):
-            # カスタムエンコーダーフックを使用してJSON文字列に変換
-            value_str = json.dumps(value, default=self.db._extended_json_encoder_hook)
+            # pickleでバイナリ化
+            value_bytes = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+
+            # bytesを文字列にエンコード（TEXT列用）
+            value_str = base64.b64encode(value_bytes).decode('ascii')
+            # または: value_str = value_bytes.decode('latin1')  # latin1は全バイト値対応
 
             if self.db.password is not None:
                 value_str = self.db._encrypt(value_str)
