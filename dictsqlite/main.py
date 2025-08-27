@@ -11,7 +11,7 @@ import json
 from .modules import crypto
 import collections.abc
 
-__version__ = '1.7.0'  # バージョンアップ
+__version__ = '1.7.1'  # バージョンアップ
 
 
 def randomstrings(n):
@@ -255,18 +255,24 @@ class DictSQLite:
         def items(self):
             # items()の返り値の値もプロキシでラップする必要がある
             current_dict = self._get_db_value()
+            result = []
             for key, value in current_dict.items():
-                yield key, self._proxy.db._wrap_in_proxy(
+                wrapped_value = self._proxy.db._wrap_in_proxy(
                     self._base_key, self._proxy, value, path=self._path + (key,)
                 )
+                result.append((key, wrapped_value))
+            return result
 
         def values(self):
             # values()の返り値もプロキシでラップする必要がある
             current_dict = self._get_db_value()
+            result = []
             for key, value in current_dict.items():
-                yield self._proxy.db._wrap_in_proxy(
+                wrapped_value = self._proxy.db._wrap_in_proxy(
                     self._base_key, self._proxy, value, path=self._path + (key,)
                 )
+                result.append(wrapped_value)
+            return result
 
     # ^^^^^^^^^^^^^^^^ RecursiveDict ^^^^^^^^^^^^^^^^
 
