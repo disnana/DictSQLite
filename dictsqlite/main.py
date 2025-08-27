@@ -9,13 +9,18 @@ import string
 import portalocker
 import json
 from .modules import crypto
+from .modules import utils
 import collections.abc
 
-__version__ = '1.7.1'  # バージョンアップ
+__version__ = '1.7.2'  # バージョンアップ
 
 
 def randomstrings(n):
     return ''.join(secrets.choice(string.ascii_letters) for _ in range(n))
+
+
+def expiring_dict(expiration_time: int):
+    return utils.ExpiringDict(expiration_time)
 
 
 # vvvvvvvvvvvvvvvv 新規追加: DBSyncedSet vvvvvvvvvvvvvvvv
