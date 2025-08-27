@@ -12,7 +12,7 @@ from .modules import crypto
 from .modules import utils
 import collections.abc
 
-__version__ = '1.7.2'  # バージョンアップ
+__version__ = '1.7.3'  # バージョンアップ
 
 
 def randomstrings(n):
@@ -470,7 +470,6 @@ class DictSQLite:
                     self.operation_queue.task_done()
 
     def create_table(self, table_name=None, schema=None):
-        # ... (変更なし)
         if table_name is not None:
             self.table_name = table_name
         if schema is None:
@@ -483,7 +482,6 @@ class DictSQLite:
         self.operation_queue.put((self._execute, (create_table_sql,), {}, None))
 
     def _validate_schema(self, schema):
-        # ... (変更なし)
         try:
             def tables():
                 result_queue = queue.Queue()
