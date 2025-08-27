@@ -12,6 +12,16 @@ PythonでSQLiteの基本的な操作をDictのように扱うことができま�
 ```bash
 pip install dictsqlite
 ```
+現時点ではuvを利用しなくても高速です。
+
+## 更新
+
+[DictSQLite](https://pypi.org/project/DictSQLite/) を pip で更新する。
+
+```bash
+pip install dictsqlite -U
+```
+現時点ではuvを利用しなくても高速です。
 
 ## ドキュメント
 
