@@ -12,7 +12,7 @@ from .modules import crypto
 from .modules import utils
 import collections.abc
 
-__version__ = '1.7.7'  # バージョンアップ
+__version__ = '1.7.8'  # バージョンアップ
 
 
 def randomstrings(n):
@@ -419,7 +419,12 @@ class DictSQLite:
 
     def _wrap_in_proxy(self, key, proxy, value, path=()):
         """生の値を適切なプロキシオブジェクトでラップする。"""
-        if isinstance(value, dict):
+        # vvvvvvvvvvvvvvvv 変更点 vvvvvvvvvvvvvvvv
+        # isinstance(value, dict) を isinstance(value, collections.abc.Mapping) に変更。
+        # これにより、dictだけでなく、ExpiringDictのような辞書風オブジェクトも
+        # 正しくRecursiveDictプロキシでラップされるようになる。
+        if isinstance(value, collections.abc.Mapping):
+            # ^^^^^^^^^^^^^^^^ 変更点 ^^^^^^^^^^^^^^^^
             return DictSQLite.RecursiveDict(proxy, key, path)
         elif isinstance(value, list):
             # ネストされたリストは同期されない点に注意

@@ -2,15 +2,44 @@ import time
 import asyncio
 import threading
 from typing import Optional, Any
+import collections.abc
 
 
-class ExpiringDict:
+class ExpiringDict(collections.abc.MutableMapping):
     def __init__(self, expiration_time: int):
         self.data = {}
         self.expiration_time = expiration_time
         self.expiration_tasks = {}  # 非同期タスク管理
         self.expiration_timers = {}  # 同期タイマー管理
         self._loop = None
+
+    def __getstate__(self):
+        """
+        pickle化する際に呼ばれるメソッド。
+        保存すべき状態だけを含む辞書を返す。
+        """
+        return {
+            'data': self.data,
+            'expiration_time': self.expiration_time,
+        }
+
+    def __setstate__(self, state):
+        """
+        pickleから復元する際に呼ばれるメソッド。
+        __getstate__で返した辞書を受け取り、オブジェクトの状態を復元する。
+        """
+        self.data = state['data']
+        self.expiration_time = state['expiration_time']
+
+        # タイマーやタスクに関連する変数を初期化する
+        self.expiration_tasks = {}
+        self.expiration_timers = {}
+        self._loop = None
+
+        # 復元されたデータすべてに対して、再度タイマーを設定し直す
+        # 注意: 復元された時点から新しい有効期限がスタートする
+        for key in list(self.data.keys()):
+            self._set_expiration(key)
 
     def _get_or_create_loop(self) -> Optional[asyncio.AbstractEventLoop]:
         """実行中のループを取得、なければ新規作成"""
@@ -100,6 +129,14 @@ class ExpiringDict:
             if key in self.expiration_tasks:
                 self.expiration_tasks[key].cancel()
                 del self.expiration_tasks[key]
+
+    def __iter__(self):
+        """辞書のキーをイテレートするためのメソッド"""
+        return iter(self.data)
+
+    def __len__(self):
+        """辞書の要素数を返すためのメソッド"""
+        return len(self.data)
 
     def __contains__(self, key: str):
         return key in self.data
