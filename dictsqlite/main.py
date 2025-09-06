@@ -12,7 +12,7 @@ from .modules import crypto
 from .modules import utils
 import collections.abc
 
-__version__ = '1.7.5'  # バージョンアップ
+__version__ = '1.7.6'  # バージョンアップ
 
 
 def randomstrings(n):

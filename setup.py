@@ -13,7 +13,7 @@ PYTHON_REQUIRES = ">=3.6"
 
 INSTALL_REQUIRES = [
     'portalocker',
-    'cryptography'
+    'cryptography',
     'pickle'
 ]
 
