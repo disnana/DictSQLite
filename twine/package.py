@@ -157,7 +157,6 @@ class PackageMetadata(TypedDict, total=False):
     filetype: str
     gpg_signature: Tuple[str, bytes]
     attestations: str
-    md5_digest: str
     sha256_digest: str
     blake2_256_digest: str
 
@@ -188,7 +187,6 @@ class PackageFile:
         hasher.hash()
         hexdigest = hasher.hexdigest()
 
-        self.md5_digest = hexdigest.md5
         self.sha2_digest = hexdigest.sha2
         self.blake2_256_digest = hexdigest.blake2
 
@@ -214,14 +212,7 @@ class PackageFile:
 
         # Parse and validate metadata.
         meta, unparsed = metadata.parse_email(data)
-        if unparsed:
-            raise exceptions.InvalidDistribution(
-                "Invalid distribution metadata: {}".format(
-                    "; ".join(
-                        f"unrecognized or malformed field {key!r}" for key in unparsed
-                    )
-                )
-            )
+
         # setuptools emits License-File metadata fields while declaring
         # Metadata-Version 2.1. This is invalid because the metadata
         # specification does not allow to add arbitrary fields, and because
@@ -232,6 +223,22 @@ class PackageFile:
         # than 2.4.
         if version.Version(meta.get("metadata_version", "0")) < version.Version("2.4"):
             meta.pop("license_files", None)
+            # Support for metadata version 2.4 requires packaging version 24.1
+            # or later. When parsing metadata with an older packaging, the
+            # invalid License-File fields are not understood and added to the
+            # unparsed dictionary. Remove them to avoid triggering the
+            # following check.
+            unparsed.pop("license-file", None)
+
+        if unparsed:
+            raise exceptions.InvalidDistribution(
+                "Invalid distribution metadata: {}".format(
+                    "; ".join(
+                        f"unrecognized or malformed field {key!r}" for key in unparsed
+                    )
+                )
+            )
+
         try:
             metadata.Metadata.from_raw(meta)
         except metadata.ExceptionGroup as group:
@@ -265,7 +272,7 @@ class PackageFile:
 
         # Additional meta-data: some of these fileds may not be set. Some
         # package repositories do not allow null values, so this only sends
-        # non-null values. In particular, FIPS disables MD5 and Blake2, making
+        # non-null values. In particular, FIPS disables Blake2, making
         # the digest values null. See https://github.com/pypa/twine/issues/775
 
         if self.comment is not None:
@@ -279,9 +286,6 @@ class PackageFile:
 
         if self.attestations is not None:
             data["attestations"] = json.dumps(self.attestations)
-
-        if self.md5_digest:
-            data["md5_digest"] = self.md5_digest
 
         if self.blake2_256_digest:
             data["blake2_256_digest"] = self.blake2_256_digest
@@ -343,7 +347,6 @@ class PackageFile:
 
 
 class Hexdigest(NamedTuple):
-    md5: Optional[str]
     sha2: Optional[str]
     blake2: Optional[str]
 
@@ -358,13 +361,6 @@ class HashManager:
         """Initialize our manager and hasher objects."""
         self.filename = filename
 
-        self._md5_hasher = None
-        try:
-            self._md5_hasher = hashlib.md5()
-        except ValueError:
-            # FIPs mode disables MD5
-            pass
-
         self._sha2_hasher = hashlib.sha256()
 
         self._blake_hasher = None
@@ -373,15 +369,6 @@ class HashManager:
         except (ValueError, TypeError, AttributeError):
             # FIPS mode disables blake2
             pass
-
-    def _md5_update(self, content: bytes) -> None:
-        if self._md5_hasher is not None:
-            self._md5_hasher.update(content)
-
-    def _md5_hexdigest(self) -> Optional[str]:
-        if self._md5_hasher is not None:
-            return self._md5_hasher.hexdigest()
-        return None
 
     def _sha2_update(self, content: bytes) -> None:
         if self._sha2_hasher is not None:
@@ -405,14 +392,12 @@ class HashManager:
         """Hash the file contents."""
         with open(self.filename, "rb") as fp:
             for content in iter(lambda: fp.read(io.DEFAULT_BUFFER_SIZE), b""):
-                self._md5_update(content)
                 self._sha2_update(content)
                 self._blake_update(content)
 
     def hexdigest(self) -> Hexdigest:
         """Return the hexdigest for the file."""
         return Hexdigest(
-            self._md5_hexdigest(),
             self._sha2_hexdigest(),
             self._blake_hexdigest(),
         )
