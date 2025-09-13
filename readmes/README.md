@@ -4,7 +4,7 @@
 <br>
 You can handle basic SQLite operations in Python like Dict.
 
-- [日本語のREADMEはこちら](./README_JP.md)
+- [日本語のREADMEはこちら](README_JP.md)
 
 ## Installation
 
@@ -24,9 +24,9 @@ Update [DictSQLite](https://pypi.org/project/DictSQLite/) with pip
 
 ## Documents
 
-- [日本語のドキュメント](./documents/japanese.md)
+- [日本語のドキュメント](../documents/japanese.md)
 
-- [English Documentation](./documents/english.md)
+- [English Documentation](../documents/english.md)
 
 ## Authors
 
@@ -42,7 +42,7 @@ For support, email <support@disnana.com> or join our [Discord Server](https://di
 
 ## License
 
-This project is licensed under the Custom MIT License. See the [LICENSE](./LICENSE) file for more details.
+This project is licensed under the Custom MIT License. See the [LICENSE](../LICENSE) file for more details.
 
 Please note that while you are free to modify the code, you must give appropriate credit to the original creator and follow the terms of this license.
 

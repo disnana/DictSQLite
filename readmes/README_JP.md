@@ -25,9 +25,9 @@ pip install dictsqlite -U
 
 ## ドキュメント
 
-- [日本語のドキュメント](./documents/japanese.md)
+- [日本語のドキュメント](../documents/japanese.md)
 
-- [英語ドキュメント](./documents/english.md)
+- [英語ドキュメント](../documents/english.md)
 
 ## 著者
 
@@ -44,7 +44,7 @@ pip install dictsqlite -U
 ## ライセンス
 
 このプロジェクトはカスタム MIT Licenseの下でライセンスされています。
-詳細は[LICENSE](./LICENSE)ファイルを参照してください。
+詳細は[LICENSE](../LICENSE)ファイルを参照してください。
 
 コードを改変することは自由ですが、元の作成者に適切なクレジットを与え、このライセンスの条項に従う必要があることに注意してください。
 
