@@ -1,3 +1,5 @@
+"""ユーティリティモジュール: 有効期限付き辞書などの補助クラスを提供。"""
+
 import time
 import asyncio
 import threading
@@ -6,6 +8,8 @@ import collections.abc
 
 
 class ExpiringDict(collections.abc.MutableMapping):
+    """有効期限付き辞書クラス。指定時間後に自動的にキーが削除される。"""
+
     def __init__(self, expiration_time: int):
         self.data = {}
         self.expiration_time = expiration_time
@@ -102,7 +106,7 @@ class ExpiringDict(collections.abc.MutableMapping):
         """自動判定で有効期限を設定"""
         try:
             # 実行中のループがあるかチェック
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()  # pylint: disable=unused-variable
             # ループが実行中なら非同期で処理
             asyncio.create_task(self._set_expiration_async(key))
         except RuntimeError:
