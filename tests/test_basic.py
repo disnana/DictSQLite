@@ -1,6 +1,15 @@
-import json
-import time
-import sqlite3
+"""Basic tests for DictSQLite.
+
+このファイルでは pytest のスタイルでテストを書いているため、
+テスト関数にドキュメンテーション文字列を都度追加するのではなく、
+以下の pylint 警告を無効化しています:
+- missing-function-docstring
+- redefined-outer-name (pytest fixture が原因)
+- broad-except (テスト内で汎用例外を無視するため)
+- trailing-newlines
+"""
+# pylint: disable=missing-function-docstring,redefined-outer-name,broad-except,trailing-newlines
+
 import pytest
 
 from dictsqlite.main import DictSQLite
@@ -122,5 +131,3 @@ def test_contains_keys_and_clear_table(db: DictSQLite):
     db.clear_table()
     # テーブルクリア後は空
     assert db.keys() == []
-
-

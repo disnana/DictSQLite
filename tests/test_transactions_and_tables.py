@@ -1,5 +1,6 @@
-import sqlite3
-import time
+"""Tests for transactions and table management in DictSQLite."""
+# pylint: disable=redefined-outer-name
+
 import pytest
 
 from dictsqlite.main import DictSQLite
@@ -7,11 +8,13 @@ from dictsqlite.main import DictSQLite
 
 @pytest.fixture()
 def db_path(tmp_path):
-    return tmp_path / "test_tx_table.db"
+    """Provide a path to a temporary database file."""
+    return tmp_path / "test.db"
 
 
 @pytest.fixture()
 def db(db_path):
+    """Provide a DictSQLite instance."""
     d = DictSQLite(str(db_path))
     yield d
     d.close()
@@ -60,6 +63,7 @@ def test_switch_table_and_clear(db: DictSQLite):
 
 
 def test_version2_multi_tables(db_path):
+    """Test multiple tables feature in version 2."""
     db = DictSQLite(str(db_path), version=2)
     try:
         # 先にテーブル作成（version=2は自動作成しない設計）
@@ -92,3 +96,4 @@ def test_version2_multi_tables(db_path):
         assert "alpha" in r and "beta" in r
     finally:
         db.close()
+

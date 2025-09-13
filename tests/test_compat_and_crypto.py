@@ -1,27 +1,29 @@
-import base64
-import json
-import os
-import sqlite3
-import tempfile
-import pytest
-import collections.abc
+"""Tests for compatibility and cryptography features of DictSQLite."""
+# pylint: disable=redefined-outer-name
 
+import collections.abc
+import json
+import sqlite3
+import pytest
 from dictsqlite.main import DictSQLite
 
 
 @pytest.fixture()
 def db_path(tmp_path):
+    """Provide a path to a temporary database file."""
     return tmp_path / "test_compat.db"
 
 
 @pytest.fixture()
 def db(db_path):
+    """Provide a DictSQLite instance."""
     d = DictSQLite(str(db_path))
     yield d
     d.close()
 
 
 def test_json_compatibility_read(db_path):
+    """Test reading data from a database with old JSON format."""
     # 手動で旧JSON形式のデータを挿入し、APIで正しく読めることを確認
     conn = sqlite3.connect(str(db_path))
     cur = conn.cursor()
@@ -36,42 +38,53 @@ def test_json_compatibility_read(db_path):
     conn.commit()
     conn.close()
 
-    db = DictSQLite(str(db_path))
+    db_conn = DictSQLite(str(db_path))
     try:
-        v = db["kjson"]
+        v = db_conn["kjson"]
         assert isinstance(v, collections.abc.Mapping)
         assert v["a"] == 1
         assert set(v["b"]) == {2, 3}
         assert v["c"] == [1, 2, 3]
     finally:
-        db.close()
+        db_conn.close()
 
 
 def test_encryption_roundtrip(tmp_path):
+    """Test the full encryption and decryption roundtrip."""
     # cryptography が無い場合はスキップ
     pytest.importorskip("cryptography", reason="cryptography not installed")
+    # pylint: disable=import-outside-toplevel
     from dictsqlite.modules import crypto
 
     pub_path = tmp_path / "pub.pem"
     priv_path = tmp_path / "priv.pem"
     password = "pw123"
 
-    crypto.key_create(password=password, pubkey_path=str(pub_path), private_key_path=str(priv_path))
+    crypto.key_create(
+        password=password,
+        pubkey_path=str(pub_path),
+        private_key_path=str(priv_path),
+    )
 
     db_path = tmp_path / "enc.db"
-    db = DictSQLite(str(db_path), password=password, publickey_path=str(pub_path), privatekey_path=str(priv_path))
+    db_conn = DictSQLite(
+        str(db_path),
+        password=password,
+        publickey_path=str(pub_path),
+        privatekey_path=str(priv_path),
+    )
     try:
-        db["num"] = 42
-        db["text"] = "hello"
-        db["arr"] = [1, 2, 3]
-        db["obj"] = {"x": 1, "y": 2}
-        db["set"] = {1, 2}
+        db_conn["num"] = 42
+        db_conn["text"] = "hello"
+        db_conn["arr"] = [1, 2, 3]
+        db_conn["obj"] = {"x": 1, "y": 2}
+        db_conn["set"] = {1, 2}
 
-        assert db["num"] == 42
-        assert db["text"] == "hello"
-        assert db["arr"] == [1, 2, 3]
-        assert db["obj"]["x"] == 1
-        assert set(db["set"]) == {1, 2}
+        assert db_conn["num"] == 42
+        assert db_conn["text"] == "hello"
+        assert db_conn["arr"] == [1, 2, 3]
+        assert db_conn["obj"]["x"] == 1
+        assert set(db_conn["set"]) == {1, 2}
 
         # DB内部が暗号化されていることを確認（復号なしではプレーンテキストは見えない=bytesで存在）
         con = sqlite3.connect(str(db_path))
@@ -81,4 +94,4 @@ def test_encryption_roundtrip(tmp_path):
         con.close()
         assert isinstance(raw, (bytes, bytearray))
     finally:
-        db.close()
+        db_conn.close()
