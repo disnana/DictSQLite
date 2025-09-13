@@ -171,7 +171,7 @@ class DBSyncedList(list):
 class DictSQLite:  # pylint: disable=too-many-instance-attributes
     """SQLiteを辞書風APIで扱うためのラッパークラス。"""
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         db_name: str,
         table_name: str = 'main',
@@ -344,8 +344,8 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                     else:
                         value_bytes = value_str
                     return pickle.loads(value_bytes)
-                except Exception:  # noqa: BLE001
-                    # どちらも失敗した場合は文字列として返す
+                except (pickle.UnpicklingError, ValueError, TypeError):
+                    # pickleデコードも失敗した場合は文字列として返す
                     return value_str
 
         def __getitem__(self, key):
@@ -506,7 +506,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                     finally:
                         try:
                             portalocker.unlock(f)
-                        except Exception:  # ロック解放での例外は無視
+                        except (OSError, ValueError):  # ロック解放での例外は無視
                             pass
                 if result_queue is not None:
                     result_queue.put(result)
