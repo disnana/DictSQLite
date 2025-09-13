@@ -16,7 +16,7 @@ import portalocker
 from .modules import utils
 from .modules import crypto
 
-__version__ = '1.8.0'  # バージョンアップ
+__version__ = '1.8.1'  # バージョンアップ
 
 
 def randomstrings(n):

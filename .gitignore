@@ -9,3 +9,4 @@ build/
 *.pyc
 dictsqlite-1.4.5/
 *.db
+*.db-shm
