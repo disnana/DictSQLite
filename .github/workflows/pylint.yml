@@ -11,13 +11,17 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pylint
+        # プロジェクト依存
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        # Lint と vendored twine が要求する依存
+        pip install pylint pytest requests requests-toolbelt rich rfc3986 urllib3 readme_renderer packaging
     - name: Analysing the code with pylint
       run: |
-        pylint $(git ls-files '*.py')
+        # 解析対象を明示して vendored を含めつつ、未知ファイルの取りこぼし/取り過ぎを避ける
+        pylint dictsqlite/ twine/ tests/
