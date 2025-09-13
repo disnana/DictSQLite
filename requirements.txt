@@ -1,8 +1,2 @@
-requests
 portalocker
-rich
-packaging
-readme_renderer
-requests_toolbelt
-rfc3986
-urllib3
+cryptography
