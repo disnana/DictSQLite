@@ -500,6 +500,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             try:
                 with open(self.lock_file, "w", encoding="utf-8") as f:
                     portalocker.lock(f, portalocker.LOCK_EX)
+                    self._process_queue()
                     try:
                         result = operation(*args, **kwargs)
                     finally:
