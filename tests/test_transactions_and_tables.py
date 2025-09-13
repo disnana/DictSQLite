@@ -21,6 +21,7 @@ def db(db_path):
 
 
 def test_transactions_commit_and_rollback(db: DictSQLite):
+    """Test commit and rollback functionality."""
     # BEGIN -> write -> COMMIT
     db.begin_transaction()
     db["k1"] = "v1"
@@ -42,6 +43,7 @@ def test_transactions_commit_and_rollback(db: DictSQLite):
 
 
 def test_switch_table_and_clear(db: DictSQLite):
+    """Test switching tables and clearing them."""
     db["main_k"] = 1
     # 別テーブルへスイッチ
     db.switch_table("t1")
@@ -96,4 +98,3 @@ def test_version2_multi_tables(db_path):
         assert "alpha" in r and "beta" in r
     finally:
         db.close()
-
