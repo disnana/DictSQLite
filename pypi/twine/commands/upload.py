@@ -20,11 +20,8 @@ from typing import Dict, List, cast
 import requests
 from rich import print
 
-from twine import commands
-from twine import exceptions
-from twine import package as package_file
-from twine import settings
-from twine import utils
+from pypi.twine import package as package_file
+from pypi.twine import settings, commands, exceptions, utils
 
 logger = logging.getLogger(__name__)
 

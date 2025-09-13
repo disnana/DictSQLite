@@ -25,8 +25,7 @@ else:
         keyring = None
         NoKeyringError = None
 
-from twine import exceptions
-from twine import utils
+from pypi.twine import exceptions, utils
 
 logger = logging.getLogger(__name__)
 

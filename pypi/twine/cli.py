@@ -26,7 +26,7 @@ import rich.highlighter
 import rich.logging
 import rich.theme
 
-import twine
+from pypi import twine
 
 args = argparse.Namespace()
 

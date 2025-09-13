@@ -24,9 +24,7 @@ from packaging import metadata
 from packaging import version
 from rich import print
 
-from twine import exceptions
-from twine import sdist
-from twine import wheel
+from pypi.twine import sdist, exceptions, wheel
 
 # Monkeypatch Metadata 2.0 support
 metadata._VALID_METADATA_VERSIONS = [

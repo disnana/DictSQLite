@@ -3,8 +3,7 @@ import tarfile
 import zipfile
 from contextlib import suppress
 
-from twine import distribution
-from twine import exceptions
+from pypi.twine import distribution, exceptions
 
 
 class SDist(distribution.Distribution):

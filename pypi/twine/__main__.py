@@ -19,8 +19,7 @@ from typing import Any, cast
 
 import requests
 
-from twine import cli
-from twine import exceptions
+from pypi.twine import cli, exceptions
 
 logger = logging.getLogger(__name__)
 

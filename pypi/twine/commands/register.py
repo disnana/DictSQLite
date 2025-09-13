@@ -19,9 +19,8 @@ from typing import List, cast
 
 from rich import print
 
-from twine import exceptions
-from twine import package as package_file
-from twine import settings
+from pypi.twine import package as package_file
+from pypi.twine import settings, exceptions
 
 
 def register(register_settings: settings.Settings, package: str) -> None:
