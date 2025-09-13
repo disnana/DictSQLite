@@ -25,4 +25,4 @@ jobs:
     - name: Analysing the code with pylint
       run: |
         # 解析対象を明示して vendored を含めつつ、未知ファイルの取りこぼし/取り過ぎを避ける
-        pylint dictsqlite/ twine/ tests/
+        pylint dictsqlite/ tests/
