@@ -29,8 +29,8 @@ import urllib3
 from requests.adapters import HTTPAdapter
 from requests_toolbelt.utils import user_agent
 
-from pypi import twine
-from pypi.twine import exceptions
+import twine
+from twine import exceptions
 
 # Shim for input to allow testing.
 input_func = input

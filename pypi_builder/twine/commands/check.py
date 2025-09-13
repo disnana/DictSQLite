@@ -23,8 +23,8 @@ from typing import Dict, List, Tuple
 import readme_renderer.rst
 from rich import print
 
-from pypi.twine import commands
-from pypi.twine import package as package_file
+from twine import commands
+from twine import package as package_file
 
 logger = logging.getLogger(__name__)
 

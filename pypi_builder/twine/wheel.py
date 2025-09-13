@@ -16,7 +16,8 @@ import re
 import zipfile
 from typing import List
 
-from pypi.twine import distribution, exceptions
+from twine import distribution
+from twine import exceptions
 
 wheel_file_re = re.compile(
     r"""^(?P<namever>(?P<name>.+?)(-(?P<ver>\d.+?))?)

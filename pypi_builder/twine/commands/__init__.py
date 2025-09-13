@@ -22,7 +22,7 @@ import glob
 import os.path
 from typing import Dict, List, NamedTuple
 
-from pypi.twine import exceptions
+from twine import exceptions
 
 __all__: List[str] = []
 

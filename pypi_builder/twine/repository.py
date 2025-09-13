@@ -19,8 +19,8 @@ import requests_toolbelt
 import rich.progress
 from rich import print
 
-from pypi.twine import package as package_file
-from pypi.twine.utils import make_requests_session
+from twine import package as package_file
+from twine.utils import make_requests_session
 
 LEGACY_PYPI = "https://pypi.python.org/"
 LEGACY_TEST_PYPI = "https://testpypi.python.org/"
