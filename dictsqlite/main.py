@@ -1,25 +1,31 @@
+"""DictSQLite: SQLiteを辞書のように扱うためのメインモジュール。"""
+
 import base64
-import pickle
-import random
-import sqlite3
-import threading
-import queue
-import secrets
-import string
-import portalocker
-import json
-from .modules import crypto
-from .modules import utils
 import collections.abc
+import json
+import pickle
+import queue
+import random
+import secrets
+import sqlite3
+import string
+import threading
+
+import portalocker
+
+from .modules import utils
+from .modules import crypto
 
 __version__ = '1.7.9'  # バージョンアップ
 
 
 def randomstrings(n):
+    """英字からなる長さnのランダム文字列を返す。"""
     return ''.join(secrets.choice(string.ascii_letters) for _ in range(n))
 
 
 def expiring_dict(expiration_time: int):
+    """指定秒数の有効期限を持つ辞書を生成する。"""
     return utils.ExpiringDict(expiration_time)
 
 
@@ -162,11 +168,23 @@ class DBSyncedList(list):
         return result
 
 
-class DictSQLite:
-    def __init__(self, db_name: str, table_name: str = 'main', schema: bool = None, conflict_resolver: bool = False,
-                 journal_mode: str = None, lock_file: str = None, password: str = None,
-                 publickey_path: str = "./public_keys.pem", privatekey_path: str = "./private_keys.pem",
-                 version: int = 1, key_create: bool = False):
+class DictSQLite:  # pylint: disable=too-many-instance-attributes
+    """SQLiteを辞書風APIで扱うためのラッパークラス。"""
+
+    def __init__(
+        self,
+        db_name: str,
+        table_name: str = 'main',
+        schema: bool = None,
+        conflict_resolver: bool = False,
+        journal_mode: str = None,
+        lock_file: str = None,
+        password: str = None,
+        publickey_path: str = "./public_keys.pem",
+        privatekey_path: str = "./private_keys.pem",
+        version: int = 1,
+        key_create: bool = False,
+    ):  # pylint: disable=too-many-arguments
         self.version = version
         self.db_name = db_name
         self.password = password
@@ -197,13 +215,16 @@ class DictSQLite:
             self.conn.execute(f'PRAGMA journal_mode={journal_mode};')
 
     # vvvvvvvvvvvvvvvv RecursiveDictは前回の修正のまま vvvvvvvvvvvvvvvv
-    class RecursiveDict(collections.abc.MutableMapping):
+    class RecursiveDict(collections.abc.MutableMapping):  # pylint: disable=protected-access
+        """ネストした辞書をDBと同期しつつ操作するためのプロキシ。"""
+
         def __init__(self, proxy, base_key, path=()):
             self._proxy = proxy
             self._base_key = base_key
             self._path = path
 
         def to_dict(self):
+            """現在の値を通常のdictとして返す。"""
             return self._get_db_value()
 
         def _get_db_value(self):
@@ -220,7 +241,7 @@ class DictSQLite:
             current_dict = self._get_db_value()
             value = current_dict[key]
             # 値をプロキシでラップして返す
-            return self._proxy.db._wrap_in_proxy(
+            return self._proxy.db._wrap_in_proxy(  # pylint: disable=protected-access
                 self._base_key, self._proxy, value, path=self._path + (key,)
             )
 
@@ -262,7 +283,7 @@ class DictSQLite:
             current_dict = self._get_db_value()
             result = []
             for key, value in current_dict.items():
-                wrapped_value = self._proxy.db._wrap_in_proxy(
+                wrapped_value = self._proxy.db._wrap_in_proxy(  # pylint: disable=protected-access
                     self._base_key, self._proxy, value, path=self._path + (key,)
                 )
                 result.append((key, wrapped_value))
@@ -273,7 +294,7 @@ class DictSQLite:
             current_dict = self._get_db_value()
             result = []
             for key, value in current_dict.items():
-                wrapped_value = self._proxy.db._wrap_in_proxy(
+                wrapped_value = self._proxy.db._wrap_in_proxy(  # pylint: disable=protected-access
                     self._base_key, self._proxy, value, path=self._path + (key,)
                 )
                 result.append(wrapped_value)
@@ -281,15 +302,18 @@ class DictSQLite:
 
     # ^^^^^^^^^^^^^^^^ RecursiveDict ^^^^^^^^^^^^^^^^
 
-    class TableProxy:
+    class TableProxy:  # pylint: disable=protected-access
+        """特定テーブルのキー/値へ非同期キュー経由でアクセスするプロキシ。"""
+
         def __init__(self, db, table_name):
             self.db = db
             self.table_name = table_name
 
         def get_raw_value(self, key):
+            """DBから生の値を取得し、必要に応じて復号/デコードして返す。"""
             result_queue = queue.Queue()
             self.db.operation_queue.put((
-                self.db._fetchone,
+                self.db._fetchone,  # pylint: disable=protected-access
                 (f"SELECT value FROM {self.table_name} WHERE key = ?", (key,)),
                 {}, result_queue
             ))
@@ -301,12 +325,15 @@ class DictSQLite:
 
             value_str = result[0]
             if self.db.password is not None:
-                value_str = self.db._decrypt(value_str)
+                value_str = self.db._decrypt(value_str)  # pylint: disable=protected-access
 
             # データ形式を自動判定
             try:
                 # まずJSONとして試行（既存データ）
-                return json.loads(value_str, object_hook=self.db._extended_json_decoder_hook)
+                return json.loads(
+                    value_str,
+                    object_hook=self.db._extended_json_decoder_hook,  # pylint: disable=protected-access
+                )
             except (json.JSONDecodeError, TypeError):
                 try:
                     # JSONが失敗したらpickleとして試行（新しいデータ）
@@ -317,14 +344,14 @@ class DictSQLite:
                     else:
                         value_bytes = value_str
                     return pickle.loads(value_bytes)
-                except:
+                except Exception:  # noqa: BLE001
                     # どちらも失敗した場合は文字列として返す
                     return value_str
 
         def __getitem__(self, key):
             raw_value = self.get_raw_value(key)
             # 生の値をプロキシオブジェクトでラップして返す
-            return self.db._wrap_in_proxy(key, self, raw_value)
+            return self.db._wrap_in_proxy(key, self, raw_value)  # pylint: disable=protected-access
 
         def __setitem__(self, key, value):
             # pickleでバイナリ化
@@ -335,17 +362,21 @@ class DictSQLite:
             # または: value_str = value_bytes.decode('latin1')  # latin1は全バイト値対応
 
             if self.db.password is not None:
-                value_str = self.db._encrypt(value_str)
+                value_str = self.db._encrypt(value_str)  # pylint: disable=protected-access
 
             self.db.operation_queue.put((
-                self.db._execute,
-                (f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)", (key, value_str)),
-                {}, None
+                self.db._execute,  # pylint: disable=protected-access
+                (
+                    f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
+                    (key, value_str),
+                ),
+                {},
+                None,
             ))
 
         def __delitem__(self, key):
             self.db.operation_queue.put((
-                self.db._execute,
+                self.db._execute,  # pylint: disable=protected-access
                 (f"DELETE FROM {self.table_name} WHERE key = ?", (key,)),
                 {}, None
             ))
@@ -353,7 +384,7 @@ class DictSQLite:
         def __contains__(self, key):
             result_queue = queue.Queue()
             self.db.operation_queue.put((
-                self.db._fetchone,
+                self.db._fetchone,  # pylint: disable=protected-access
                 (f"SELECT 1 FROM {self.table_name} WHERE key = ?", (key,)),
                 {}, result_queue
             ))
@@ -376,9 +407,10 @@ class DictSQLite:
                     yield key, row[1]
 
         def get_all_rows(self):
+            """テーブル内の全行を (key, value) のタプルで返す。"""
             result_queue = queue.Queue()
             self.db.operation_queue.put((
-                self.db._fetchall,
+                self.db._fetchall,  # pylint: disable=protected-access
                 (f"SELECT key, value FROM {self.table_name}",),
                 {}, result_queue
             ))
@@ -389,12 +421,20 @@ class DictSQLite:
 
     # vvvvvvvvvvvvvvvv 変更点: 暗号化/復号の責務を分離 vvvvvvvvvvvvvvvv
     def _encrypt(self, data_str: str) -> bytes:
+        """文字列をRSAで暗号化してbytesを返す。"""
         # 文字列をバイトにエンコードしてから暗号化
-        return crypto.encrypt_rsa(crypto.load_public_key(self.publickey_path, self.password), data_str.encode("utf-8"))
+        return crypto.encrypt_rsa(
+            crypto.load_public_key(self.publickey_path, self.password),
+            data_str.encode("utf-8"),
+        )
 
     def _decrypt(self, data: bytes) -> str:
+        """RSAで復号して文字列に戻す。"""
         # バイトを復号して文字列にデコード
-        return crypto.decrypt_rsa(crypto.load_private_key(self.privatekey_path, self.password), data).decode("utf-8")
+        return crypto.decrypt_rsa(
+            crypto.load_private_key(self.privatekey_path, self.password),
+            data,
+        ).decode("utf-8")
 
     # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -420,28 +460,25 @@ class DictSQLite:
     def _wrap_in_proxy(self, key, proxy, value, path=()):
         """生の値を適切なプロキシオブジェクトでラップする。"""
         # vvvvvvvvvvvvvvvv 変更点 vvvvvvvvvvvvvvvv
-        # isinstance(value, dict) を isinstance(value, collections.abc.Mapping) に変更。
-        # これにより、dictだけでなく、ExpiringDictのような辞書風オブジェクトも
-        # 正しくRecursiveDictプロキシでラップされるようになる。
         if isinstance(value, collections.abc.Mapping):
-            # ^^^^^^^^^^^^^^^^ 変更点 ^^^^^^^^^^^^^^^^
+            # isinstance(value, dict) から変更
             return DictSQLite.RecursiveDict(proxy, key, path)
-        elif isinstance(value, list):
+        if isinstance(value, list):
             # ネストされたリストは同期されない点に注意
             if path:
                 return value
             return DBSyncedList(key, proxy, value)
-        elif isinstance(value, set):
+        if isinstance(value, set):
             # ネストされたセットは同期されない点に注意
             if path:
                 return value
             return DBSyncedSet(key, proxy, value)
-        else:
-            return value
+        return value
 
     # ^^^^^^^^^^^^^^^^ 新規追加: カスタムJSONフックとプロキシラッパー ^^^^^^^^^^^^^^^^
 
     def _process_queue(self):
+        """操作キューを順次処理するワーカー。"""
         # ... (変更なし)
         while True:
             operation, args, kwargs, result_queue = self.operation_queue.get()
@@ -449,7 +486,7 @@ class DictSQLite:
                 result = operation(*args, **kwargs)
                 if result_queue is not None:
                     result_queue.put(result)
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 print(f"An error occurred while processing the queue: {e}")
                 if result_queue is not None:
                     result_queue.put(e)
@@ -457,24 +494,30 @@ class DictSQLite:
                 self.operation_queue.task_done()
 
     def _process_queue_conflict_resolver(self):
-        # ... (変更なし)
+        """排他ロックを使って操作キューを処理するワーカー。"""
         while True:
             operation, args, kwargs, result_queue = self.operation_queue.get()
-            with open(self.lock_file, "w") as f:
-                portalocker.lock(f, portalocker.LOCK_EX)
-                self._process_queue()
-                try:
-                    result = operation(*args, **kwargs)
-                    if result_queue is not None:
-                        result_queue.put(result)
-                except Exception as e:
-                    print(f"An error occurred while processing the queue: {e}")
-                    if result_queue is not None:
-                        result_queue.put(e)
-                finally:
-                    self.operation_queue.task_done()
+            try:
+                with open(self.lock_file, "w", encoding="utf-8") as f:
+                    portalocker.lock(f, portalocker.LOCK_EX)
+                    try:
+                        result = operation(*args, **kwargs)
+                    finally:
+                        try:
+                            portalocker.unlock(f)
+                        except Exception:  # ロック解放での例外は無視
+                            pass
+                if result_queue is not None:
+                    result_queue.put(result)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                print(f"An error occurred while processing the queue: {e}")
+                if result_queue is not None:
+                    result_queue.put(e)
+            finally:
+                self.operation_queue.task_done()
 
     def create_table(self, table_name=None, schema=None):
+        """テーブルを作成（存在しない場合）。任意でスキーマを指定可能。"""
         if table_name is not None:
             self.table_name = table_name
         if schema is None:
@@ -487,12 +530,13 @@ class DictSQLite:
         self.operation_queue.put((self._execute, (create_table_sql,), {}, None))
 
     def _validate_schema(self, schema):
+        """与えられたスキーマが有効か一時テーブルで検証。"""
         try:
             def tables():
                 result_queue = queue.Queue()
-                self.operation_queue.put((self._fetchall, (f'''
+                self.operation_queue.put((self._fetchall, ("""
                     SELECT name FROM sqlite_master WHERE type='table'
-                ''',), {}, result_queue))
+                """,), {}, result_queue))
                 result = result_queue.get()
                 if isinstance(result, Exception):
                     raise result
@@ -504,17 +548,19 @@ class DictSQLite:
             self.cursor.execute(f'CREATE TABLE {temp} {schema}')
             self.cursor.execute(f'DROP TABLE {temp}')
             return True
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             print(f"Schema validation failed: {e}")
             return False
 
     def _execute(self, query, params=()):
+        """カーソルでクエリを実行し、トランザクション外なら即コミット。"""
         # ... (変更なし)
         self.cursor.execute(query, params)
         if not self.in_transaction:
             self.conn.commit()
 
     def execute_custom(self, query, params=()):
+        """任意のクエリを安全に実行（内部キュー経由）。"""
         # ... (変更なし)
         result_queue = queue.Queue()
         self.operation_queue.put((self._execute, (query, params), {}, result_queue))
@@ -525,6 +571,7 @@ class DictSQLite:
 
     # vvvvvvvvvvvvvvvv 変更点: 新しいJSON処理を利用 vvvvvvvvvvvvvvvv
     def __setitem__(self, key, value):
+        """キーに値を設定。versionに応じてテーブル切替に対応。"""
         if self.version == 2:
             if not isinstance(key, tuple):
                 raise ValueError("version=2では (key, table_name) の形式で指定してください")
@@ -537,30 +584,31 @@ class DictSQLite:
         proxy[key] = value
 
     def __getitem__(self, key):
+        """キーの値取得。version=2ではテーブル選択も可能。"""
         if self.version == 2:
             if key not in self.tables():
                 raise KeyError(f"Table {key} not found.")
             return self.TableProxy(self, key)
-        else:
-            # TableProxyの__getitem__に処理を委譲
-            proxy = self.TableProxy(self, self.table_name)
-            return proxy[key]
+        # TableProxyの__getitem__に処理を委譲
+        proxy = self.TableProxy(self, self.table_name)
+        return proxy[key]
 
     # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
     def _fetchone(self, query, params=()):
+        """1行を取得して返す内部ヘルパー。"""
         # ... (変更なし)
         self.cursor.execute(query, params)
         return self.cursor.fetchone()
 
     def __delitem__(self, key):
-        self.operation_queue.put((self._execute, (f'''
+        self.operation_queue.put((self._execute, (f'''\
             DELETE FROM {self.table_name} WHERE key = ?
         ''', (key,)), {}, None))
 
     def __contains__(self, key):
         result_queue = queue.Queue()
-        self.operation_queue.put((self._fetchone, (f'''
+        self.operation_queue.put((self._fetchone, (f'''\
             SELECT 1 FROM {self.table_name} WHERE key = ?
         ''', (key,)), {}, result_queue))
         result = result_queue.get()
@@ -574,21 +622,22 @@ class DictSQLite:
             for table in self.tables():
                 result[table] = self[table]
             return str(result)
-        else:
-            # TableProxy経由で取得することで正しい表現を返す
-            return repr(dict(self.TableProxy(self, self.table_name)))
+        # TableProxy経由で取得することで正しい表現を返す
+        return repr(dict(self.TableProxy(self, self.table_name)))
 
     def _fetchall(self, query, params=()):
+        """全行を取得して返す内部ヘルパー。"""
         # ... (変更なし)
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
 
     # ... (以降のメソッドは変更なし)
     def keys(self, table_name=None):
+        """指定テーブル（未指定なら現行）の全キー一覧を返す。"""
         if table_name is None:
             table_name = self.table_name
         result_queue = queue.Queue()
-        self.operation_queue.put((self._fetchall, (f'''
+        self.operation_queue.put((self._fetchall, (f'''\
             SELECT key FROM {table_name}
         ''',), {}, result_queue))
         result = result_queue.get()
@@ -597,16 +646,20 @@ class DictSQLite:
         return [row[0] for row in result]
 
     def begin_transaction(self):
+        """トランザクションを開始。"""
         self.operation_queue.put((self._begin_transaction, (), {}, None))
 
     def _begin_transaction(self):
+        """BEGINを実行しフラグを設定。"""
         self.conn.execute('BEGIN TRANSACTION')
         self.in_transaction = True
 
     def commit_transaction(self):
+        """トランザクションをコミット。"""
         self.operation_queue.put((self._commit_transaction, (), {}, None))
 
     def _commit_transaction(self):
+        """COMMITを実行しフラグをクリア。"""
         try:
             if self.in_transaction:
                 self.conn.execute('COMMIT')
@@ -614,9 +667,11 @@ class DictSQLite:
             self.in_transaction = False
 
     def rollback_transaction(self):
+        """トランザクションをロールバック。"""
         self.operation_queue.put((self._rollback_transaction, (), {}, None))
 
     def _rollback_transaction(self):
+        """ROLLBACKを実行しフラグをクリア。"""
         try:
             if self.in_transaction:
                 self.conn.execute('ROLLBACK')
@@ -624,24 +679,29 @@ class DictSQLite:
             self.in_transaction = False
 
     def switch_table(self, new_table_name, schema=None):
+        """操作対象のテーブルを切り替える。"""
         self.operation_queue.put((self._switch_table, (new_table_name, schema,), {}, None))
         self.operation_queue.join()
 
     def _switch_table(self, new_table_name, schema):
+        """内部的にテーブル名を切替えて必要なら作成。"""
         self.table_name = new_table_name
         self.create_table(schema)
 
     def has_key(self, key):
+        """キーの存在を返す。"""
         return key in self
 
     def clear_db(self):
+        """全テーブルを削除し、mainを再作成。"""
         self.operation_queue.put((self._clear_db, (), {}, None))
         self.operation_queue.join()
 
     def _clear_db(self):
-        self.cursor.execute(f'''
+        """DB内の全テーブルをDROPして初期化。"""
+        self.cursor.execute("""
             SELECT name FROM sqlite_master WHERE type='table'
-        ''')
+        """)
         tables = self.cursor.fetchall()
         for table in tables:
             self.cursor.execute(f'DROP TABLE IF EXISTS {table[0]}')
@@ -651,19 +711,21 @@ class DictSQLite:
         self.create_table()
 
     def tables(self):
+        """DB内の全テーブル名を返す。"""
         result_queue = queue.Queue()
-        self.operation_queue.put((self._fetchall, (f'''
+        self.operation_queue.put((self._fetchall, ("""
             SELECT name FROM sqlite_master WHERE type='table'
-        ''',), {}, result_queue))
+        """,), {}, result_queue))
         result = result_queue.get()
         if isinstance(result, Exception):
             raise result
         return [row[0] for row in result]
 
     def clear_table(self, table_name=None):
+        """指定テーブル（未指定なら現行）の全データを削除。"""
         if table_name is None:
             table_name = self.table_name
-        self.operation_queue.put((self._execute, (f'''
+        self.operation_queue.put((self._execute, (f'''\
             DELETE FROM {table_name}
         ''',), {}, None))
 
@@ -674,5 +736,6 @@ class DictSQLite:
         self.close()
 
     def close(self):
+        """バックグラウンド処理の完了を待ってDB接続を閉じる。"""
         self.operation_queue.join()
         self.conn.close()
