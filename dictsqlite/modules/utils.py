@@ -83,7 +83,7 @@ class ExpiringDict(collections.abc.MutableMapping):
                 del self.expiration_timers[key]
 
         timer = threading.Timer(self.expiration_time, remove_key)
-        timer.daemon = True  # ← この1行だけ追加
+        timer.daemon = True
         timer.start()
         self.expiration_timers[key] = timer
 
