@@ -555,6 +555,9 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         except sqlite3.Error as e:
             logger.error("Schema validation failed: %s", e)
             return False
+        except Exception as e:
+            logger.error("Unexpected error during schema validation: %s", e, exc_info=True)
+            return False
 
     def _execute(self, query, params=()):
         """カーソルでクエリを実行し、トランザクション外なら即コミット。"""
