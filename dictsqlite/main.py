@@ -555,7 +555,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         except sqlite3.Error as e:
             logger.error("Schema validation failed: %s", e)
             return False
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             logger.error("Unexpected error during schema validation: %s", e, exc_info=True)
             return False
 
