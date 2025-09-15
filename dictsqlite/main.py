@@ -10,13 +10,16 @@ import secrets
 import sqlite3
 import string
 import threading
+import logging
 
 import portalocker
 
-from .modules import utils
-from .modules import crypto
+from dictsqlite.modules import crypto, utils
 
-__version__ = '1.8.0'  # バージョンアップ
+__version__ = '1.8.1'  # バージョンアップ
+
+# ロガーの設定
+logger = logging.getLogger(__name__)
 
 
 def randomstrings(n):
@@ -487,7 +490,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                 if result_queue is not None:
                     result_queue.put(result)
             except Exception as e:  # pylint: disable=broad-exception-caught
-                print(f"An error occurred while processing the queue: {e}")
+                logger.error("An error occurred while processing the queue: %s", e, exc_info=True)
                 if result_queue is not None:
                     result_queue.put(e)
             finally:
@@ -511,7 +514,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                 if result_queue is not None:
                     result_queue.put(result)
             except Exception as e:  # pylint: disable=broad-exception-caught
-                print(f"An error occurred while processing the queue: {e}")
+                logger.error("An error occurred while processing the queue: %s", e, exc_info=True)
                 if result_queue is not None:
                     result_queue.put(e)
             finally:
@@ -549,8 +552,11 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             self.cursor.execute(f'CREATE TABLE {temp} {schema}')
             self.cursor.execute(f'DROP TABLE {temp}')
             return True
+        except sqlite3.Error as e:
+            logger.error("Schema validation failed: %s", e)
+            return False
         except Exception as e:  # pylint: disable=broad-exception-caught
-            print(f"Schema validation failed: {e}")
+            logger.error("Unexpected error during schema validation: %s", e, exc_info=True)
             return False
 
     def _execute(self, query, params=()):

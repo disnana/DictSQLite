@@ -3,8 +3,12 @@
 import time
 import asyncio
 import threading
+import logging
 from typing import Optional, Any
 import collections.abc
+
+# ロガーの設定
+logger = logging.getLogger(__name__)
 
 
 class ExpiringDict(collections.abc.MutableMapping):
@@ -74,12 +78,12 @@ class ExpiringDict(collections.abc.MutableMapping):
         def remove_key():
             if key in self.data:
                 del self.data[key]
-                print(f"Key '{key}' expired and removed at {time.time()}")
+                logger.info("Key '%s' expired and removed at %s", key, time.time())
             if key in self.expiration_timers:
                 del self.expiration_timers[key]
 
         timer = threading.Timer(self.expiration_time, remove_key)
-        timer.daemon = True  # ← この1行だけ追加
+        timer.daemon = True
         timer.start()
         self.expiration_timers[key] = timer
 
@@ -98,7 +102,7 @@ class ExpiringDict(collections.abc.MutableMapping):
         await asyncio.sleep(self.expiration_time)
         if key in self.data:
             del self.data[key]
-            print(f"Key '{key}' expired and removed at {time.time()}")
+            logger.info("Key '%s' expired and removed at %s", key, time.time())
         if key in self.expiration_tasks:
             del self.expiration_tasks[key]
 
