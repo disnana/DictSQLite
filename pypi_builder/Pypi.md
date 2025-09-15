@@ -12,7 +12,6 @@ Install [DictSQLite](https://pypi.org/project/DictSQLite/) via pip:
 
 ```bash
 pip install dictsqlite
-````
 
 ## Documentation
 
