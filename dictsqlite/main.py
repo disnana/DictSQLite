@@ -16,7 +16,7 @@ import portalocker
 
 from dictsqlite.modules import crypto, utils
 
-__version__ = '1.8.1'  # バージョンアップ
+__version__ = '1.8.2'  # バージョンアップ
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
