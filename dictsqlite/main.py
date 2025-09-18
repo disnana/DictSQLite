@@ -16,10 +16,20 @@ from typing import Optional
 import portalocker
 
 from dictsqlite.modules import crypto, utils
-from .modules.safe_pickle import SafePolicy, safe_loads
-from .modules import safe_pickle
+from dictsqlite.modules.safe_pickle import SafePolicy, safe_loads
+from dictsqlite.modules import safe_pickle
 
 __version__ = '1.8.6'  # セキュリティ強化: safe pickle 導入
+
+# 公開API
+__all__ = [
+    'DictSQLite',
+    'randomstrings',
+    'expiring_dict',
+    'safe_pickle',
+    'SafePolicy',
+    'safe_loads'
+]
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
