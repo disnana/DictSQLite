@@ -16,7 +16,7 @@ import portalocker
 
 from dictsqlite.modules import crypto, utils
 
-__version__ = '1.8.4'  # セキュリティ強化
+__version__ = '1.8.5'  # セキュリティ強化
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -262,7 +262,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             current_dict = self._get_db_value()
             value = current_dict[key]
             # 値をプロキシでラップして返す
-            return self._proxy.db._wrap_in_proxy(  # pylint: disable=protected-access
+            return self._proxy.db.wrap_in_proxy(
                 self._base_key, self._proxy, value, path=self._path + (key,)
             )
 
@@ -304,7 +304,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             current_dict = self._get_db_value()
             result = []
             for key, value in current_dict.items():
-                wrapped_value = self._proxy.db._wrap_in_proxy(  # pylint: disable=protected-access
+                wrapped_value = self._proxy.db.wrap_in_proxy(  # pylint: disable=protected-access
                     self._base_key, self._proxy, value, path=self._path + (key,)
                 )
                 result.append((key, wrapped_value))
@@ -315,7 +315,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             current_dict = self._get_db_value()
             result = []
             for key, value in current_dict.items():
-                wrapped_value = self._proxy.db._wrap_in_proxy(  # pylint: disable=protected-access
+                wrapped_value = self._proxy.db.wrap_in_proxy(  # pylint: disable=protected-access
                     self._base_key, self._proxy, value, path=self._path + (key,)
                 )
                 result.append(wrapped_value)
@@ -379,7 +379,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         def __getitem__(self, key):
             raw_value = self.get_raw_value(key)
             # 生の値をプロキシオブジェクトでラップして返す
-            return self.db._wrap_in_proxy(key, self, raw_value)  # pylint: disable=protected-access
+            return self.db.wrap_in_proxy(key, self, raw_value)
 
         def __setitem__(self, key, value):
             # pickleでバイナリ化
@@ -507,7 +507,10 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             return DBSyncedSet(key, proxy, value)
         return value
 
-    # ^^^^^^^^^^^^^^^^ 新規追加: カスタムJSONフックとプロキシラッパー ^^^^^^^^^^^^^^^^
+    # 公開ラッパー: Pylintのprotected-access回避用
+    def wrap_in_proxy(self, key, proxy, value, path=()):
+        """_wrap_in_proxy の公開エイリアス。"""
+        return self._wrap_in_proxy(key, proxy, value, path)
 
     def _process_queue(self):
         """操作キューを順次処理するワーカー。"""
