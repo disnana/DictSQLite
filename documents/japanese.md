@@ -1,40 +1,62 @@
 # DictSQLite
 
-`DictSQLite`は、SQLiteデータベースを辞書のように扱えるPythonクラスです。スレッドセーフで、トランザクション管理やデータベース操作をキューで処理します。
+`DictSQLite`は、SQLiteデータベースを辞書のように扱えるPythonライブラリです。スレッドセーフで、トランザクション管理やデータベース操作をバックグラウンドのキューで処理するように設計されています。
 
-## 自動競合解決について
+## 仕組み
 
-自動競合解決は非推奨です。パフォーマンスが大幅に低下する可能性があります。私はその実装に多くの時間を費やし、心配しました。もしもっと良いアイデアがあれば、それを実装したいと考えています。
+DictSQLiteは、SQLiteデータベースの上に辞書風のインターフェースを提供します。内部でデータがどのように扱われるかを理解することで、より効果的にライブラリを使用できます。
 
-通常は、次のようなコードで変数のクラスを呼び出し、適切に使用したり開いたり閉じたりすれば、問題は発生しません。
+### データ格納とシリアライズ
 
-```python
-db = dictsqlite.DictSQLite("db_path")
+Pythonオブジェクトをキーの値として代入すると、DictSQLiteはオブジェクトを直接保存するわけではありません。代わりに、以下の手順を実行します。
+
+1.  **シリアライズ**: Pythonオブジェクト（例: `dict`, `list`, `set`, カスタムオブジェクト）は、Pythonの`pickle`モジュールを使用してバイナリ形式にシリアライズされます。
+2.  **エンコード**: 生成されたバイナリデータは、`Base64`を使用してテキスト文字列にエンコードされます。
+3.  **保存**: このBase64文字列が、デフォルトで`TEXT`型として定義されているSQLiteテーブルの`value`カラムに保存されます。
+
+このプロセスにより、ほぼすべてのPythonオブジェクトをデータベースに保存できます。データを取得する際には逆のプロセスが実行されます。テキストがBase64からデコードされ、`pickle`でデシリアライズされて元のPythonオブジェクトが再構築されます。
+
+### テーブルスキーマ
+
+デフォルトでは、DictSQLiteの各テーブルは単純なキーバリュースキーマで作成されます。
+
+```sql
+CREATE TABLE table_name (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
 ```
 
-しかし、異なるPythonコードから同時にデータベースにアクセスして書き込む場合は、自動競合解決が必要になる可能性があります。とはいえ、速度が非常に速いため、衝突の可能性は非常に低いと思われます。
+-   `key`: プライマリキーとして機能する一意の`TEXT`文字列。
+-   `value`: Base64でエンコードされた、pickle化されたPythonオブジェクトを格納する`TEXT`カラム。
 
-本当に心配な場合は、パフォーマンスを犠牲にして自動競合解決を有効にすることをお勧めします。
+`DictSQLite`インスタンスの作成時や新しいテーブルの作成時に、カスタムスキーマを指定することも可能です。ただし、辞書形式のアクセス（`db['key'] = value`）を使用するには、スキーマに**必ず** `key` と `value` カラムが含まれている必要があります。
+
+### キー、インデックス、データ型
+
+-   **プライマリキー**: `key`カラムがプライマリキーとして機能し、高速な検索を保証します。
+-   **インデックス**: デフォルトスキーマでは、インデックスはプライマリキーにしかありません。カスタムインデックスが必要な場合は、カスタムスキーマの一部として定義する必要があります。
+-   **データ型**: `key`は通常文字列ですが、カスタムスキーマを使用すれば`INTEGER`などの他の型も使用できます。`value`には、pickle化可能な任意のPythonオブジェクトを指定できます。ライブラリは、変更時に自動的にデータベースに書き戻す特殊なプロキシオブジェクト`DBSyncedList`および`DBSyncedSet`も提供します。
 
 ## クラス `DictSQLite`
 
 ### コンストラクタ
 
 ```python
-DictSQLite(db_name: str, table_name: str = 'main', schema: bool = None, conflict_resolver: bool = False, journal_mode: str = None, lock_file: str = None, password: str = None, publickey_path: str = "./public_keys.pem", privatekey_path: str = "./private_keys.pem", version: int = 1, key_create: bool = False)
+DictSQLite(db_name: str, table_name: str = 'main', schema: str = None, conflict_resolver: bool = False, journal_mode: str = None, lock_file: str = None, password: str = None, publickey_path: str = "./public_keys.pem", privatekey_path: str = "./private_keys.pem", version: int = 1, key_create: bool = False)
 ```
 
-- **db_name**: データベースファイルの名前
-- **table_name**: 使用するテーブルの名前 (デフォルト: 'main')
-- **schema**: テーブルのスキーマ (デフォルト: `'(key TEXT PRIMARY KEY, value TEXT)'`)
-- **conflict_resolver**: コンフリクト解決機能の有無
-- **journal_mode**: SQLiteのジャーナルモード
-- **lock_file**: ロックファイルの名前
-- **password**: データベースのパスワード
-- **publickey_path**: 公開鍵のパス
-- **privatekey_path**: 秘密鍵のパス
-- **version**: データベースのバージョン
-- **key_create**: キーの作成フラグ
+- **db_name**: データベースファイルの名前。
+- **table_name**: 使用するテーブルの名前 (デフォルト: 'main')。
+- **schema**: テーブルのスキーマ。デフォルトは `'(key TEXT PRIMARY KEY, value TEXT)'` です。テーブルにカスタムSQLスキーマを文字列で指定できます。ライブラリはテーブルを作成する前にスキーマを検証します。
+- **conflict_resolver**: 非推奨。この機能は将来のバージョンで削除される可能性があります。
+- **journal_mode**: SQLiteのジャーナルモード (例: "WAL")。
+- **lock_file**: 競合解決のためのロックファイルの名前。
+- **password**: データを暗号化するためのパスワード。
+- **publickey_path**: 暗号化用の公開鍵へのパス。
+- **privatekey_path**: 暗号化用の秘密鍵へのパス。
+- **version**: データベースのバージョン (1または2)。バージョン2では、複数のテーブルをより簡単に管理できます。
+- **key_create**: `True`の場合、新しい暗号化キーが生成されます。
 
 ### メソッド
 
@@ -43,184 +65,102 @@ DictSQLite(db_name: str, table_name: str = 'main', schema: bool = None, conflict
 - `__delitem__(self, key)`: データを削除します。
 - `__contains__(self, key)`: キーが存在するか確認します。
 - `__repr__(self)`: データベースの内容を辞書形式で表示します。
-- `TableProxy(self, db, table_name)`: version2のためのテーブルプロキシクラス
 - `keys(self)`: 全てのキーを取得します。
 - `begin_transaction(self)`: トランザクションを開始します。
 - `commit_transaction(self)`: トランザクションをコミットします。
 - `rollback_transaction(self)`: トランザクションをロールバックします。
-- `switch_table(self, new_table_name, schema=None)`: テーブルを切り替えます。
-- `clear_db(self)`: データベース全体をクリアします。
-- `clear_table(self, table_name=None)`: 現在のテーブルまたは指定したテーブルのデータをクリアします。
-- `tables(self)`: 全てのテーブル名を取得します。
+- `switch_table(self, new_table_name, schema=None)`: アクティブなテーブルを切り替えます。
+- `create_table(self, table_name, schema=None)`: 新しいテーブルを作成します。
+- `clear_db(self)`: すべてのテーブルを削除してデータベース全体をクリアします。
+- `clear_table(self, table_name=None)`: テーブルからすべてのデータをクリアします。
+- `tables(self)`: すべてのテーブル名のリストを取得します。
 - `close(self)`: データベース接続を閉じます。
+- `execute_custom(self, query, params=())`: カスタムSQLクエリを実行します。
 
 ## 使用方法
 
-以下のコードスニペットは、`DictSQLite`(Version 2)クラスの基本的な使い方を示しています。
+### マルチテーブルでの使用 (v2 - 推奨)
 
 ```python
 import dictsqlite
 
-def test_dict_sqlite_v2():
-    # version=2 で DictSQLite クラスのインスタンスを作成
-    db = dictsqlite.DictSQLite("sample_v2.db", version=2, journal_mode="WAL")
-    
-    # データベースをクリア
+with dictsqlite.DictSQLite("sample_v2_jp.db", version=2, journal_mode="WAL") as db:
     db.clear_db()
-    print("初期状態:", db)
     
     # テーブルを作成
     db.create_table("users")
     db.create_table("products")
-    print("テーブル作成後:", db)
     
-    # users テーブルにデータを追加
-    db["users"]["user1"] = {"name": "田中太郎", "age": 30, "email": "tanaka@example.com"}
-    db["users"]["user2"] = {"name": "佐藤花子", "age": 25, "email": "sato@example.com"}
-    print("ユーザーデータ追加後:", db)
+    # 'users' テーブルにデータを追加
+    users = db["users"]
+    users["user1"] = {"name": "田中太郎", "age": 30}
+    users["user2"] = {"name": "佐藤花子", "age": 25}
     
-    # products テーブルにデータを追加
-    db["products"]["product1"] = {"name": "ノートパソコン", "price": 80000, "stock": 10}
-    db["products"]["product2"] = {"name": "スマートフォン", "price": 60000, "stock": 20}
-    print("商品データ追加後:", db)
+    # 'products' テーブルにデータを追加
+    products = db["products"]
+    products["prod1"] = {"name": "ノートパソコン", "price": 80000}
     
-    # 特定のテーブルの内容を表示
-    print("ユーザーテーブルの内容:", db["users"])
-    print("商品テーブルの内容:", db["products"])
+    print("データベースの全内容:", db)
+    print("Usersテーブル:", db["users"])
     
-    # 特定のデータを取得
-    print("user1の情報:", db["users"]["user1"])
-    print("product2の情報:", db["products"]["product2"])
-    
-    # キーの存在確認
-    print("user1は存在するか:", "user1" in db["users"])
-    print("user3は存在するか:", "user3" in db["users"])
-    
-    # データの削除
+    # データを削除
     del db["users"]["user2"]
-    print("user2削除後のユーザーテーブル:", db["users"])
-    
-    # テーブル内の全キーを取得
-    print("usersテーブルの全キー:", db.keys("users"))
-    
-    # トランザクションの使用
-    db.begin_transaction()
-    try:
-        db["users"]["user3"] = {"name": "山田次郎", "age": 40, "email": "yamada@example.com"}
-        db["products"]["product3"] = {"name": "タブレット", "price": 40000, "stock": 15}
-        print("トランザクション中の状態:", db)
-        db.commit_transaction()
-        print("コミット後:", db)
-    except Exception as e:
-        db.rollback_transaction()
-        print(f"エラーが発生しました: {e}")
-    
-    # ロールバックのデモ
-    db.begin_transaction()
-    db["users"]["user4"] = {"name": "鈴木一郎", "age": 35, "email": "suzuki@example.com"}
-    print("ロールバック前:", db["users"])
-    db.rollback_transaction()
-    print("ロールバック後:", db["users"])
-    
-    # 新しいテーブルの作成と切り替え
-    db.create_table("orders")
-    db["orders"]["order1"] = {"user_id": "user1", "product_id": "product1", "quantity": 1}
-    print("注文テーブル作成後:", db["orders"])
-    
-    # データベース内のテーブル一覧を取得
-    print("テーブル一覧:", db.tables())
-    
-    # 特定のテーブルのクリア
-    db.clear_table("products")
-    print("productsテーブルクリア後:", db["products"])
-    
-    # データベース全体のクリア
-    db.clear_db()
-    print("データベース全体クリア後:", db)
-    
-    # 最後にデータベース接続を閉じる
-    db.close()
-    
-    # コンテキストマネージャの使用
-    with dictsqlite.DictSQLite("sample_v2.db", version=2) as context_db:
-        context_db.create_table("context_table")
-        context_db["context_table"]["key1"] = "value1"
-        print("コンテキスト内のデータ:", context_db)
-
-# テストを実行
-test_dict_sqlite_v2()
+    print("削除後のUsersテーブル:", db["users"])
 ```
 
+### カスタムスキーマの使用
 
-以下のコードスニペットは、`DictSQLite`(Version 1)クラスの基本的な使い方を示しています。
+カスタムスキーマを定義することができます。ただし、標準の辞書形式のアクセス（`db['key'] = value`）を使用するには、スキーマに`key`と`value`カラムが含まれている必要があります。この例では、キーのデータ型を`INTEGER`に変更します。
 
 ```python
 import dictsqlite
 
-def test_dict_sqlite():
-    # DictSQLite クラスのインスタンスを作成
-    db = dictsqlite.DictSQLite("sample.db", journal_mode="WAL")
+# スキーマは、列定義を含む単一の文字列でなければなりません。
+custom_schema = '(key INTEGER PRIMARY KEY, value TEXT)'
+
+with dictsqlite.DictSQLite("custom_int_jp.db", schema=custom_schema) as db:
+    db.clear_db()
     
-    # データ追加
+    # これでキーとして整数を使用できます
+    db[100] = {"product": "ノートパソコン", "stock": 20}
+    db[200] = {"product": "マウス", "stock": 150}
+
+    print("整数キーを持つデータベースの内容:", db)
+    print("キー100の値:", db[100])
+
+    # キーは整数として取得されます
+    print("テーブルのキー:", db.keys())
+```
+
+### 基本的な使用 (v1)
+
+```python
+import dictsqlite
+
+# DictSQLiteのインスタンスを作成
+with dictsqlite.DictSQLite("sample_jp.db", journal_mode="WAL") as db:
+    # データを追加
     db['name'] = 'Alice'
-    db['age'] = '30'
+    db['age'] = 30
+    db['items'] = ['本', 'ペン']
     print("データ追加後:", db)
 
-    # データ取得
+    # データを取得
     print("名前:", db['name'])
-    print("年齢:", db['age'])
+    
+    # 可変オブジェクトの変更
+    # 変更は自動的には保存されません
+    items = db['items']
+    items.append('ノート')
+    
+    # 変更を保存するには、再代入する必要があります
+    db['items'] = items
+    print("items変更後:", db)
 
     # キーの存在確認
-    print("nameキーは存在するか:", 'name' in db)
-    print("addressキーは存在するか:", 'address' in db)
+    print("'age'は存在するか:", 'age' in db)
 
-    # データ削除
+    # データを削除
     del db['age']
-    print("データ削除後:", db)
-
-    # 全てのキーを取得
-    print("全てのキー:", db.keys())
-
-    # トランザクションの使用
-    db.begin_transaction()
-    db['transaction_key'] = 'transaction_value'
-    print("トランザクション中の状態:", db)
-    db.rollback_transaction()  # ロールバックして変更をキャンセル
-    print("ロールバック後:", db)
-
-    # トランザクションを再試行してコミット
-    db.begin_transaction()
-    db['transaction_key'] = 'transaction_value'
-    print("トランザクション中の状態:", db)
-    db.commit_transaction()  # コミットして変更を保存
-    print("コミット後:", db)
-
-    # テーブルの切り替え
-    db.create_table('new_table')
-    db.switch_table('new_table')
-    db['another_key'] = 'another_value'
-    print("新しいテーブルでのデータ:", db)
-    print("テーブル一覧:", db.tables())
-
-    # データベース全体のクリア
-    db.clear_db()
-    print("データベース全体のクリア後:", db)
-    db.clear_table()
-    print("現在選択されているテーブルのデータクリア後:", db)
-
-    # 指定したテーブルのデータクリア
-    db.switch_table('new_table')
-    db['context_key'] = 'context_value'
-    db.clear_table('new_table')
-    print("指定したテーブルのデータクリア後:", db)
-
-    # 最後にデータベース接続を閉じる
-    db.close()
-    # コンテキストマネージャの使用
-    with dictsqlite.DictSQLite("sample.db") as context_db:
-        context_db['context_key'] = 'context_value'
-        print("コンテキスト内のデータ:", context_db)
-
-# テストを実行
-test_dict_sqlite()
+    print("'age'削除後:", db)
 ```

@@ -1,40 +1,62 @@
 # DictSQLite
 
-`DictSQLite` is a Python class that allows you to treat an SQLite database like a dictionary. It is thread-safe and handles transaction management and database operations via a queue.
+`DictSQLite` is a Python library that provides a dictionary-like interface for an SQLite database. It is designed to be thread-safe, handling transactions and database operations through a background queue.
 
-## Automatic Conflict Resolution
+## How It Works
 
-Automatic conflict resolution is deprecated as it may significantly degrade performance. I spent a lot of time on its implementation and was concerned about it. If you have a better idea, I would like to implement that instead.
+DictSQLite provides a dictionary-like interface on top of an SQLite database. Understanding how it handles data internally can help you use it more effectively.
 
-Normally, issues won't arise if you call the variable's class like this and use it properly by opening and closing it:
+### Data Storage and Serialization
 
-```python
-db = dictsqlite.DictSQLite("db_path")
+When you assign a Python object as a value to a key, DictSQLite does not store the object directly. Instead, it performs the following steps:
+
+1.  **Serialization**: The Python object (e.g., a `dict`, `list`, `set`, or custom object) is serialized into a binary format using Python's `pickle` module.
+2.  **Encoding**: The resulting binary data is then encoded into a text string using `Base64`.
+3.  **Storage**: This Base64 string is stored in the `value` column of the SQLite table, which is defined as `TEXT` by default.
+
+This process allows you to store almost any Python object in the database. When you retrieve the data, the reverse process occurs: the text is decoded from Base64, and then deserialized with `pickle` to reconstruct the original Python object.
+
+### Table Schema
+
+By default, every table in DictSQLite is created with a simple key-value schema:
+
+```sql
+CREATE TABLE table_name (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
 ```
 
-However, when accessing and writing to the database from different Python codes simultaneously, automatic conflict resolution might be necessary. That said, since the speed is very fast, the chances of a conflict are very low.
+-   `key`: A unique `TEXT` string that acts as the primary key.
+-   `value`: A `TEXT` column that stores the Base64-encoded, pickled Python object.
 
-If you're genuinely concerned, I recommend enabling automatic conflict resolution at the cost of performance.
+You can also specify a custom schema when creating a `DictSQLite` instance or when creating a new table. However, to use the dictionary-style access (`db['key'] = value`), the schema **must** include `key` and `value` columns.
+
+### Keys, Indexes, and Data Types
+
+-   **Primary Key**: The `key` column serves as the primary key, ensuring fast lookups.
+-   **Indexes**: In the default schema, the only index is on the primary key. If you need custom indexes, you must define them as part of a custom schema.
+-   **Data Types**: The `key` is typically a string, but can be other types like `INTEGER` if a custom schema is used. The `value` can be any pickle-able Python object. The library also provides special proxy objects, `DBSyncedList` and `DBSyncedSet`, which automatically write back to the database when they are modified.
 
 ## Class `DictSQLite`
 
 ### Constructor
 
 ```python
-DictSQLite(db_name: str, table_name: str = 'main', schema: bool = None, conflict_resolver: bool = False, journal_mode: str = None, lock_file: str = None, password: str = None, publickey_path: str = "./public_keys.pem", privatekey_path: str = "./private_keys.pem", version: int = 1, key_create: bool = False)
+DictSQLite(db_name: str, table_name: str = 'main', schema: str = None, conflict_resolver: bool = False, journal_mode: str = None, lock_file: str = None, password: str = None, publickey_path: str = "./public_keys.pem", privatekey_path: str = "./private_keys.pem", version: int = 1, key_create: bool = False)
 ```
 
 - **db_name**: The name of the database file.
 - **table_name**: The name of the table to use (default: 'main').
-- **schema**: The schema of the table (default: `'(key TEXT PRIMARY KEY, value TEXT)'`).
-- **conflict_resolver**: Whether the conflict resolution feature is enabled.
-- **journal_mode**: The journal mode for SQLite.
-- **lock_file**: The name of the lock file.
-- **password**: The database password.
-- **publickey_path**: The path to the public key.
-- **privatekey_path**: The path to the private key.
-- **version**: The database version.
-- **key_create**: The flag to create a key.
+- **schema**: The schema of the table. Defaults to `'(key TEXT PRIMARY KEY, value TEXT)'`. You can provide a string with a custom SQL schema for the table. The library will validate the schema before creating the table.
+- **conflict_resolver**: Deprecated. This feature may be removed in future versions.
+- **journal_mode**: The journal mode for SQLite (e.g., "WAL").
+- **lock_file**: The name of the lock file for conflict resolution.
+- **password**: The password for encrypting data.
+- **publickey_path**: The path to the public key for encryption.
+- **privatekey_path**: The path to the private key for encryption.
+- **version**: The database version (1 or 2). Version 2 allows managing multiple tables more easily.
+- **key_create**: If `True`, new encryption keys will be generated.
 
 ### Methods
 
@@ -43,184 +65,102 @@ DictSQLite(db_name: str, table_name: str = 'main', schema: bool = None, conflict
 - `__delitem__(self, key)`: Deletes data.
 - `__contains__(self, key)`: Checks if the key exists.
 - `__repr__(self)`: Displays the database content in dictionary format.
-- `TableProxy(self, db, table_name)`: A table proxy class for version 2.
 - `keys(self)`: Retrieves all the keys.
 - `begin_transaction(self)`: Starts a transaction.
 - `commit_transaction(self)`: Commits a transaction.
 - `rollback_transaction(self)`: Rolls back a transaction.
-- `switch_table(self, new_table_name, schema=None)`: Switches tables.
-- `clear_db(self)`: Clears the entire database.
-- `clear_table(self, table_name=None)`: Clears data from the current table or a specified table.
-- `tables(self)`: Retrieves all table names.
+- `switch_table(self, new_table_name, schema=None)`: Switches the active table.
+- `create_table(self, table_name, schema=None)`: Creates a new table.
+- `clear_db(self)`: Clears the entire database by dropping all tables.
+- `clear_table(self, table_name=None)`: Clears all data from a table.
+- `tables(self)`: Retrieves a list of all table names.
 - `close(self)`: Closes the database connection.
+- `execute_custom(self, query, params=())`: Executes a custom SQL query.
 
 ## Usage
 
-The following code snippet demonstrates the basic usage of the `DictSQLite` (Version 2) class:
+### Basic Usage (v1)
 
 ```python
 import dictsqlite
 
-def test_dict_sqlite_v2():
-    # Create an instance of DictSQLite with version=2
-    db = dictsqlite.DictSQLite("sample_v2.db", version=2, journal_mode="WAL")
-    
-    # Clear the database
-    db.clear_db()
-    print("Initial state:", db)
-    
-    # Create tables
-    db.create_table("users")
-    db.create_table("products")
-    print("After creating tables:", db)
-    
-    # Add data to the users table
-    db["users"]["user1"] = {"name": "Taro Tanaka", "age": 30, "email": "tanaka@example.com"}
-    db["users"]["user2"] = {"name": "Hanako Sato", "age": 25, "email": "sato@example.com"}
-    print("After adding user data:", db)
-    
-    # Add data to the products table
-    db["products"]["product1"] = {"name": "Laptop", "price": 80000, "stock": 10}
-    db["products"]["product2"] = {"name": "Smartphone", "price": 60000, "stock": 20}
-    print("After adding product data:", db)
-    
-    # Display specific table contents
-    print("Users table contents:", db["users"])
-    print("Products table contents:", db["products"])
-    
-    # Retrieve specific data
-    print("User1 info:", db["users"]["user1"])
-    print("Product2 info:", db["products"]["product2"])
-    
-    # Check if a key exists
-    print("Does user1 exist:", "user1" in db["users"])
-    print("Does user3 exist:", "user3" in db["users"])
-    
-    # Delete data
-    del db["users"]["user2"]
-    print("After deleting user2 from users table:", db["users"])
-    
-    # Get all keys in a table
-    print("All keys in users table:", db.keys("users"))
-    
-    # Using transactions
-    db.begin_transaction()
-    try:
-        db["users"]["user3"] = {"name": "Jiro Yamada", "age": 40, "email": "yamada@example.com"}
-        db["products"]["product3"] = {"name": "Tablet", "price": 40000, "stock": 15}
-        print("State during transaction:", db)
-        db.commit_transaction()
-        print("After commit:", db)
-    except Exception as e:
-        db.rollback_transaction()
-        print(f"Error occurred: {e}")
-    
-    # Demo of rollback
-    db.begin_transaction()
-    db["users"]["user4"] = {"name": "Ichiro Suzuki", "age": 35, "email": "suzuki@example.com"}
-    print("Before rollback:", db["users"])
-    db.rollback_transaction()
-    print("After rollback:", db["users"])
-    
-    # Create and switch to a new table
-    db.create_table("orders")
-    db["orders"]["order1"] = {"user_id": "user1", "product_id": "product1", "quantity": 1}
-    print("After creating orders table:", db["orders"])
-    
-    # Get a list of all tables in the database
-    print("Table list:", db.tables())
-    
-    # Clear a specific table
-    db.clear_table("products")
-    print("After clearing products table:", db["products"])
-    
-    # Clear the entire database
-    db.clear_db()
-    print("After clearing entire database:", db)
-    
-    # Close the database connection
-    db.close()
-    
-    # Using context manager
-    with dictsqlite.DictSQLite("sample_v2.db", version=2) as context_db:
-        context_db.create_table("context_table")
-        context_db["context_table"]["key1"] = "value1"
-        print("Data in context:", context_db)
-
-# Run the test
-test_dict_sqlite_v2()
-```
-
-The following code snippet demonstrates the basic usage of the `DictSQLite` (Version 1) class:
-
-```python
-import dictsqlite
-
-def test_dict_sqlite():
-    # Create an instance of DictSQLite
-    db = dictsqlite.DictSQLite("sample.db", journal_mode="WAL")
-    
+# Create an instance of DictSQLite
+with dictsqlite.DictSQLite("sample.db", journal_mode="WAL") as db:
     # Add data
     db['name'] = 'Alice'
-    db['age'] = '30'
+    db['age'] = 30
+    db['items'] = ['book', 'pen']
     print("After adding data:", db)
 
     # Retrieve data
     print("Name:", db['name'])
-    print("Age:", db['age'])
+    
+    # Modify a mutable object
+    # The change is not automatically saved
+    items = db['items']
+    items.append('notebook')
+    
+    # To save the change, you must reassign it
+    db['items'] = items
+    print("After modifying items:", db)
 
     # Check if a key exists
-    print("Does name key exist:", 'name' in db)
-    print("Does address key exist:", 'address' in db)
+    print("Does 'age' exist:", 'age' in db)
 
     # Delete data
     del db['age']
-    print("After deleting data:", db)
+    print("After deleting 'age':", db)
+```
 
-    # Get all keys
-    print("All keys:", db.keys())
+### Multi-Table Usage (v2)
 
-    # Using transactions
-    db.begin_transaction()
-    db['transaction_key'] = 'transaction_value'
-    print("State during transaction:", db)
-    db.rollback_transaction()  # Rollback and cancel the changes
-    print("After rollback:", db)
+```python
+import dictsqlite
 
-    # Retry transaction and commit
-    db.begin_transaction()
-    db['transaction_key'] = 'transaction_value'
-    print("State during transaction:", db)
-    db.commit_transaction()  # Commit and save the changes
-    print("After commit:", db)
-
-    # Switch tables
-    db.create_table('new_table')
-    db.switch_table('new_table')
-    db['another_key'] = 'another_value'
-    print("Data in new table:", db)
-    print("Table list:", db.tables())
-
-    # Clear the entire database
+with dictsqlite.DictSQLite("sample_v2.db", version=2, journal_mode="WAL") as db:
     db.clear_db()
-    print("After clearing the entire database:", db)
-    db.clear_table()
-    print("After clearing the current table:", db)
+    
+    # Create tables
+    db.create_table("users")
+    db.create_table("products")
+    
+    # Add data to the 'users' table
+    users = db["users"]
+    users["user1"] = {"name": "Taro Tanaka", "age": 30}
+    users["user2"] = {"name": "Hanako Sato", "age": 25}
+    
+    # Add data to the 'products' table
+    products = db["products"]
+    products["prod1"] = {"name": "Laptop", "price": 80000}
+    
+    print("All database contents:", db)
+    print("Users table:", db["users"])
+    
+    # Delete data
+    del db["users"]["user2"]
+    print("Users table after deletion:", db["users"])
+```
 
-    # Clear specific table data
-    db.switch_table('new_table')
-    db['context_key'] = 'context_value'
-    db.clear_table('new_table')
-    print("After clearing data in specified table:", db)
+### Custom Schema Usage
 
-    # Close the database connection
-    db.close()
+You can define a custom schema. However, to use the standard dictionary-style access (`db['key'] = value`), the schema must include `key` and `value` columns. This example changes the key's data type to `INTEGER`.
 
-    # Using context manager
-    with dictsqlite.DictSQLite("sample.db") as context_db:
-        context_db['context_key'] = 'context_value'
-        print("Data in context:", context_db)
+```python
+import dictsqlite
 
-# Run the test
-test_dict_sqlite()
+# The schema must be a single string containing the column definitions.
+custom_schema = '(key INTEGER PRIMARY KEY, value TEXT)'
+
+with dictsqlite.DictSQLite("custom_int.db", schema=custom_schema) as db:
+    db.clear_db()
+    
+    # Now you can use integers as keys
+    db[100] = {"product": "Laptop", "stock": 20}
+    db[200] = {"product": "Mouse", "stock": 150}
+
+    print("Database content with integer keys:", db)
+    print("Value for key 100:", db[100])
+
+    # The keys are retrieved as integers
+    print("Keys in the table:", db.keys())
 ```

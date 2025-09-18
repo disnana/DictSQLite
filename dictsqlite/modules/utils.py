@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class ExpiringDict(collections.abc.MutableMapping):
     """有効期限付き辞書クラス。指定時間後に自動的にキーが削除される。"""
 
-    def __init__(self, expiration_time: int):
+    def __init__(self, expiration_time: float):
         self.data = {}
         self.expiration_time = expiration_time
         self.expiration_tasks = {}  # 非同期タスク管理
