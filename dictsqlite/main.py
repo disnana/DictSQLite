@@ -335,7 +335,14 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             result_queue = queue.Queue()
             self.db.operation_queue.put((
                 self.db._fetchone,  # pylint: disable=protected-access
-                (f"SELECT value FROM {self.db._quote_ident(self.table_name)} WHERE key = ?", (key,)),
+                (
+                    (
+                        "SELECT value FROM "
+                        f"{self.db._quote_ident(self.table_name)} "
+                        "WHERE key = ?"
+                    ),
+                    (key,),
+                ),
                 {}, result_queue
             ))
             result = result_queue.get()
@@ -388,7 +395,11 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             self.db.operation_queue.put((
                 self.db._execute,  # pylint: disable=protected-access
                 (
-                    f"INSERT OR REPLACE INTO {self.db._quote_ident(self.table_name)} (key, value) VALUES (?, ?)",
+                    (
+                        "INSERT OR REPLACE INTO "
+                        f"{self.db._quote_ident(self.table_name)} "
+                        "(key, value) VALUES (?, ?)"
+                    ),
                     (key, value_str),
                 ),
                 {},
@@ -548,7 +559,11 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             if not self._validate_schema(schema):
                 raise ValueError(f"Invalid schema provided: {schema}")
 
-        create_table_sql = f'CREATE TABLE IF NOT EXISTS {self._quote_ident(self.table_name)} {schema}'
+        create_table_sql = (
+            "CREATE TABLE IF NOT EXISTS "
+            f"{self._quote_ident(self.table_name)} "
+            f"{schema}"
+        )
         self.operation_queue.put((self._execute, (create_table_sql,), {}, None))
 
     def _validate_schema(self, schema):
