@@ -98,6 +98,10 @@ def test_policy_allows_project_function(db_path):
         func = d["func"]
         # callable 属性経由で安全に呼び出す
         s = getattr(func, "__call__")(5)
-        assert isinstance(s, str) and len(s) == 5
+        # セキュリティ上重要な検証は最適化時にも削除されないよう明示的にチェック
+        if not isinstance(s, str):
+            raise TypeError(f"Expected str, got {type(s)}")
+        if len(s) != 5:
+            raise ValueError(f"Expected length 5, got {len(s)}")
     finally:
         d.close()
