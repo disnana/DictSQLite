@@ -11,11 +11,12 @@ import sqlite3
 import string
 import threading
 import logging
+from typing import Optional
 
 import portalocker
 
 from dictsqlite.modules import crypto, utils
-from dictsqlite.modules import safe_pickle
+from .modules.safe_pickle import SafePolicy, safe_loads
 
 __version__ = '1.8.6'  # セキュリティ強化: safe pickle 導入
 
@@ -206,7 +207,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         version: int = 1,
         key_create: bool = False,
         # 安全pickle関連の設定
-        safe_pickle_policy: safe_pickle.SafePolicy | None = None,
+        safe_pickle_policy: Optional[SafePolicy] = None,
         safe_pickle_allowed_module_prefixes=(),
         safe_pickle_allowed_builtins=None,
         safe_pickle_allowed_globals=(),
@@ -253,7 +254,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         self.safe_pickle_allowed_builtins = safe_pickle_allowed_builtins  # None -> 既定セット
         default_allowed_globals = {"dictsqlite.modules.utils.ExpiringDict"}
         add_allowed = set(safe_pickle_allowed_globals) if safe_pickle_allowed_globals else set()
-        self.safe_pickle_allowed_globals = default_allowed_globals | add_allowed
+        self.safe_pickle_allowed_globals = default_allowed_globals.union(add_allowed)
 
     # vvvvvvvvvvvvvvvv RecursiveDictは前回の修正のまま vvvvvvvvvvvvvvvv
     class RecursiveDict(collections.abc.MutableMapping):  # pylint: disable=protected-access
@@ -395,7 +396,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                     logger.debug(
                         "SafeUnpickler try: key=%s, table=%s", key, self.table_name
                     )
-                    obj = safe_pickle.safe_loads(
+                    obj = safe_loads(
                         value_bytes,
                         policy=self.db.safe_pickle_policy,
                         allowed_module_prefixes=self.db.safe_pickle_allowed_module_prefixes,
