@@ -191,7 +191,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             raise ValueError(f"Invalid journal_mode: {mode}")
         return value
 
-    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
         self,
         db_name: str,
         table_name: str = 'main',
@@ -243,7 +243,11 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         # 安全pickle設定（デフォルトは自パッケージのクラス復元のみ許可、関数は不許可）
         self.safe_pickle_policy = safe_pickle_policy
         self.safe_pickle_allowed_module_prefixes = tuple(
-            (safe_pickle_allowed_module_prefixes if safe_pickle_allowed_module_prefixes else ("dictsqlite",))
+            (
+                safe_pickle_allowed_module_prefixes
+                if safe_pickle_allowed_module_prefixes
+                else ("dictsqlite",)
+            )
         )
         self.safe_pickle_allowed_builtins = safe_pickle_allowed_builtins  # None -> 既定セット
         default_allowed_globals = {"dictsqlite.modules.utils.ExpiringDict"}

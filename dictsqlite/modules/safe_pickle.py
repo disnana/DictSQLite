@@ -25,14 +25,29 @@ DEFAULT_SAFE_BUILTINS: set[str] = {
 
 # 既定の危険関数denylist（明示拒否。必要に応じて拡張）
 DEFAULT_DENY: set[str] = {
-    'os.system', 'os.popen', 'os.spawnl', 'os.spawnle', 'os.spawnlp', 'os.spawnlpe', 'os.spawnv', 'os.spawnve', 'os.spawnvp', 'os.spawnvpe',
-    'subprocess.Popen', 'subprocess.call', 'subprocess.check_call', 'subprocess.check_output', 'subprocess.run',
-    'builtins.eval', 'builtins.exec',
+    'os.system',
+    'os.popen',
+    'os.spawnl',
+    'os.spawnle',
+    'os.spawnlp',
+    'os.spawnlpe',
+    'os.spawnv',
+    'os.spawnve',
+    'os.spawnvp',
+    'os.spawnvpe',
+    'subprocess.Popen',
+    'subprocess.call',
+    'subprocess.check_call',
+    'subprocess.check_output',
+    'subprocess.run',
+    'builtins.eval',
+    'builtins.exec',
 }
 
 
-class SafePolicy:
-    """Unpickle許可ポリシー
+class SafePolicy:  # pylint: disable=too-few-public-methods
+    """Unpickle許可ポリシー。
+
     - allowed_module_prefixes: 許可モジュール接頭辞（自前コード等）
     - allowed_builtins: 許可builtins名（厳格ホワイトリスト）
     - allowed_globals: 完全修飾名の明示許可（'pkg.mod.Name'）
@@ -42,7 +57,7 @@ class SafePolicy:
     - validator: 追加検証コールバック (module, name, obj) -> bool（Trueで許可）
     """
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         *,
         allowed_module_prefixes: Iterable[str] = (),
@@ -54,7 +69,9 @@ class SafePolicy:
         validator=None,
     ) -> None:
         self.allowed_module_prefixes = tuple(allowed_module_prefixes)
-        self.allowed_builtins = set(DEFAULT_SAFE_BUILTINS if allowed_builtins is None else allowed_builtins)
+        self.allowed_builtins = set(
+            DEFAULT_SAFE_BUILTINS if allowed_builtins is None else allowed_builtins
+        )
         self.allowed_globals = set(allowed_globals)
         self.denied_globals = set(denied_globals)
         self.allow_functions_from_prefixes = bool(allow_functions_from_prefixes)
@@ -63,12 +80,14 @@ class SafePolicy:
 
     @staticmethod
     def for_package(pkg_prefix: str, **kwargs) -> 'SafePolicy':
-        """自前パッケージ配下を主に許可する簡易ファクトリ"""
+        """自前パッケージ配下を主に許可する簡易ファクトリ。"""
         return SafePolicy(allowed_module_prefixes=(pkg_prefix,), **kwargs)
 
 
 class SafeUnpickler(pickle.Unpickler):
-    def __init__(
+    """ポリシーに基づき、pickleのグローバル解決を厳格に制御するUnpickler。"""
+
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         file,
         *,
@@ -88,6 +107,13 @@ class SafeUnpickler(pickle.Unpickler):
             )
         self.policy = policy
 
+    def _is_allowed_prefix(self, module: str) -> bool:
+        """許可されたモジュール接頭辞かどうか。"""
+        return any(
+            (module == p) or module.startswith(f"{p}.")
+            for p in self.policy.allowed_module_prefixes
+        )
+
     def find_class(self, module, name):  # noqa: D401
         """pickleのグローバル解決。ポリシーで厳格に制御。"""
         fq = f"{module}.{name}"
@@ -102,7 +128,8 @@ class SafeUnpickler(pickle.Unpickler):
             obj = getattr(mod, name)
             if self.policy.validator and not self.policy.validator(module, name, obj):
                 logger.warning("SafeUnpickler validator rejected: %s", fq)
-                raise pickle.UnpicklingError(f"validator rejected: {fq}")
+                msg = f"validator rejected: {fq}"
+                raise pickle.UnpicklingError(msg)
             logger.debug("SafeUnpickler allowed builtin: %s", fq)
             return obj
 
@@ -112,20 +139,28 @@ class SafeUnpickler(pickle.Unpickler):
             obj = getattr(mod, name)
             if self.policy.validator and not self.policy.validator(module, name, obj):
                 logger.warning("SafeUnpickler validator rejected: %s", fq)
-                raise pickle.UnpicklingError(f"validator rejected: {fq}")
+                msg = f"validator rejected: {fq}"
+                raise pickle.UnpicklingError(msg)
             logger.debug("SafeUnpickler allowed global: %s", fq)
             return obj
 
         # 指定接頭辞のモジュール（自前コードなど）を許可（型/関数を選別）
-        if any(module == p or module.startswith(p + '.') for p in self.policy.allowed_module_prefixes):
+        if self._is_allowed_prefix(module):
             mod = __import__(module, fromlist=[name])
             obj = getattr(mod, name)
             is_cls = inspect.isclass(obj)
-            is_func = inspect.isfunction(obj) or isinstance(obj, (types.BuiltinFunctionType, types.MethodType))
-            if (is_cls and self.policy.allow_classes_from_prefixes) or (is_func and self.policy.allow_functions_from_prefixes):
+            is_func = (
+                inspect.isfunction(obj)
+                or isinstance(obj, (types.BuiltinFunctionType, types.MethodType))
+            )
+            if (
+                (is_cls and self.policy.allow_classes_from_prefixes)
+                or (is_func and self.policy.allow_functions_from_prefixes)
+            ):
                 if self.policy.validator and not self.policy.validator(module, name, obj):
                     logger.warning("SafeUnpickler validator rejected: %s", fq)
-                    raise pickle.UnpicklingError(f"validator rejected: {fq}")
+                    msg = f"validator rejected: {fq}"
+                    raise pickle.UnpicklingError(msg)
                 logger.debug("SafeUnpickler allowed from prefix: %s", fq)
                 return obj
 
@@ -150,4 +185,3 @@ def safe_loads(
         allowed_builtins=allowed_builtins,
         allowed_globals=allowed_globals,
     ).load()
-
