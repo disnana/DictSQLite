@@ -16,7 +16,7 @@ import portalocker
 
 from dictsqlite.modules import crypto, utils
 
-__version__ = '1.8.3'  # バージョンアップ
+__version__ = '1.8.4'  # セキュリティ強化
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -174,6 +174,23 @@ class DBSyncedList(list):
 class DictSQLite:  # pylint: disable=too-many-instance-attributes
     """SQLiteを辞書風APIで扱うためのラッパークラス。"""
 
+    # 追加: 識別子クオートとPRAGMA検証 ----------------------------------
+    def _quote_ident(self, name: str) -> str:
+        """SQLite識別子をダブルクオートで安全にクオートする。schema.table 形式対応。"""
+        if not isinstance(name, str) or name == "":
+            raise ValueError("Identifier must be a non-empty string")
+        return '.'.join('"' + part.replace('"', '""') + '"' for part in name.split('.'))
+
+    def _validate_journal_mode(self, mode: str) -> str:
+        """PRAGMA journal_mode の値をホワイトリスト検証して返す。"""
+        if not isinstance(mode, str):
+            raise ValueError("journal_mode must be a string")
+        value = mode.strip().upper()
+        allowed = {"DELETE", "TRUNCATE", "PERSIST", "MEMORY", "WAL", "OFF"}
+        if value not in allowed:
+            raise ValueError(f"Invalid journal_mode: {mode}")
+        return value
+
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         db_name: str,
@@ -215,7 +232,8 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             self.worker_thread.start()
         self.create_table(schema=schema)
         if journal_mode is not None:
-            self.conn.execute(f'PRAGMA journal_mode={journal_mode};')
+            mode = self._validate_journal_mode(journal_mode)
+            self.conn.execute(f'PRAGMA journal_mode={mode};')
 
     # vvvvvvvvvvvvvvvv RecursiveDictは前回の修正のまま vvvvvvvvvvvvvvvv
     class RecursiveDict(collections.abc.MutableMapping):  # pylint: disable=protected-access
@@ -317,7 +335,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             result_queue = queue.Queue()
             self.db.operation_queue.put((
                 self.db._fetchone,  # pylint: disable=protected-access
-                (f"SELECT value FROM {self.table_name} WHERE key = ?", (key,)),
+                (f"SELECT value FROM {self.db._quote_ident(self.table_name)} WHERE key = ?", (key,)),
                 {}, result_queue
             ))
             result = result_queue.get()
@@ -370,7 +388,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             self.db.operation_queue.put((
                 self.db._execute,  # pylint: disable=protected-access
                 (
-                    f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
+                    f"INSERT OR REPLACE INTO {self.db._quote_ident(self.table_name)} (key, value) VALUES (?, ?)",
                     (key, value_str),
                 ),
                 {},
@@ -380,7 +398,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         def __delitem__(self, key):
             self.db.operation_queue.put((
                 self.db._execute,  # pylint: disable=protected-access
-                (f"DELETE FROM {self.table_name} WHERE key = ?", (key,)),
+                (f"DELETE FROM {self.db._quote_ident(self.table_name)} WHERE key = ?", (key,)),
                 {}, None
             ))
 
@@ -388,7 +406,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             result_queue = queue.Queue()
             self.db.operation_queue.put((
                 self.db._fetchone,  # pylint: disable=protected-access
-                (f"SELECT 1 FROM {self.table_name} WHERE key = ?", (key,)),
+                (f"SELECT 1 FROM {self.db._quote_ident(self.table_name)} WHERE key = ?", (key,)),
                 {}, result_queue
             ))
             result = result_queue.get()
@@ -414,7 +432,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             result_queue = queue.Queue()
             self.db.operation_queue.put((
                 self.db._fetchall,  # pylint: disable=protected-access
-                (f"SELECT key, value FROM {self.table_name}",),
+                (f"SELECT key, value FROM {self.db._quote_ident(self.table_name)}",),
                 {}, result_queue
             ))
             result = result_queue.get()
@@ -530,12 +548,17 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             if not self._validate_schema(schema):
                 raise ValueError(f"Invalid schema provided: {schema}")
 
-        create_table_sql = f'CREATE TABLE IF NOT EXISTS {self.table_name} {schema}'
+        create_table_sql = f'CREATE TABLE IF NOT EXISTS {self._quote_ident(self.table_name)} {schema}'
         self.operation_queue.put((self._execute, (create_table_sql,), {}, None))
 
     def _validate_schema(self, schema):
         """与えられたスキーマが有効か一時テーブルで検証。"""
         try:
+            # 単純な注入対策: セミコロンを禁止（複文抑止）
+            if not isinstance(schema, str) or ';' in schema:
+                logger.error("Schema validation failed: illegal character ';'")
+                return False
+
             def tables():
                 result_queue = queue.Queue()
                 self.operation_queue.put((self._fetchall, ("""
@@ -549,8 +572,8 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             temp = randomstrings(random.randint(1, 30))
             while temp in tables():
                 temp = randomstrings(random.randint(1, 30))
-            self.cursor.execute(f'CREATE TABLE {temp} {schema}')
-            self.cursor.execute(f'DROP TABLE {temp}')
+            self.cursor.execute(f'CREATE TABLE {self._quote_ident(temp)} {schema}')
+            self.cursor.execute(f'DROP TABLE {self._quote_ident(temp)}')
             return True
         except sqlite3.Error as e:
             logger.error("Schema validation failed: %s", e)
@@ -610,13 +633,13 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
 
     def __delitem__(self, key):
         self.operation_queue.put((self._execute, (f'''\
-            DELETE FROM {self.table_name} WHERE key = ?
+            DELETE FROM {self._quote_ident(self.table_name)} WHERE key = ?
         ''', (key,)), {}, None))
 
     def __contains__(self, key):
         result_queue = queue.Queue()
         self.operation_queue.put((self._fetchone, (f'''\
-            SELECT 1 FROM {self.table_name} WHERE key = ?
+            SELECT 1 FROM {self._quote_ident(self.table_name)} WHERE key = ?
         ''', (key,)), {}, result_queue))
         result = result_queue.get()
         if isinstance(result, Exception):
@@ -645,7 +668,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             table_name = self.table_name
         result_queue = queue.Queue()
         self.operation_queue.put((self._fetchall, (f'''\
-            SELECT key FROM {table_name}
+            SELECT key FROM {self._quote_ident(table_name)}
         ''',), {}, result_queue))
         result = result_queue.get()
         if isinstance(result, Exception):
@@ -711,7 +734,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         """)
         tables = self.cursor.fetchall()
         for table in tables:
-            self.cursor.execute(f'DROP TABLE IF EXISTS {table[0]}')
+            self.cursor.execute(f'DROP TABLE IF EXISTS {self._quote_ident(table[0])}')
         if not self.in_transaction:
             self.conn.commit()
         self.table_name = "main"
@@ -733,7 +756,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         if table_name is None:
             table_name = self.table_name
         self.operation_queue.put((self._execute, (f'''\
-            DELETE FROM {table_name}
+            DELETE FROM {self._quote_ident(table_name)}
         ''',), {}, None))
 
     def __enter__(self):

@@ -10,3 +10,4 @@ build/
 dictsqlite-1.4.5/
 *.db
 *.db-shm
+実験用/
