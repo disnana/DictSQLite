@@ -17,6 +17,7 @@ import portalocker
 
 from dictsqlite.modules import crypto, utils
 from .modules.safe_pickle import SafePolicy, safe_loads
+from .modules import safe_pickle
 
 __version__ = '1.8.6'  # セキュリティ強化: safe pickle 導入
 
