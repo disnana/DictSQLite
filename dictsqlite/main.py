@@ -14,9 +14,9 @@ import logging
 
 import portalocker
 
-from dictsqlite.modules import crypto, utils
+from dictsqlite.modules import crypto, utils, safe_pickle
 
-__version__ = '1.8.5'  # セキュリティ強化
+__version__ = '1.8.6'  # セキュリティ強化: safe pickle 導入
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -204,6 +204,11 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         privatekey_path: str = "./private_keys.pem",
         version: int = 1,
         key_create: bool = False,
+        # 安全pickle関連の設定
+        safe_pickle_policy: safe_pickle.SafePolicy | None = None,
+        safe_pickle_allowed_module_prefixes=(),
+        safe_pickle_allowed_builtins=None,
+        safe_pickle_allowed_globals=(),
     ):  # pylint: disable=too-many-arguments
         self.version = version
         self.db_name = db_name
@@ -234,6 +239,16 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         if journal_mode is not None:
             mode = self._validate_journal_mode(journal_mode)
             self.conn.execute(f'PRAGMA journal_mode={mode};')
+
+        # 安全pickle設定（デフォルトは自パッケージのクラス復元のみ許可、関数は不許可）
+        self.safe_pickle_policy = safe_pickle_policy
+        self.safe_pickle_allowed_module_prefixes = tuple(
+            (safe_pickle_allowed_module_prefixes if safe_pickle_allowed_module_prefixes else ("dictsqlite",))
+        )
+        self.safe_pickle_allowed_builtins = safe_pickle_allowed_builtins  # None -> 既定セット
+        default_allowed_globals = {"dictsqlite.modules.utils.ExpiringDict"}
+        add_allowed = set(safe_pickle_allowed_globals) if safe_pickle_allowed_globals else set()
+        self.safe_pickle_allowed_globals = default_allowed_globals | add_allowed
 
     # vvvvvvvvvvvvvvvv RecursiveDictは前回の修正のまま vvvvvvvvvvvvvvvv
     class RecursiveDict(collections.abc.MutableMapping):  # pylint: disable=protected-access
@@ -371,8 +386,23 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                         # または: value_bytes = value_str.encode('latin1')
                     else:
                         value_bytes = value_str
-                    return pickle.loads(value_bytes)
-                except (pickle.UnpicklingError, ValueError, TypeError):
+                    # 安全なUnpicklerで復元
+                    logger.debug(
+                        "SafeUnpickler try: key=%s, table=%s", key, self.table_name
+                    )
+                    obj = safe_pickle.safe_loads(
+                        value_bytes,
+                        policy=self.db.safe_pickle_policy,
+                        allowed_module_prefixes=self.db.safe_pickle_allowed_module_prefixes,
+                        allowed_builtins=self.db.safe_pickle_allowed_builtins,
+                        allowed_globals=self.db.safe_pickle_allowed_globals,
+                    )
+                    logger.debug("SafeUnpickler success: key=%s", key)
+                    return obj
+                except (pickle.UnpicklingError, ValueError, TypeError) as e:
+                    logger.warning(
+                        "SafeUnpickler failed for key=%s in table=%s: %s", key, self.table_name, e
+                    )
                     # pickleデコードも失敗した場合は文字列として返す
                     return value_str
 
@@ -557,6 +587,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         if table_name is not None:
             self.table_name = table_name
         if schema is None:
+            self.table_name = self.table_name  # 明示維持
             schema = schema if schema else '(key TEXT PRIMARY KEY, value TEXT)'
         else:
             if not self._validate_schema(schema):
