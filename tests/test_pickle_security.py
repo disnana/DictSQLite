@@ -2,18 +2,17 @@
 from __future__ import annotations
 
 # pytest のフィクスチャ名再定義は意図的に使用するため無効化
-# pylint: disable=redefined-outer-name
+# 併せて一部環境でのimport解決やシグネチャ誤検知を抑止
+# pylint: disable=redefined-outer-name,import-error,no-name-in-module,unexpected-keyword-arg
 
 import os
 import sys
 import tempfile
 import time
 import pickle
-import typing as _t
 import pytest
 
-from dictsqlite.main import DictSQLite, randomstrings
-from dictsqlite.modules.safe_pickle import SafePolicy, safe_loads
+from dictsqlite.main import DictSQLite, randomstrings, safe_pickle as _safe_pickle
 
 
 class Evil:  # pylint: disable=too-few-public-methods
@@ -82,23 +81,23 @@ def test_safe_pickle_allows_safe_builtins_directly():
     """safe_loads が安全な組み込み型をそのまま復元できることを確認。"""
     safe_data = {"a": [1, 2, 3], "b": (1, 2)}
     dumped = pickle.dumps(safe_data)
-    restored = safe_loads(dumped)
+    restored = _safe_pickle.safe_loads(dumped)
     assert restored == safe_data
 
 
 def test_policy_allows_project_function(db_path):
     """プロジェクト配下の関数を保存し、ポリシー許可時のみ復元/実行できること。"""
-    d = DictSQLite(  # pylint: disable=unexpected-keyword-arg
-        str(db_path),
-        safe_pickle_policy=SafePolicy.for_package(
+    kwargs = {
+        "safe_pickle_policy": _safe_pickle.SafePolicy.for_package(
             "dictsqlite", allow_functions_from_prefixes=True
-        ),
-    )
+        )
+    }
+    d = DictSQLite(str(db_path), **kwargs)
     try:
         d["func"] = randomstrings
-        f = _t.cast(_t.Callable[[int], str], d["func"])  # type: ignore[arg-type]
-        assert callable(f)
-        s = f(5)  # pylint: disable=not-callable
+        func = d["func"]
+        # callable 属性経由で安全に呼び出す
+        s = getattr(func, "__call__")(5)
         assert isinstance(s, str) and len(s) == 5
     finally:
         d.close()
