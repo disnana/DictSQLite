@@ -1,27 +1,26 @@
-"""pickle任意コード実行対策の検証用テスト。
-
-主に以下を検証する:
-- 悪性payload（os.systemなど）がDB経由で復元される際に実行されないこと
-- 混在payload（安全なdict内に悪性要素が含まれる）でも安全に拒否されること
-- safe_pickleポリシーでプロジェクト配下の関数復元を許可した場合のみ、関数が復元できること
-- safe_pickle.safe_loads が組み込みの安全型を許容すること
-"""
+"""pickle 任意コード実行対策の検証用テスト群。"""
 from __future__ import annotations
 
-import base64
+# pytest のフィクスチャ名再定義は意図的に使用するため無効化
+# pylint: disable=redefined-outer-name
+
 import os
 import sys
 import tempfile
 import time
 import pickle
+import typing as _t
 import pytest
 
-from dictsqlite.main import DictSQLite
-from dictsqlite.modules import safe_pickle
+from dictsqlite.main import DictSQLite, randomstrings
+from dictsqlite.modules.safe_pickle import SafePolicy, safe_loads
 
 
-class Evil:
-    def __reduce__(self):  # 実行時にシステムコマンドを呼ぶ悪性オブジェクト
+class Evil:  # pylint: disable=too-few-public-methods
+    """復元時に外部コマンドを実行しようとする悪性オブジェクト。"""
+
+    def __reduce__(self):
+        """os.system を用いたコマンド実行を企図する reduce 実装。"""
         # 実行されると一時ファイルに書き込むコマンド
         tmp_file = os.path.join(tempfile.gettempdir(), "dictsqlite_rce_test.txt")
         # Pythonを使って確実にファイルを書き込む（クロスプラットフォーム）
@@ -31,22 +30,26 @@ class Evil:
 
 @pytest.fixture()
 def db_path(tmp_path):
+    """一時DBファイルパスを提供するフィクスチャ。"""
     return tmp_path / "test_rce.db"
 
 
 @pytest.fixture()
 def db(db_path):
+    """DictSQLite のインスタンスを提供し、テスト後にクローズ。"""
     d = DictSQLite(str(db_path))
     yield d
     d.close()
 
 
 def _payload_would_create_marker():
+    """悪性 payload が実行されると作成されるはずのマーカー情報を返す。"""
     marker = os.path.join(tempfile.gettempdir(), "dictsqlite_rce_test.txt")
     return marker, os.path.exists(marker)
 
 
 def test_evil_payload_is_not_executed_and_value_is_str(db: DictSQLite):
+    """悪性オブジェクトは実行されず、読み出し時は安全のため文字列化される。"""
     # まずマーカーが存在しないことを確認
     marker, existed_before = _payload_would_create_marker()
     if existed_before:
@@ -65,6 +68,7 @@ def test_evil_payload_is_not_executed_and_value_is_str(db: DictSQLite):
 
 
 def test_mixed_payload_is_blocked_and_string_returned(db: DictSQLite):
+    """安全な辞書内に悪性要素が混在していても、読み出しは文字列フォールバックとなる。"""
     # 安全なdictの中に悪性要素を含める
     mixed = {"safe": 1, "evil": Evil()}
     db["mixed"] = mixed
@@ -75,28 +79,26 @@ def test_mixed_payload_is_blocked_and_string_returned(db: DictSQLite):
 
 
 def test_safe_pickle_allows_safe_builtins_directly():
+    """safe_loads が安全な組み込み型をそのまま復元できることを確認。"""
     safe_data = {"a": [1, 2, 3], "b": (1, 2)}
     dumped = pickle.dumps(safe_data)
-    restored = safe_pickle.safe_loads(dumped)
+    restored = safe_loads(dumped)
     assert restored == safe_data
 
 
 def test_policy_allows_project_function(db_path):
-    # プロジェクト配下の関数を保存し、ポリシーで関数復元を許可
-    from dictsqlite.main import randomstrings
-
-    d = DictSQLite(
+    """プロジェクト配下の関数を保存し、ポリシー許可時のみ復元/実行できること。"""
+    d = DictSQLite(  # pylint: disable=unexpected-keyword-arg
         str(db_path),
-        safe_pickle_policy=safe_pickle.SafePolicy.for_package(
+        safe_pickle_policy=SafePolicy.for_package(
             "dictsqlite", allow_functions_from_prefixes=True
         ),
     )
     try:
         d["func"] = randomstrings
-        f = d["func"]
+        f = _t.cast(_t.Callable[[int], str], d["func"])  # type: ignore[arg-type]
         assert callable(f)
-        s = f(5)
+        s = f(5)  # pylint: disable=not-callable
         assert isinstance(s, str) and len(s) == 5
     finally:
         d.close()
-

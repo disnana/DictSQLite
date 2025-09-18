@@ -16,7 +16,7 @@ from dictsqlite.modules import utils
 def test_expiring_dict_basic_expiration(ttl):
     """TTL 経過後にキーが自動的に失効することを検証。
     """
-    ed = utils.ExpiringDict(ttl)
+    ed = utils.ExpiringDict(ttl)  # type: ignore[arg-type]
     ed["a"] = 1
     assert ("a" in ed) is True
     time.sleep(ttl * 3)
@@ -26,7 +26,7 @@ def test_expiring_dict_basic_expiration(ttl):
 def test_expiring_dict_pickle_roundtrip_restarts_timers():
     """pickle 往復後にタイマーが再構築され、再び期限が効くことを検証。
     """
-    ed = utils.ExpiringDict(0.1)
+    ed = utils.ExpiringDict(0.1)  # type: ignore[arg-type]
     ed["x"] = 10
 
     data = pickle.dumps(ed, protocol=pickle.HIGHEST_PROTOCOL)
