@@ -14,6 +14,8 @@ from dictsqlite.modules import utils
 
 @pytest.mark.parametrize("ttl", [0.05, 0.1])
 def test_expiring_dict_basic_expiration(ttl):
+    """TTL 経過後にキーが自動的に失効することを検証。
+    """
     ed = utils.ExpiringDict(ttl)
     ed["a"] = 1
     assert ("a" in ed) is True
@@ -22,6 +24,8 @@ def test_expiring_dict_basic_expiration(ttl):
 
 
 def test_expiring_dict_pickle_roundtrip_restarts_timers():
+    """pickle 往復後にタイマーが再構築され、再び期限が効くことを検証。
+    """
     ed = utils.ExpiringDict(0.1)
     ed["x"] = 10
 
@@ -35,4 +39,3 @@ def test_expiring_dict_pickle_roundtrip_restarts_timers():
     restored["y"] = 20
     time.sleep(0.25)
     assert ("y" in restored) is False
-
