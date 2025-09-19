@@ -34,7 +34,7 @@ For support, email [support@disnana.com](mailto:support@disnana.com) or join the
 
 ## License
 
-This project is licensed under a custom MIT License.
+This project is licensed under a MIT License.
 See the [LICENSE](https://github.com/disnana/DictSQLite/blob/main/LICENSE) file for details.
 
 You are free to modify the code, but you must give appropriate credit to the original author and comply with the terms of this license.
@@ -74,7 +74,7 @@ pip install dictsqlite
 
 ## ライセンス
 
-このプロジェクトはカスタム MIT Licenseの下でライセンスされています。
+このプロジェクトはMIT Licenseの下でライセンスされています。
 詳細は[LICENSE](https://github.com/disnana/DictSQLite/blob/main/LICENSE)ファイルを参照してください。
 
 コードを改変することは自由ですが、元の作成者に適切なクレジットを与え、このライセンスの条項に従う必要があることに注意してください。
