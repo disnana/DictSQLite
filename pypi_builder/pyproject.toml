@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "DictSQLite"
+description = "You can handle basic SQLite operations in Python like Dict."
+readme = { file = "Pypi.md", content-type = "text/markdown" }
+requires-python = ">=3.9"
+license = { text = "MIT" }
+
+authors = [
+  { name = "Disnana", email = "support@disnana.com" }
+]
+
+maintainers = [
+  { name = "Disnana", email = "support@disnana.com" }
+]
+
+keywords = [
+  "sqlite",
+  "dict",
+  "database",
+  "dict_like",
+  "dict like",
+  "dictsqlite",
+  "dict like sqlite"
+]
+
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13"
+]
+
+dependencies = [
+  "portalocker",
+  "cryptography"
+]
+
+# setup.py の VERSION = dictsqlite.main.__version__ と等価
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/disnana/DictSQLite"
+Download = "https://github.com/disnana/DictSQLite"
+
+[tool.setuptools.dynamic]
+version = { attr = "dictsqlite.main.__version__" }
+
+# setup.py の find_packages(include=["dictsqlite", "dictsqlite.*"]) と等価
+[tool.setuptools.packages.find]
+include = ["dictsqlite", "dictsqlite.*"]
+
+# extras_require は空のため未設定（setup.py と同等）
