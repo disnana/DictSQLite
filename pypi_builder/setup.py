@@ -10,10 +10,10 @@ NAME = 'DictSQLite'
 AUTHOR = 'Disnana'
 AUTHOR_EMAIL = 'support@disnana.com'
 URL = 'https://github.com/disnana/DictSQLite'
-LICENSE = 'MIT (Custom License with Specific Terms)'
+LICENSE = 'MIT'
 DOWNLOAD_URL = 'https://github.com/disnana/DictSQLite'
 VERSION = dictsqlite.main.__version__
-PYTHON_REQUIRES = ">=3.6"
+PYTHON_REQUIRES = ">=3.9"
 
 INSTALL_REQUIRES = [
     'portalocker',
