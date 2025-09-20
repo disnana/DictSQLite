@@ -322,8 +322,11 @@ class TestIntegratedSyncedCollections:
         db1 = DictSQLite(str(db_path))
         db1["persistent_list"] = [1, 2, 3]
         sync_list = db1["persistent_list"]
+        # Pylint cannot infer list-like methods from the returned proxy object
+        # pylint: disable=no-member
         sync_list.append(4)
         sync_list.extend([5, 6])
+        # pylint: enable=no-member
         db1.close()
 
         # Second session: verify changes persisted
@@ -376,6 +379,6 @@ class TestIntegratedSyncedCollections:
             fresh_nested = db["nested"]
             if "new_value" in fresh_nested["inner_dict"]:
                 assert fresh_nested["inner_dict"]["new_value"] == 123
-        except Exception:
+        except (KeyError, AttributeError, TypeError):
             # If direct modification doesn't work, that's also acceptable
             pass
