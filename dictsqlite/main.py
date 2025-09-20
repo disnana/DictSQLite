@@ -19,7 +19,7 @@ from dictsqlite.modules import crypto, utils
 from dictsqlite.modules.safe_pickle import SafePolicy, safe_loads
 from dictsqlite.modules import safe_pickle
 
-__version__ = '1.8.7'  # pypiの修正とライセンスをMITに変更
+__version__ = '1.8.8'  # jsonモードの実装
 
 # 公開API
 __all__ = [
@@ -204,11 +204,21 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             raise ValueError(f"Invalid journal_mode: {mode}")
         return value
 
+    # 新規: シリアライザモード検証
+    def _validate_storage_mode(self, mode: str) -> str:
+        if not isinstance(mode, str):
+            raise ValueError("storage_mode must be a string")
+        v = mode.lower().strip()
+        allowed = {"pickle", "json"}
+        if v not in allowed:
+            raise ValueError(f"Invalid storage_mode: {mode}. Choose from {allowed}")
+        return v
+
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
         self,
         db_name: str,
         table_name: str = 'main',
-        schema: bool = None,
+        schema: Optional[str] = None,
         conflict_resolver: bool = False,
         journal_mode: str = None,
         lock_file: str = None,
@@ -222,6 +232,8 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         safe_pickle_allowed_module_prefixes=(),
         safe_pickle_allowed_builtins=None,
         safe_pickle_allowed_globals=(),
+        # 新規: 保存形式モード (pickle / json)
+        storage_mode: str = 'pickle',
     ):  # pylint: disable=too-many-arguments
         # 1) まずインスタンス基本属性を設定
         self.version = version
@@ -230,6 +242,9 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         self.publickey_path = publickey_path
         self.privatekey_path = privatekey_path
         self.table_name = table_name
+
+        # 追加: storage_mode検証
+        self.storage_mode = self._validate_storage_mode(storage_mode)
 
         # 2) journal_mode は接続前に検証 (無効なら例外 -> DB未作成, リソース無し)
         validated_journal_mode = None
@@ -447,12 +462,25 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             return self.db.wrap_in_proxy(key, self, raw_value)
 
         def __setitem__(self, key, value):
-            # pickleでバイナリ化
-            value_bytes = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
-
-            # bytesを文字列にエンコード（TEXT列用）
-            value_str = base64.b64encode(value_bytes).decode('ascii')
-            # または: value_str = value_bytes.decode('latin1')  # latin1は全バイト値対応
+            # storage_mode に応じてシリアライズ
+            if self.db.storage_mode == 'pickle':
+                # pickleでバイナリ化
+                value_bytes = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+                # bytesを文字列にエンコード（TEXT列用）
+                value_str = base64.b64encode(value_bytes).decode('ascii')
+            else:  # json モード
+                try:
+                    value_str = json.dumps(
+                        value,
+                        default=self.db._extended_json_encoder_hook,  # pylint: disable=protected-access
+                        ensure_ascii=False,
+                        separators=(',', ':')
+                    )
+                except TypeError as e:  # JSON化できない
+                    raise TypeError(
+                        f"Value for key '{key}' is not JSON serializable. "
+                        "Use pickle storage_mode or provide JSON-serializable object."
+                    ) from e
 
             if self.db.password is not None:
                 value_str = self.db._encrypt(value_str)  # pylint: disable=protected-access

@@ -4,11 +4,11 @@ DictSQLite is a Python library that gives you a dictionary-like API backed by SQ
 
 Status: 20/20 tests pass on the reference suite bundled in this repo.
 
-- Storage model: Pickle + Base64 (with legacy JSON auto-read), optional RSA encryption of the stored text.
+- Storage model: Pickle + Base64 (with legacy JSON auto-read) OR pure JSON via storage_mode='json'; optional RSA encryption of the stored text.  (v1.8.8+ adds selectable storage_mode)
 - Schema model: Minimal key/value schema by default; you can provide a custom CREATE TABLE schema.
-- Type model: Key is the primary key; value stores any pickle-able Python object. Some mutable types can auto-sync.
+- Type model: Key is the primary key; value stores any pickle-able Python object (pickle mode) or any JSON-serializable object (json mode). Some mutable types can auto-sync.
 - Concurrency model: A single background worker serializes operations; optional file lock mode exists.
-- Security model: Safe Unpickler with allow-lists guards deserialization.
+- Security model: Safe Unpickler with allow-lists guards deserialization (pickle mode). JSON mode skips pickle entirely.
 
 
 ## Table schema management
@@ -32,23 +32,61 @@ CREATE TABLE IF NOT EXISTS "main" (
 
 ## How values are stored
 
-When you assign db[key] = value, DictSQLite serializes and stores value as follows:
+When you assign db[key] = value, DictSQLite serializes and stores value according to storage_mode.
+
+### storage_mode = 'pickle' (default)
 
 1) Serialize with pickle using the highest protocol.
 2) Base64-encode to obtain an ASCII string.
 3) If password is set, encrypt this Base64 string using RSA-OAEP (keys are loaded from AES-encrypted PEM files). The encrypted bytes are stored (SQLite will store them as BLOB even if the column is declared TEXT).
 4) Insert or replace into the table: (key, value).
 
-On read (db[key]):
+On read:
+- If password is set, bytes are decrypted.
+- Legacy JSON decode is attempted first (for very old rows written as plain JSON text).
+- If JSON fails, Base64 is decoded and the object is unpickled using a Safe Unpickler. If unpickling fails under the policy, the raw string is returned.
 
-- If password is set, the raw bytes are decrypted via RSA-OAEP to recover the original Base64 string.
-- The library then attempts legacy JSON decoding first for backward compatibility.
-- If JSON fails, it decodes Base64 and unpickles the object using a Safe Unpickler (see Security), finally returning the original Python object (or the plaintext string if both decoding paths fail).
+### storage_mode = 'json'
+
+1) Value is json.dumps()'d using a custom hook that supports set (stored as {"__type__":"set","value":[...]}) and the RecursiveDict / synced collection wrappers.
+2) The resulting UTF-8 text (not Base64) is encrypted if password is set, otherwise stored directly.
+3) On read: (optional decrypt) -> json.loads() with hook -> Python object.
+4) For backward compatibility, if JSON decoding fails (e.g. older pickle rows), the loader will then try pickle so mixed databases still read.
 
 Implications:
+- JSON mode disallows arbitrary Python objects (functions, custom classes without to_dict()). Use only JSON-native types + set. Attempting to store unsupported objects raises TypeError.
+- Pickle mode supports arbitrary pickle-able objects (subject to the Safe Unpickler policy) but has a larger attack surface for untrusted data.
+- You can mix: existing pickle rows remain readable after switching to json mode (reader tries JSON first, then pickle). New writes follow the current storage_mode.
 
-- New writes use Pickle + Base64 by design. Legacy rows that were JSON-encoded can still be read.
-- With encryption enabled, only the value column is encrypted. The key and any other schema columns are not encrypted by DictSQLite.
+
+## Storage mode selection (v1.8.8+)
+
+Choose storage_mode based on requirements:
+
+| Mode   | Pros | Cons | Best for |
+|--------|------|------|----------|
+| pickle | Arbitrary objects; faster for complex Python types | Security review needed; larger payload (Base64) | Internal trusted data, complex objects |
+| json   | Human-readable; safer (no pickle) | Limited types; need custom encoding for sets | Config files, simple data interchange |
+
+Switching considerations:
+- Changing storage_mode only affects future writes; existing rows remain as they were.
+- Reading order: JSON attempt -> pickle attempt -> fallback raw string.
+- Migration to pure JSON: Optionally iterate over keys and reassign values while in json mode.
+
+Example migration snippet:
+```python
+from dictsqlite import DictSQLite
+
+db = DictSQLite('app.db', storage_mode='pickle')
+# ... existing data stored
+# Switch
+db_json = DictSQLite('app.db', storage_mode='json')
+for k in db_json.keys():
+    v = db_json[k]  # auto-decoded (pickle or JSON)
+    db_json[k] = v  # re-write in JSON format
+```
+
+Security note: json mode bypasses the Safe Unpickler (no pickle used). If you do not need arbitrary classes, prefer json.
 
 
 ## Keys, indexes, and data types
@@ -85,7 +123,7 @@ Note: Only the value field is encrypted by DictSQLite; key and other columns are
 
 When you read a value back, DictSQLite may return proxy objects that auto-sync to the DB when mutated:
 
-- RecursiveDict: If the stored value is a mapping (dict-like), you get a RecursiveDict. Assignments and deletions at any depth write back to the stored top-level dict. Example: db['user']['profile']['age'] = 31 persists immediately.
+- RecursiveDict: If the stored value is a mapping (dict-like), you get a RecursiveDict. Assignments and deletions at any depth write back to the stored top-level dict. Example: `db['user']['profile']['age'] = 31` persists immediately.
   - Limitations: Non-dict containers nested under the dict (e.g., lists/sets inside) are returned as plain Python objects and will not auto-sync.
 - DBSyncedList / DBSyncedSet: If the stored value is a top-level list or set, the object is wrapped so that mutations (append, add, remove, etc.) write back automatically.
   - Limitations: Lists/sets nested inside dicts are not wrapped and thus do not auto-sync. Reassign the parent value to persist nested changes, or store lists/sets at top level if you want auto-sync behavior.
@@ -96,25 +134,32 @@ When you read a value back, DictSQLite may return proxy objects that auto-sync t
 Constructor
 
 ```python
-DictSQLite(
-  db_name: str,
-  table_name: str = 'main',
-  schema: str | None = None,
-  conflict_resolver: bool = False,
-  journal_mode: str | None = None,
-  lock_file: str | None = None,
-  password: str | None = None,
-  publickey_path: str = './public_keys.pem',
-  privatekey_path: str = './private_keys.pem',
-  version: int = 1,
-  key_create: bool = False,
+from dictsqlite import DictSQLite
+
+db = DictSQLite(
+  db_name='example.db',
+  table_name='main',
+  schema=None,
+  conflict_resolver=False,
+  journal_mode=None,
+  lock_file=None,
+  password=None,
+  publickey_path='./public_keys.pem',
+  privatekey_path='./private_keys.pem',
+  version=1,
+  key_create=False,
   # Safe pickle
-  safe_pickle_policy: Optional[SafePolicy] = None,
-  safe_pickle_allowed_module_prefixes: tuple[str, ...] = ("dictsqlite",),
-  safe_pickle_allowed_builtins: set[str] | None = None,
-  safe_pickle_allowed_globals: set[str] = {"dictsqlite.modules.utils.ExpiringDict"},
+  safe_pickle_policy=None,
+  safe_pickle_allowed_module_prefixes=("dictsqlite",),
+  safe_pickle_allowed_builtins=None,
+  safe_pickle_allowed_globals={"dictsqlite.modules.utils.ExpiringDict"},
+  storage_mode='pickle',  # or 'json'
 )
 ```
+
+storage_mode parameter:
+- 'pickle' (default): Full feature set, Safe Unpickler on read, supports any pickle-able object.
+- 'json': Only JSON-serializable (plus set). Safer & readable; non-serializable objects raise TypeError.
 
 Core dictionary API
 
@@ -241,11 +286,40 @@ with DictSQLite('policy.db',
     db['k'] = {'v': 1}
 ```
 
+JSON mode example
+
+```python
+from dictsqlite import DictSQLite
+
+with DictSQLite('settings.db', storage_mode='json') as db:
+    db['feature_flags'] = {'new_ui': True, 'beta_users': ['u1', 'u2']}
+    db['tags'] = {'alpha', 'beta'}  # set supported via custom encoder
+    print(db['tags'])  # -> {'alpha', 'beta'}
+
+    # Attempting to store a non-JSON-serializable object raises TypeError
+    # db['obj'] = lambda x: x  # would fail
+```
+
+Mixed read example (existing pickle rows, new JSON rows):
+```python
+from dictsqlite import DictSQLite
+
+# Existing database created with default pickle mode
+with DictSQLite('mixed.db', storage_mode='pickle') as db:
+    db['user'] = {'name': 'Alice'}
+
+# Later switch to JSON mode
+with DictSQLite('mixed.db', storage_mode='json') as db:
+    print(db['user'])  # still readable (pickle fallback)
+    db['config'] = {'theme': 'dark'}  # written as JSON
+```
+
 
 ## Compatibility and migration notes
 
-- Legacy JSON: Older rows may have value stored as JSON text. Reads will try JSON first, then pickle. New writes use pickle+Base64.
-- Column affinity: SQLite is flexible; declaring value as TEXT does not prevent storing BLOB when encryption is on. Reads handle both forms.
+- Legacy JSON (pre-pickle rows): Still read first via JSON attempt.
+- storage_mode='json': New writes are pure JSON; reads still attempt JSON then pickle so mixed databases work seamlessly.
+- Column affinity: SQLite is flexible; declaring value as TEXT does not prevent storing BLOB when encryption is on (pickle mode ciphertext). JSON mode stores plaintext UTF-8 (or encrypted bytes if password set).
 - conflict_resolver: Experimental/deprecated; typical apps do not need it. Prefer the default worker queue with WAL mode for multi-threaded reads.
 
 
