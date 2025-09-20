@@ -1,5 +1,7 @@
 .idea/
 dict_sqlite/__pycache__/
+dictsqlite/__pycache__/
+tests/__pycache__/
 archive/
 *.whl
 *.gz
@@ -10,4 +12,10 @@ build/
 dictsqlite-1.4.5/
 *.db
 *.db-shm
+*.db-wal
 実験用/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
