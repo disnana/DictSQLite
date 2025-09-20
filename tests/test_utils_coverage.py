@@ -404,7 +404,7 @@ class TestUtilityFunctions:
                     # Immediately try to read it back
                     value = ed[key]
                     results.append((worker_id, i, value))
-                except Exception as error:
+                except (KeyError, RuntimeError, ValueError) as error:  # narrowed from broad Exception
                     results.append((worker_id, i, f"error: {error}"))
 
         # Start multiple threads

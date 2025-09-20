@@ -9,6 +9,7 @@ import time
 import threading
 import random
 import string
+from typing import Any, Dict  # 追加
 import pytest
 
 from dictsqlite.main import DictSQLite
@@ -298,13 +299,13 @@ class TestStressTesting:
     def test_deep_nesting_stress(self, db: DictSQLite):
         """Test deeply nested data structures."""
         # Create deeply nested structure
-        deep_data = {"level": 0}
-        current = deep_data
+        deep_data: Dict[str, Any] = {"level": 0}
+        current: Dict[str, Any] = deep_data
 
         depth = 20
         for i in range(1, depth):
-            current["next"] = {"level": i, "data": f"level_{i}_data"}
-            current = current["next"]
+            current["next"] = {"level": i, "data": f"level_{i}_data"}  # type: ignore[assignment]
+            current = current["next"]  # type: ignore[assignment]
 
         # Store and retrieve
         db["deep_structure"] = deep_data
@@ -354,9 +355,8 @@ class TestStressTesting:
                     if key in db:
                         value = db[key]
                         value["updated"] = time.time()
-            except Exception:
-                # Some operations may fail due to race conditions, which is acceptable
-                # in stress testing as long as the system doesn't crash
+            except (KeyError, RuntimeError, ValueError):  # Narrowed from broad Exception
+                # Some operations may fail due to timing/contention; acceptable for stress test
                 pass
 
         db.operation_queue.join()
@@ -366,7 +366,7 @@ class TestStressTesting:
         assert db["stress_test_complete"] is True
 
 
-class TestPerformanceRegression:
+class TestPerformanceRegression:  # pylint: disable=too-few-public-methods
     """Tests to detect performance regressions."""
 
     def test_baseline_performance_metrics(self, db: DictSQLite):
