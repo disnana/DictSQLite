@@ -218,7 +218,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         self,
         db_name: str,
         table_name: str = 'main',
-        schema: bool = None,
+        schema: str | None = None,
         conflict_resolver: bool = False,
         journal_mode: str = None,
         lock_file: str = None,
