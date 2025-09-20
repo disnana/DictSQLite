@@ -19,7 +19,7 @@ from dictsqlite.modules import crypto, utils
 from dictsqlite.modules.safe_pickle import SafePolicy, safe_loads
 from dictsqlite.modules import safe_pickle
 
-__version__ = '1.8.7'  # 未定
+__version__ = '1.8.7'  # pypiの修正とライセンスをMITに変更
 
 # 公開API
 __all__ = [
@@ -223,21 +223,36 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         safe_pickle_allowed_builtins=None,
         safe_pickle_allowed_globals=(),
     ):  # pylint: disable=too-many-arguments
+        # 1) まずインスタンス基本属性を設定
         self.version = version
         self.db_name = db_name
         self.password = password
         self.publickey_path = publickey_path
         self.privatekey_path = privatekey_path
         self.table_name = table_name
+
+        # 2) journal_mode は接続前に検証 (無効なら例外 -> DB未作成, リソース無し)
+        validated_journal_mode = None
+        if journal_mode is not None:
+            validated_journal_mode = self._validate_journal_mode(journal_mode)
+        self.journal_mode = validated_journal_mode
+
+        # 3) ここから副作用 (鍵生成やDB接続) を開始
         if self.password is not None and key_create:
             crypto.key_create(password, publickey_path, privatekey_path)
+
+        # 接続開始
         self.conn = sqlite3.connect(db_name, check_same_thread=False)
         self.cursor = self.conn.cursor()
         self.in_transaction = False
+
+        # ロックファイル設定
         if lock_file is None:
             self.lock_file = f"{db_name}.lock"
         else:
             self.lock_file = lock_file
+
+        # キューとワーカースレッド
         self.operation_queue = queue.Queue()
         self.conflict_resolver = conflict_resolver
         if self.conflict_resolver:
@@ -248,10 +263,13 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             self.worker_thread = threading.Thread(target=self._process_queue)
             self.worker_thread.daemon = True
             self.worker_thread.start()
+
+        # テーブル作成
         self.create_table(schema=schema)
-        if journal_mode is not None:
-            mode = self._validate_journal_mode(journal_mode)
-            self.conn.execute(f'PRAGMA journal_mode={mode};')
+
+        # 4) 検証済みの journal_mode を適用
+        if self.journal_mode is not None:
+            self.conn.execute(f'PRAGMA journal_mode={self.journal_mode};')
 
         # 安全pickle設定（デフォルトは自パッケージのクラス復元のみ許可、関数は不許可）
         self.safe_pickle_policy = safe_pickle_policy
