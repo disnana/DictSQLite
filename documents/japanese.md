@@ -4,11 +4,11 @@ DictSQLite は、SQLite をバックエンドにした辞書風 API を提供す
 
 ステータス: このリポジトリ同梱の参照テストは 20/20 で成功しています。
 
-- ストレージモデル: Pickle + Base64（レガシー JSON は読み取り互換）、必要に応じて値を RSA で暗号化
+- ストレージモデル: storage_mode='pickle'（Pickle + Base64、レガシー JSON 互換読込）または storage_mode='json'（純粋 JSON）。必要に応じて値を RSA で暗号化。（v1.8.8 で storage_mode 選択を追加）
 - スキーマモデル: 既定は最小の key/value スキーマ。任意の CREATE TABLE 列定義を指定可能
-- 型モデル: key が主キー。value は pickle 可能な任意の Python オブジェクト。可変型は一部が自動同期
+- 型モデル: key が主キー。value は pickle モードでは pickle 可能な任意オブジェクト / json モードでは JSON シリアライズ可能（+ set 対応）オブジェクト。一部可変型は自動同期
 - 併行モデル: 単一ワーカースレッドで直列処理。必要なら簡易ファイルロック
-- セキュリティモデル: 許可リスト方式の Safe Unpickler で逆シリアライズを保護
+- セキュリティモデル: pickle モードでは許可リスト Safe Unpickler。json モードでは pickle を使用せず攻撃面減少
 
 
 ## テーブルスキーマの管理
@@ -32,23 +32,59 @@ CREATE TABLE IF NOT EXISTS "main" (
 
 ## 値の保存方法
 
-db[key] = value の代入時、value は次の手順で保存されます。
+storage_mode に応じて value の直列化方式が変わります。
 
-1) Pickle で最高プロトコルにて直列化。
-2) Base64 で ASCII 文字列にエンコード。
-3) password を設定している場合、上記 Base64 文字列を RSA-OAEP で暗号化（鍵 PEM は AES でパスワード保護）。暗号化後のバイト列を保存（列は TEXT 宣言でも SQLite は BLOB として保持可）。
-4) (key, value) を INSERT OR REPLACE。
+### storage_mode='pickle'（既定）
 
-読み出し（db[key]）時:
+1) Pickle で最高プロトコルにて直列化
+2) Base64 で ASCII 文字列化
+3) password 設定時は Base64 文字列を RSA-OAEP 暗号化（PEM は AES でパスワード保護）
+4) (key, value) を INSERT OR REPLACE
 
-- password がある場合はまず RSA-OAEP で復号して Base64 文字列を得ます。
-- 後方互換のため JSON デコードを先に試行。
-- 失敗した場合は Base64 をデコードし、Safe Unpickler（後述）で unpickle。いずれも不可なら最終手段として平文文字列を返します。
+読み出し時:
+- 暗号化されていれば復号
+- 後方互換のため JSON デコードを先に試行（非常に旧い JSON 保存行）
+- 失敗したら Base64 -> Safe Unpickler で unpickle。ポリシー不許可なら警告後に生文字列返却
 
-注意点:
+### storage_mode='json'
 
-- 新規書き込みは Pickle + Base64 が既定。過去に JSON 保存された行は引き続き読み取れます。
-- 暗号化は value 列のみ対象です。key や他列は平文のままです。
+1) json.dumps で UTF-8 文字列化（set は {"__type__":"set","value":[...]} 形式。RecursiveDict / 同期ラッパは通常型へ展開）
+2) password 設定時は UTF-8 文字列を暗号化、無ければそのまま保存
+3) 読み出し: （必要なら復号）-> json.loads(custom hook) -> Python オブジェクト
+4) JSON デコード失敗時は pickle 互換読みを試みる（混在 DB 読取を許容）
+
+影響:
+- json モード: JSON ネイティブ型 + set のみ（関数/カスタムクラス等は TypeError）。
+- pickle モード: 任意 pickle 可能オブジェクト対応（Safe Unpickler 制約下）だが攻撃面広い。
+- モード変更後も既存行はそのまま。読取側が JSON → pickle の順で試みるため混在可。
+
+
+## ストレージモードの選択 (v1.8.8+)
+
+| モード | 長所 | 短所 | 推奨用途 |
+|--------|------|------|----------|
+| pickle | 複雑 / 任意オブジェクト保存 | セキュリティ監査必要・Base64 overhead | 内部信頼データ / 複雑モデル |
+| json   | 可読・pickle 不使用で安全性向上 | 型制限（set 以外の非標準型不可） | 設定・共有データ・軽量 KV |
+
+切替指針:
+- storage_mode 変更は新規書込みのみ影響。既存行は再保存しない限り旧形式。
+- 読取順序: JSON 試行 → pickle 試行 → 生文字列。
+- 既存 pickle データを JSON 化したい場合は再代入マイグレーションが可能。
+
+マイグレーション例:
+```python
+from dictsqlite import DictSQLite
+
+# 以前は pickle モードで運用
+# ... 既存データあり
+# JSON モードへ新規インスタンス
+with DictSQLite('app.db', storage_mode='json') as db:
+    for k in db.keys():
+        v = db[k]  # 自動判別で取得
+        db[k] = v  # JSON 形式で再保存
+```
+
+セキュリティ: 任意オブジェクト不要なら json モード推奨。
 
 
 ## キー・インデックス・データ型
@@ -85,7 +121,7 @@ db[key] = value の代入時、value は次の手順で保存されます。
 
 読み出し時、変更を検知して自動保存するプロキシを返す場合があります。
 
-- RecursiveDict: 値が辞書系の場合、深い階層での代入/削除も直ちに最上位の辞書へ書き戻します。例: db['user']['profile']['age'] = 31 は即時永続化。
+- RecursiveDict: 値が辞書系の場合、深い階層での代入/削除も直ちに最上位の辞書へ書き戻します。例: `db['user']['profile']['age'] = 31` は即時永続化。
   - 制限: 辞書の下にあるリスト/セットなどは通常の Python オブジェクトで返り、自動同期しません。
 - DBSyncedList / DBSyncedSet: 値が「トップレベルの」list/set の場合、append や add/remove などの変更を自動保存します。
   - 制限: 辞書の中に入った list/set はラップされないため自動同期しません。親値の再代入で保存するか、トップレベルで保存してください。
@@ -96,25 +132,32 @@ db[key] = value の代入時、value は次の手順で保存されます。
 コンストラクタ
 
 ```python
-DictSQLite(
-  db_name: str,
-  table_name: str = 'main',
-  schema: str | None = None,
-  conflict_resolver: bool = False,
-  journal_mode: str | None = None,
-  lock_file: str | None = None,
-  password: str | None = None,
-  publickey_path: str = './public_keys.pem',
-  privatekey_path: str = './private_keys.pem',
-  version: int = 1,
-  key_create: bool = False,
+from dictsqlite import DictSQLite
+
+db = DictSQLite(
+  db_name='example_jp.db',
+  table_name='main',
+  schema=None,
+  conflict_resolver=False,
+  journal_mode=None,
+  lock_file=None,
+  password=None,
+  publickey_path='./public_keys.pem',
+  privatekey_path='./private_keys.pem',
+  version=1,
+  key_create=False,
   # Safe pickle
-  safe_pickle_policy: Optional[SafePolicy] = None,
-  safe_pickle_allowed_module_prefixes: tuple[str, ...] = ("dictsqlite",),
-  safe_pickle_allowed_builtins: set[str] | None = None,
-  safe_pickle_allowed_globals: set[str] = {"dictsqlite.modules.utils.ExpiringDict"},
+  safe_pickle_policy=None,
+  safe_pickle_allowed_module_prefixes=('dictsqlite',),
+  safe_pickle_allowed_builtins=None,
+  safe_pickle_allowed_globals={'dictsqlite.modules.utils.ExpiringDict'},
+  storage_mode='pickle',  # or 'json'
 )
 ```
+
+storage_mode:
+- 'pickle': 既定。任意 pickle 可能オブジェクト。Safe Unpickler で制御。
+- 'json'  : JSON シリアライズ可能型 + set。非対応型は TypeError。
 
 辞書 API（主要操作）
 
@@ -241,13 +284,41 @@ with DictSQLite('policy_jp.db',
     db['k'] = {'v': 1}
 ```
 
+JSON モード例
+
+```python
+from dictsqlite import DictSQLite
+
+with DictSQLite('settings_jp.db', storage_mode='json') as db:
+    db['feature_flags'] = {'new_ui': True, 'beta_users': ['u1', 'u2']}
+    db['tags'] = {'alpha', 'beta'}  # set も保存可
+    print(db['tags'])
+
+    # 非 JSON 直列化オブジェクトは TypeError
+    # db['bad'] = lambda x: x  # エラー例
+```
+
+混在読取例（旧 pickle 行 + 新 JSON 行）:
+```python
+from dictsqlite import DictSQLite
+
+# 旧: pickle モードで作成
+with DictSQLite('mixed_jp.db', storage_mode='pickle') as db:
+    db['user'] = {'name': 'Alice'}
+
+# 後に JSON モードへ切替
+with DictSQLite('mixed_jp.db', storage_mode='json') as db:
+    print(db['user'])          # pickle fallback で読める
+    db['config'] = {'theme': 'dark'}  # JSON 形式で保存
+```
+
 
 ## 互換性と移行
 
-- レガシー JSON: 旧データでは value に JSON 文字列が入っている場合があります。読み取りは JSON → 失敗時に Pickle の順で試行。新規保存は Pickle+Base64 です。
-- 列型のアフィニティ: SQLite は柔軟で、value を TEXT 宣言していても暗号化時は BLOB として格納され得ます。読み取り側は両方に対応します。
-- conflict_resolver: 実験的/非推奨。通常はワーカー + WAL で十分です。
-
+- レガシー JSON（初期バージョン）: まず JSON 試行→失敗時 pickle。
+- storage_mode='json': 新規保存は純粋 JSON。読取時は JSON→pickle 順で混在処理可。
+- 列型アフィニティ: pickle + 暗号化時は BLOB 化され得る。json モードは平文 UTF-8（暗号化時はバイト列）。
+- conflict_resolver: 実験的/非推奨。通常はワーカー + WAL 推奨。
 
 ## トラブルシューティング
 
