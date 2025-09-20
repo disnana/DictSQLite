@@ -12,7 +12,8 @@ import pickle
 import pytest
 
 from dictsqlite.modules import utils
-from dictsqlite.modules.safe_pickle import safe_loads
+# pylint: disable=import-error,no-name-in-module
+from dictsqlite.modules import safe_pickle
 
 
 class TestExpiringDict:
@@ -275,7 +276,7 @@ class TestSafeUnpickler:
 
         for data in safe_data:
             pickled = pickle.dumps(data)
-            unpickled = safe_loads(pickled)
+            unpickled = safe_pickle.safe_loads(pickled)
             assert unpickled == data
 
     def test_safe_unpickler_policy_allowed_module(self):
@@ -285,7 +286,7 @@ class TestSafeUnpickler:
         safe_len = getattr(builtins, 'len')
         pickled = pickle.dumps(safe_len)
 
-        unpickled = safe_loads(pickled, allowed_builtins=["len"])
+        unpickled = safe_pickle.safe_loads(pickled, allowed_builtins=["len"])
         assert unpickled is len
 
     def test_safe_unpickler_policy_blocked_module(self):
@@ -297,7 +298,7 @@ class TestSafeUnpickler:
 
         # Should raise exception when blocked
         with pytest.raises(pickle.UnpicklingError):
-            safe_loads(pickled)
+            safe_pickle.safe_loads(pickled)
 
     def test_safe_unpickler_default_policy(self):
         """Test safe_loads with default restrictive policy."""
@@ -308,7 +309,7 @@ class TestSafeUnpickler:
 
         # Should raise exception
         with pytest.raises(pickle.UnpicklingError):
-            safe_loads(pickled)
+            safe_pickle.safe_loads(pickled)
 
     def test_safe_unpickler_nested_structures(self):
         """Test safe_loads with nested data structures."""
@@ -319,7 +320,7 @@ class TestSafeUnpickler:
         }
 
         pickled = pickle.dumps(nested_data)
-        unpickled = safe_loads(pickled)
+        unpickled = safe_pickle.safe_loads(pickled)
 
         assert unpickled == nested_data
 
@@ -327,13 +328,13 @@ class TestSafeUnpickler:
         """Test safe_loads with custom allowed globals."""
         # Test allowed function
         pickled_len = pickle.dumps(len)
-        unpickled_len = safe_loads(pickled_len, allowed_globals=["builtins.len"])
+        unpickled_len = safe_pickle.safe_loads(pickled_len, allowed_globals=["builtins.len"])
         assert unpickled_len is len
 
         # Test blocked function
         pickled_eval = pickle.dumps(eval)
         with pytest.raises(pickle.UnpicklingError):
-            safe_loads(pickled_eval, allowed_globals=["builtins.len"])
+            safe_pickle.safe_loads(pickled_eval, allowed_globals=["builtins.len"])
 
     def test_safe_unpickler_error_handling(self):
         """Test safe_loads error handling."""
@@ -341,14 +342,14 @@ class TestSafeUnpickler:
         invalid_data = b"invalid pickle data"
 
         with pytest.raises(Exception):  # Should raise some form of unpickling error
-            safe_loads(invalid_data)
+            safe_pickle.safe_loads(invalid_data)
 
     def test_safe_unpickler_empty_data(self):
         """Test safe_loads with empty data."""
         empty_data = b""
 
         with pytest.raises(Exception):
-            safe_loads(empty_data)
+            safe_pickle.safe_loads(empty_data)
 
 
 class TestUtilityFunctions:
@@ -404,8 +405,11 @@ class TestUtilityFunctions:
                     # Immediately try to read it back
                     value = ed[key]
                     results.append((worker_id, i, value))
-                except (KeyError, RuntimeError, ValueError) as error:  # narrowed from broad Exception
-                    results.append((worker_id, i, f"error: {error}"))
+                except (KeyError, RuntimeError, ValueError) as error:
+                        # narrowed from broad Exception
+                    results.append(
+                        (worker_id, i, f"error: {error}")
+                    )
 
         # Start multiple threads
         threads = []
