@@ -2,7 +2,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/dictsqlite.svg)](https://pypi.org/project/dictsqlite/)
 [![Python versions](https://img.shields.io/pypi/pyversions/dictsqlite.svg)](https://pypi.org/project/dictsqlite/)
-[![License](https://img.shields.io/badge/License-MIT%20%28Custom%29-blue.svg)](https://github.com/disnana/DictSQLite/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/disnana/DictSQLite/blob/main/LICENSE)
 [![Downloads](https://static.pepy.tech/badge/dictsqlite)](https://pepy.tech/project/dictsqlite)
 
 **Handle SQLite databases in Python with the simplicity of a dictionary.**
