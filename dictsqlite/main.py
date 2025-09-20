@@ -19,7 +19,7 @@ from dictsqlite.modules import crypto, utils
 from dictsqlite.modules.safe_pickle import SafePolicy, safe_loads
 from dictsqlite.modules import safe_pickle
 
-__version__ = '1.8.7'  # pypiの修正とライセンスをMITに変更
+__version__ = '1.8.8'  # 未定
 
 # 公開API
 __all__ = [
