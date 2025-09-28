@@ -1,0 +1,478 @@
+from __future__ import annotations
+
+# パッケージ版 fast 実装 (互換メソッドを追加)
+# 元の拡張 fast.py をベースにし、DictSQLite 互換 API (has_key / clear_table / clear_db / switch_table / context manager) を追加。
+
+import json
+import pickle
+import threading
+import re
+import queue
+import logging
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+import portalocker
+import importlib
+
+# APSW フォールバック: apsw が無ければ sqlite3 を利用
+try:  # noqa: SIM105
+    import apsw  # type: ignore  # noqa: F401
+    _USING_APSW = True
+except ImportError:  # pragma: no cover - fallback path
+    import sqlite3 as _sqlite3  # type: ignore
+    apsw = None  # type: ignore
+    _USING_APSW = False
+
+from dictsqlite.modules import crypto  # type: ignore
+from dictsqlite.modules.safe_pickle import SafePolicy, safe_loads  # type: ignore
+from dictsqlite.modules import utils  # type: ignore
+
+logger = logging.getLogger(__name__)
+
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _quote_ident(name: str) -> str:
+    if not isinstance(name, str) or not name or not _IDENTIFIER_RE.match(name):
+        raise ValueError(f"Invalid identifier: {name!r}")
+    return f'"{name}"'
+
+
+def _join_queue(q: queue.Queue, result_queue: Optional[queue.Queue] = None):  # noqa: D401
+    q.join()
+    if result_queue is not None:
+        try:
+            return result_queue.get_nowait()
+        except queue.Empty:  # pragma: no cover
+            return None
+    return None
+
+
+@dataclass
+class _Config:
+    storage_mode: str = "pickle"
+    journal_mode: str | None = "WAL"
+    synchronous: str = "NORMAL"
+    password: Optional[str] = None
+    publickey_path: str = "./public_keys.pem"
+    privatekey_path: str = "./private_keys.pem"
+    version: int = 1
+    conflict_resolver: bool = False
+    lock_file: Optional[str] = None
+
+
+class DBSyncedList(list):  # noqa: D401
+    def __init__(self, key, proxy, initial=None):
+        super().__init__(initial if initial is not None else [])
+        self._key = key
+        self._proxy = proxy
+
+    def sync(self):
+        self._proxy[self._key] = list(self)
+
+    def append(self, val):  # noqa: D401
+        super().append(val); self.sync()
+    def extend(self, vals):  # noqa: D401
+        super().extend(vals); self.sync()
+    def remove(self, val):  # noqa: D401
+        super().remove(val); self.sync()
+    def pop(self, idx=-1):  # noqa: D401
+        v = super().pop(idx); self.sync(); return v
+    def clear(self):  # noqa: D401
+        super().clear(); self.sync()
+    def insert(self, idx, val):  # noqa: D401
+        super().insert(idx, val); self.sync()
+    def reverse(self):  # noqa: D401
+        super().reverse(); self.sync()
+    def sort(self, key=None, reverse: bool = False):  # noqa: D401
+        super().sort(key=key, reverse=reverse); self.sync()
+    def __setitem__(self, idx, val):  # noqa: D401
+        super().__setitem__(idx, val); self.sync()
+    def __delitem__(self, idx):  # noqa: D401
+        super().__delitem__(idx); self.sync()
+    def __iadd__(self, other):  # noqa: D401
+        r = super().__iadd__(other); self.sync(); return r
+    def __imul__(self, other):  # noqa: D401
+        r = super().__imul__(other); self.sync(); return r
+
+
+class DBSyncedSet(set):  # noqa: D401
+    def __init__(self, key, proxy, initial=None):
+        super().__init__(initial if initial is not None else set())
+        self._key = key
+        self._proxy = proxy
+
+    def sync(self):
+        self._proxy[self._key] = set(self)
+
+    def add(self, element):  # noqa: D401
+        super().add(element); self.sync()
+    def remove(self, element):  # noqa: D401
+        super().remove(element); self.sync()
+    def discard(self, element):  # noqa: D401
+        super().discard(element); self.sync()
+    def pop(self):  # noqa: D401
+        v = super().pop(); self.sync(); return v
+    def clear(self):  # noqa: D401
+        super().clear(); self.sync()
+    def update(self, *others):  # noqa: D401
+        super().update(*others); self.sync()
+    def intersection_update(self, *others):  # noqa: D401
+        super().intersection_update(*others); self.sync()
+    def difference_update(self, *others):  # noqa: D401
+        super().difference_update(*others); self.sync()
+    def symmetric_difference_update(self, other):  # noqa: D401
+        super().symmetric_difference_update(other); self.sync()
+    def __ior__(self, other):  # noqa: D401
+        r = super().__ior__(other); self.sync(); return r
+    def __iand__(self, other):  # noqa: D401
+        r = super().__iand__(other); self.sync(); return r
+    def __isub__(self, other):  # noqa: D401
+        r = super().__isub__(other); self.sync(); return r
+    def __ixor__(self, other):  # noqa: D401
+        r = super().__ixor__(other); self.sync(); return r
+
+
+class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
+    """APSW / sqlite3 を利用した高速辞書ライク DB (DictSQLite 互換)。
+
+    apsw 未導入環境では自動的に sqlite3 にフォールバックします。
+    backend プロパティで利用中バックエンドを確認可能。
+    """
+
+    class RecursiveDict:  # noqa: D401
+        def __init__(self, proxy, base_key, path=()):
+            self._proxy = proxy
+            self._base_key = base_key
+            self._path = path
+        def _get_top(self):  # noqa: D401
+            return self._proxy.get_raw_value(self._base_key)
+        def _follow(self, top):  # noqa: D401
+            cur = top
+            for p in self._path:
+                cur = cur[p]
+            return cur
+        def to_dict(self):  # noqa: D401
+            top = self._get_top(); return self._follow(top)
+        def __getitem__(self, key):  # noqa: D401
+            top = self._get_top(); target = self._follow(top)[key]
+            return self._proxy.db.wrap_in_proxy(self._base_key, self._proxy, target, path=self._path + (key,))
+        def __setitem__(self, key, value):  # noqa: D401
+            if hasattr(value, 'to_dict'): value = value.to_dict()
+            elif isinstance(value, (DBSyncedList, DBSyncedSet)): value = type(value).__bases__[0](value)
+            top = self._get_top(); ref = self._follow(top); ref[key] = value; self._proxy[self._base_key] = top
+        def __delitem__(self, key):  # noqa: D401
+            top = self._get_top(); ref = self._follow(top); del ref[key]; self._proxy[self._base_key] = top
+        def __iter__(self):  # noqa: D401
+            return iter(self.to_dict())
+        def __len__(self):  # noqa: D401
+            return len(self.to_dict())
+        def keys(self):  # noqa: D401
+            return self.to_dict().keys()
+        def items(self):  # noqa: D401
+            result = []
+            for k, v in self.to_dict().items():
+                wrapped = self._proxy.db.wrap_in_proxy(self._base_key, self._proxy, v, path=self._path + (k,))
+                result.append((k, wrapped))
+            return result
+        def values(self):  # noqa: D401
+            return [v for _, v in self.items()]
+        def __repr__(self):  # noqa: D401
+            return repr(self.to_dict())
+
+    class TableProxy:  # noqa: D401
+        def __init__(self, db: 'FastDictSQLite', table_name: str):
+            self.db = db; self.table_name = table_name
+        def _enqueue(self, op, args, need_result=False):  # noqa: D401
+            rq = queue.Queue() if need_result else None
+            self.db.operation_queue.put((op, args, {}, rq))
+            if rq is not None:
+                res = rq.get()
+                if isinstance(res, Exception):
+                    raise res
+                return res
+            return None
+        def get_raw_value(self, key):  # noqa: D401
+            row = self._enqueue(self.db._fetchone, (f"SELECT value FROM {_quote_ident(self.table_name)} WHERE key=?", (key,)), True)
+            if row is None: raise KeyError(f"Key {key} not found in table {self.table_name}")
+            blob = row[0]; return self.db._deserialize(blob)
+        def __getitem__(self, key):  # noqa: D401
+            raw = self.get_raw_value(key); return self.db.wrap_in_proxy(key, self, raw)
+        def __setitem__(self, key, value):  # noqa: D401
+            blob = self.db._serialize(value)
+            self._enqueue(self.db._execute, (f"INSERT OR REPLACE INTO {_quote_ident(self.table_name)}(key,value) VALUES(?,?)", (key, blob)), False)
+        def __delitem__(self, key):  # noqa: D401
+            self._enqueue(self.db._execute, (f"DELETE FROM {_quote_ident(self.table_name)} WHERE key=?", (key,)), False)
+        def __contains__(self, key):  # noqa: D401
+            row = self._enqueue(self.db._fetchone, (f"SELECT 1 FROM {_quote_ident(self.table_name)} WHERE key=?", (key,)), True); return row is not None
+        def get_all_rows(self):  # noqa: D401
+            return self._enqueue(self.db._fetchall, (f"SELECT key,value FROM {_quote_ident(self.table_name)}", ()), True)
+        def __iter__(self):  # noqa: D401
+            for k, blob in self.get_all_rows():
+                try: yield k, self[k]
+                except Exception:  # noqa: BLE001
+                    yield k, blob
+        def clear(self):  # noqa: D401
+            self._enqueue(self.db._execute, (f"DELETE FROM {_quote_ident(self.table_name)}", ()), False)
+        def __repr__(self):  # noqa: D401
+            return repr(dict(self))
+
+    def __init__(self, db_name: str, table_name: str = "main", *, schema: str | None = None,
+                 conflict_resolver: bool = False, journal_mode: str | None = None, lock_file: str | None = None,
+                 password: str | None = None, publickey_path: str = "./public_keys.pem", privatekey_path: str = "./private_keys.pem",
+                 version: int = 1, key_create: bool = False, safe_pickle_policy: Optional[SafePolicy] = None,
+                 safe_pickle_allowed_module_prefixes: Iterable[str] | None = None, safe_pickle_allowed_builtins=None,
+                 safe_pickle_allowed_globals: Iterable[str] | None = None, storage_mode: str = "pickle",
+                 pragmas: Optional[Dict[str, Any]] = None) -> None:  # noqa: D401
+        if password and key_create:
+            crypto.key_create(password, publickey_path, privatekey_path)  # type: ignore
+        self._config = _Config(storage_mode=self._validate_storage_mode(storage_mode), password=password,
+                               publickey_path=publickey_path, privatekey_path=privatekey_path, version=version,
+                               conflict_resolver=conflict_resolver, lock_file=lock_file or f"{db_name}.lock",
+                               journal_mode=journal_mode)
+        self.db_name = db_name
+        self.table_name = table_name
+        self._safe_pickle_policy = safe_pickle_policy
+        self._safe_pickle_allowed_module_prefixes = tuple(safe_pickle_allowed_module_prefixes if safe_pickle_allowed_module_prefixes else ("dictsqlite",))
+        self._safe_pickle_allowed_builtins = safe_pickle_allowed_builtins
+        default_allowed_globals = {"dictsqlite.modules.utils.ExpiringDict"}
+        add_allowed = set(safe_pickle_allowed_globals) if safe_pickle_allowed_globals else set()
+        self._safe_pickle_allowed_globals = default_allowed_globals.union(add_allowed)
+
+        if _USING_APSW:
+            self._conn = apsw.Connection(db_name)  # type: ignore[arg-type]
+        else:  # sqlite3 fallback
+            self._conn = _sqlite3.connect(db_name, check_same_thread=False)  # type: ignore[name-defined]
+        self._apply_default_pragmas(pragmas)
+        self.operation_queue: queue.Queue[Tuple[Any, Tuple, Dict, Optional[queue.Queue]]] = queue.Queue()
+        if conflict_resolver:
+            self.worker_thread = threading.Thread(target=self._process_queue_conflict_resolver, daemon=True)
+        else:
+            self.worker_thread = threading.Thread(target=self._process_queue, daemon=True)
+        self.worker_thread.start()
+        self.create_table(table_name=table_name, schema=schema)
+        self._closed = False
+
+    # ---------- validation / pragmas ----------
+    @staticmethod
+    def _validate_storage_mode(mode: str) -> str:  # noqa: D401
+        m = (mode or '').lower().strip();
+        if m not in {'pickle', 'json'}: raise ValueError("storage_mode must be 'pickle' or 'json'")
+        return m
+
+    def _apply_default_pragmas(self, user_pragmas: Optional[Dict[str, Any]]):  # noqa: D401
+        pragmas = {"journal_mode": "WAL" if self._config.journal_mode is None else self._config.journal_mode,
+                   "synchronous": "NORMAL", "temp_store": 2, "mmap_size": 10 * 1024 * 1024, "cache_size": -8000}
+        if user_pragmas: pragmas.update(user_pragmas)
+        cur = self._conn.cursor()
+        for k, v in pragmas.items():
+            try: cur.execute(f"PRAGMA {k}={v}")
+            except Exception:  # noqa: BLE001
+                pass
+
+    # ---------- queue workers ----------
+    def _process_queue(self):  # noqa: D401
+        while True:
+            operation, args, kwargs, result_queue = self.operation_queue.get()
+            try:
+                res = operation(*args, **kwargs)
+                if result_queue is not None: result_queue.put(res)
+            except Exception as e:  # noqa: BLE001
+                if result_queue is not None: result_queue.put(e)
+                logger.exception("queue operation failed")
+            finally:
+                self.operation_queue.task_done()
+
+    def _process_queue_conflict_resolver(self):  # noqa: D401
+        while True:
+            operation, args, kwargs, result_queue = self.operation_queue.get()
+            try:
+                with open(self._config.lock_file, 'w', encoding='utf-8') as f:  # noqa: PTH123
+                    portalocker.lock(f, portalocker.LOCK_EX)
+                    try: res = operation(*args, **kwargs)
+                    finally:
+                        try: portalocker.unlock(f)
+                        except Exception:  # noqa: BLE001
+                            pass
+                if result_queue is not None: result_queue.put(res)
+            except Exception as e:  # noqa: BLE001
+                if result_queue is not None: result_queue.put(e)
+                logger.exception("conflict_resolver queue operation failed")
+            finally:
+                self.operation_queue.task_done()
+
+    # ---------- encryption / serialization ----------
+    def _encrypt(self, data: bytes) -> bytes:  # noqa: D401
+        if self._config.password is None: return data
+        return crypto.encrypt_rsa(crypto.load_public_key(self._config.publickey_path, self._config.password), data)
+    def _decrypt(self, data: bytes) -> bytes:  # noqa: D401
+        if self._config.password is None: return data
+        return crypto.decrypt_rsa(crypto.load_private_key(self._config.privatekey_path, self._config.password), data)
+    def _serialize(self, obj: Any) -> bytes:  # noqa: D401
+        if self._config.storage_mode == 'pickle': raw = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
+        else: raw = json.dumps(obj, ensure_ascii=False, default=self._json_default).encode('utf-8')
+        return self._encrypt(raw)
+    def _deserialize(self, blob: bytes) -> Any:  # noqa: D401
+        raw = self._decrypt(blob)
+        if self._config.storage_mode == 'pickle':
+            try:
+                return safe_loads(raw, policy=self._safe_pickle_policy,
+                                  allowed_module_prefixes=self._safe_pickle_allowed_module_prefixes,
+                                  allowed_builtins=self._safe_pickle_allowed_builtins,
+                                  allowed_globals=self._safe_pickle_allowed_globals)
+            except Exception as e:  # noqa: BLE001
+                raise ValueError(f"Unsafe or invalid pickle payload: {e}") from e
+        return json.loads(raw.decode('utf-8'), object_hook=self._json_object_hook)
+
+    @staticmethod
+    def _json_default(obj):  # noqa: D401
+        if isinstance(obj, set): return {"__type__": "set", "value": sorted(list(obj))}
+        if isinstance(obj, (DBSyncedList, DBSyncedSet)):
+            return list(obj) if isinstance(obj, DBSyncedList) else sorted(list(obj))
+        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+    @staticmethod
+    def _json_object_hook(dct):  # noqa: D401
+        if dct.get('__type__') == 'set': return set(dct['value'])
+        return dct
+
+    # ---------- schema / tables ----------
+    def create_table(self, table_name: str | None = None, schema: str | None = None):  # noqa: D401
+        if table_name is not None: self.table_name = table_name
+        if schema is None: schema = '(key TEXT PRIMARY KEY, value BLOB)'
+        if ';' in schema: raise ValueError('schema must not contain semicolons')
+        sql = f"CREATE TABLE IF NOT EXISTS {_quote_ident(self.table_name)} {schema}"
+        self.operation_queue.put((self._execute, (sql, ()), {}, None))
+
+    def tables(self) -> List[str]:  # noqa: D401
+        rq = queue.Queue(); self.operation_queue.put((self._fetchall, ("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name", ()), {}, rq))
+        res = rq.get();
+        if isinstance(res, Exception): raise res
+        return [r[0] for r in res]
+
+    def keys(self, table_name: str | None = None) -> List[str]:  # noqa: D401
+        tname = table_name or self.table_name
+        rq = queue.Queue(); self.operation_queue.put((self._fetchall, (f"SELECT key FROM {_quote_ident(tname)}", ()), {}, rq))
+        res = rq.get();
+        if isinstance(res, Exception): raise res
+        return [r[0] for r in res]
+
+    # ---------- raw db helpers ----------
+    def _execute(self, sql: str, params: Tuple | Iterable = ()):  # noqa: D401
+        cur = self._conn.cursor(); cur.execute(sql, params); return None
+    def _fetchone(self, sql: str, params=()):  # noqa: D401
+        cur = self._conn.cursor(); cur.execute(sql, params); return cur.fetchone()
+    def _fetchall(self, sql: str, params=()):  # noqa: D401
+        cur = self._conn.cursor(); cur.execute(sql, params); return cur.fetchall()
+
+    # ---------- proxy wrap ----------
+    def _wrap_in_proxy(self, key, proxy, value, path=()):  # noqa: D401
+        if isinstance(value, dict): return FastDictSQLite.RecursiveDict(proxy, key, path)
+        if isinstance(value, list): return value if path else DBSyncedList(key, proxy, value)
+        if isinstance(value, set): return value if path else DBSyncedSet(key, proxy, value)
+        return value
+    def wrap_in_proxy(self, key, proxy, value, path=()):  # noqa: D401
+        return self._wrap_in_proxy(key, proxy, value, path)
+
+    # ---------- dict-like API ----------
+    def __setitem__(self, key, value):  # noqa: D401
+        if self._config.version == 2:
+            if not isinstance(key, tuple): raise ValueError("version=2 の場合 key は (key, table) 形式")
+            real_key, table = key; proxy = self.TableProxy(self, table); proxy[real_key] = value; return
+        proxy = self.TableProxy(self, self.table_name); proxy[key] = value
+    def __getitem__(self, key):  # noqa: D401
+        if self._config.version == 2:
+            if key not in self.tables(): raise KeyError(f"Table {key} not found")
+            return self.TableProxy(self, key)
+        proxy = self.TableProxy(self, self.table_name); return proxy[key]
+    def get(self, key, default=None):  # noqa: D401
+        try: return self[key]
+        except KeyError: return default
+    def __delitem__(self, key):  # noqa: D401
+        proxy = self.TableProxy(self, self.table_name); del proxy[key]
+    def __contains__(self, key):  # noqa: D401
+        proxy = self.TableProxy(self, self.table_name); return key in proxy
+    def clear(self):  # noqa: D401
+        proxy = self.TableProxy(self, self.table_name); proxy.clear()
+    def items(self):  # noqa: D401
+        proxy = self.TableProxy(self, self.table_name); yield from proxy
+
+    # ---------- compatibility helpers ----------
+    def has_key(self, key):  # noqa: D401
+        return key in self
+    def clear_table(self, table_name: str | None = None):  # noqa: D401
+        tname = table_name or self.table_name
+        self.operation_queue.put((self._execute, (f"DELETE FROM {_quote_ident(tname)}", ()), {}, None))
+        self.operation_queue.join()  # ensure cleared
+    def switch_table(self, new_table_name: str, schema: str | None = None):  # noqa: D401
+        self.table_name = new_table_name; self.create_table(table_name=new_table_name, schema=schema)
+        self.operation_queue.join()  # ensure table created
+    def clear_db(self):  # noqa: D401
+        rq = queue.Queue(); self.operation_queue.put((self._drop_all_and_reset, (), {}, rq)); rq.get()
+    def _drop_all_and_reset(self):  # noqa: D401
+        cur = self._conn.cursor(); cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        for (tname,) in cur.fetchall(): cur.execute(f"DROP TABLE IF EXISTS {_quote_ident(tname)}")
+        cur.execute("VACUUM"); self.table_name = 'main'; cur.execute("CREATE TABLE IF NOT EXISTS 'main'(key TEXT PRIMARY KEY, value BLOB)")
+
+    # ---------- transactions ----------
+    def begin(self):  # noqa: D401
+        self.operation_queue.put((self._execute, ("BEGIN IMMEDIATE", ()), {}, None))
+    def commit(self):  # noqa: D401
+        self.operation_queue.put((self._execute, ("COMMIT", ()), {}, None))
+    def rollback(self):  # noqa: D401
+        self.operation_queue.put((self._execute, ("ROLLBACK", ()), {}, None))
+    # aliases
+    def begin_transaction(self):  # noqa: D401
+        self.begin()
+    def commit_transaction(self):  # noqa: D401
+        self.commit()
+    def rollback_transaction(self):  # noqa: D401
+        self.rollback()
+
+    # ---------- misc ----------
+    def execute(self, sql: str, params: Iterable[Any] | None = None):  # noqa: D401
+        if params is None: params = []
+        rq = queue.Queue(); self.operation_queue.put((self._fetchall, (sql, tuple(params)), {}, rq))
+        res = rq.get();
+        if isinstance(res, Exception): raise res
+        return res
+    def execute_custom(self, sql: str, params: Iterable[Any] | None = None):  # noqa: D401
+        return self.execute(sql, params)
+    def expiring_dict(self, expiration_time: int):  # noqa: D401
+        return utils.ExpiringDict(expiration_time)  # type: ignore
+
+    def flush(self):  # noqa: D401
+        self.operation_queue.join()
+
+    def close(self):  # noqa: D401
+        if self._closed: return
+        self.flush()
+        try:
+            self._conn.close()  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001
+            pass
+        self._closed = True
+
+    @property
+    def backend(self) -> str:  # noqa: D401
+        return 'apsw' if _USING_APSW else 'sqlite3'
+
+    def __enter__(self):  # noqa: D401
+        return self
+    def __exit__(self, exc_type, exc, tb):  # noqa: D401
+        self.close()
+
+    # ---------- repr ----------
+    def __repr__(self):  # noqa: D401
+        cls = self.__class__.__name__
+        try: return f"{cls}({{k: v for k, v in self.items()}})"
+        except Exception:  # noqa: BLE001
+            return f"{cls}(... )"
+
+    @property
+    def version(self):  # noqa: D401
+        return self._config.version
+
+    @property
+    def storage_mode(self):  # noqa: D401
+        return self._config.storage_mode
