@@ -10,6 +10,7 @@ import string
 import threading
 import logging
 import asyncio
+import queue
 from typing import Optional, Any
 from concurrent.futures import ThreadPoolExecutor
 
@@ -227,6 +228,10 @@ class DictSQLiteFastest:
         safe_pickle_allowed_globals=(),
         # 保存形式モード (pickle / json)
         storage_mode: str = 'pickle',
+        # パフォーマンス設定
+        cache_size: int = -64000,  # 64MB cache (negative = KB)
+        mmap_size: int = 268435456,  # 256MB mmap
+        wal_autocheckpoint: int = 1000,  # WAL checkpoint interval
     ):
         # 基本属性設定
         self.version = version
@@ -238,6 +243,11 @@ class DictSQLiteFastest:
 
         # storage_mode検証
         self.storage_mode = self._validate_storage_mode(storage_mode)
+
+        # パフォーマンス設定
+        self.cache_size = cache_size
+        self.mmap_size = mmap_size
+        self.wal_autocheckpoint = wal_autocheckpoint
 
         # journal_mode検証
         validated_journal_mode = "WAL"  # Default to WAL
@@ -328,14 +338,17 @@ class DictSQLiteFastest:
             
             # APSWのパフォーマンス最適化設定（journal_modeは初期化時に設定済み）
             self._local.conn.pragma("synchronous", "NORMAL")  # FULL -> NORMALで高速化
-            self._local.conn.pragma("cache_size", -64000)     # 64MB cache
+            self._local.conn.pragma("cache_size", self.cache_size)
             self._local.conn.pragma("temp_store", "MEMORY")   # temp tables in memory
-            self._local.conn.pragma("mmap_size", 268435456)   # 256MB mmap
+            self._local.conn.pragma("mmap_size", self.mmap_size)
             
             # WALモードの場合はさらに最適化
             if self.journal_mode == "WAL":
                 self._local.conn.pragma("synchronous", "NORMAL")
-                self._local.conn.pragma("wal_autocheckpoint", 1000)
+                self._local.conn.pragma("wal_autocheckpoint", self.wal_autocheckpoint)
+            
+            # Prepared statement cache for this connection
+            self._local.stmt_cache = {}
                     
         return self._local.conn
 
@@ -709,6 +722,67 @@ class DictSQLiteFastest:
         finally:
             cursor.close()
 
+    def bulk_insert(self, items):
+        """バルク挿入 - 大量のキー/値ペアを効率的に挿入"""
+        if not items:
+            return
+        
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            # バルク挿入のためのデータ準備
+            insert_data = []
+            for key, value in items.items() if hasattr(items, 'items') else items:
+                if self.storage_mode == 'pickle':
+                    value_str = base64.b64encode(pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)).decode('ascii')
+                else:  # json
+                    value_str = json.dumps(value)
+                insert_data.append((key, value_str))
+            
+            # バルク実行
+            cursor.executemany(self._insert_stmt, insert_data)
+        finally:
+            cursor.close()
+
+    def bulk_get(self, keys):
+        """バルク取得 - 複数のキーを効率的に取得"""
+        if not keys:
+            return {}
+        
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            # IN句を使用した効率的な一括検索
+            placeholders = ','.join('?' * len(keys))
+            query = f"SELECT key, value FROM {self._quote_ident(self.table_name)} WHERE key IN ({placeholders})"
+            
+            results = {}
+            for key, value_str in cursor.execute(query, list(keys)):
+                if self.storage_mode == 'pickle':
+                    value = pickle.loads(base64.b64decode(value_str.encode('ascii')))
+                else:  # json
+                    value = json.loads(value_str)
+                results[key] = value
+            
+            return results
+        finally:
+            cursor.close()
+
+    def bulk_delete(self, keys):
+        """バルク削除 - 複数のキーを効率的に削除"""
+        if not keys:
+            return
+        
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            # IN句を使用した効率的な一括削除
+            placeholders = ','.join('?' * len(keys))
+            query = f"DELETE FROM {self._quote_ident(self.table_name)} WHERE key IN ({placeholders})"
+            cursor.execute(query, list(keys))
+        finally:
+            cursor.close()
+
     def __repr__(self):
         """辞書風の表現を返す。"""
         items = []
@@ -721,15 +795,64 @@ class DictSQLiteFastest:
             return f"<DictSQLiteFastest at {self.db_name}>"
 
 
-class AsyncDictSQLiteFastest:
-    """非同期版のDictSQLiteFastest with per-operation connections"""
+class ConnectionPool:
+    """Connection pool for async operations"""
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, db_factory_func, max_connections: int = 5):
+        self.db_factory_func = db_factory_func
+        self.max_connections = max_connections
+        self._pool = queue.Queue(maxsize=max_connections)
+        self._created_connections = 0
+        self._lock = threading.Lock()
+    
+    def get_connection(self):
+        """Get a connection from the pool"""
+        try:
+            # Try to get an existing connection
+            return self._pool.get_nowait()
+        except queue.Empty:
+            # Create a new connection if we haven't reached the limit
+            with self._lock:
+                if self._created_connections < self.max_connections:
+                    self._created_connections += 1
+                    return self.db_factory_func()
+                else:
+                    # Wait for a connection to become available
+                    return self._pool.get()
+    
+    def return_connection(self, conn):
+        """Return a connection to the pool"""
+        if conn is not None and not self._pool.full():
+            try:
+                self._pool.put_nowait(conn)
+            except queue.Full:
+                # Pool is full, close the connection
+                conn.close()
+    
+    def close_all(self):
+        """Close all connections in the pool"""
+        while not self._pool.empty():
+            try:
+                conn = self._pool.get_nowait()
+                conn.close()
+            except queue.Empty:
+                break
+
+
+class AsyncDictSQLiteFastest:
+    """非同期版のDictSQLiteFastest with connection pooling"""
+    
+    def __init__(self, *args, max_connections: int = 5, **kwargs):
         # 引数を保存して各操作で新しい接続を使用
         self._args = args
         self._kwargs = kwargs
         # セマフォで同時接続数を制限
-        self._semaphore = asyncio.Semaphore(10)  # 最大10同時接続
+        self._semaphore = asyncio.Semaphore(max_connections)
+        # Connection pool for efficiency
+        self._connection_pool = ConnectionPool(
+            lambda: DictSQLiteFastest(*self._args, **self._kwargs),
+            max_connections=max_connections
+        )
         # 初期化確保のため一度だけ同期DB作成
         self._ensure_initialized()
         
@@ -750,20 +873,20 @@ class AsyncDictSQLiteFastest:
         pass
         
     async def aclose(self):
-        """非同期でクリーンアップ（実際にはnoop）"""
-        pass
+        """非同期でクリーンアップ"""
+        self._connection_pool.close_all()
         
     async def _run_in_thread(self, func, *args, **kwargs):
-        """スレッドプールでDB操作を実行"""
+        """スレッドプールでDB操作を実行（Connection Pool使用）"""
         async with self._semaphore:
             loop = asyncio.get_event_loop()
             with ThreadPoolExecutor(max_workers=1) as executor:
-                db = self._create_sync_db()
+                db = self._connection_pool.get_connection()
                 try:
                     result = await loop.run_in_executor(executor, func, db, *args, **kwargs)
                     return result
                 finally:
-                    db.close()
+                    self._connection_pool.return_connection(db)
         
     async def __agetitem__(self, key):
         """非同期でキーを取得。"""
@@ -804,6 +927,24 @@ class AsyncDictSQLiteFastest:
         def clear_table(db):
             db.clear_table()
         await self._run_in_thread(clear_table)
+
+    async def abulk_insert(self, items):
+        """非同期バルク挿入 - 大量のキー/値ペアを効率的に挿入"""
+        def bulk_insert(db, items_data):
+            db.bulk_insert(items_data)
+        await self._run_in_thread(bulk_insert, items)
+
+    async def abulk_get(self, keys):
+        """非同期バルク取得 - 複数のキーを効率的に取得"""
+        def bulk_get(db, key_list):
+            return db.bulk_get(key_list)
+        return await self._run_in_thread(bulk_get, keys)
+
+    async def abulk_delete(self, keys):
+        """非同期バルク削除 - 複数のキーを効率的に削除"""
+        def bulk_delete(db, key_list):
+            db.bulk_delete(key_list)
+        await self._run_in_thread(bulk_delete, keys)
 
     # 便利メソッド
     async def aget(self, key, default=None):
