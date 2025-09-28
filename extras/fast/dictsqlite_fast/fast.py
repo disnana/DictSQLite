@@ -229,8 +229,11 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
         def get_all_rows(self):  # noqa: D401
             return self._enqueue(self.db._fetchall, (f"SELECT key,value FROM {_quote_ident(self.table_name)}", ()), True)
         def __iter__(self):  # noqa: D401
-            for k, _ in self.get_all_rows():
-                yield k, self[k]
+            # N+1 クエリを避け一括フェッチ結果を逆シリアライズ
+            rows = self.get_all_rows()
+            for k, blob in rows:
+                val = self.db._deserialize(blob)  # noqa: SLF001
+                yield k, self.db.wrap_in_proxy(k, self, val)
         def clear(self):  # noqa: D401
             self._enqueue(self.db._execute, (f"DELETE FROM {_quote_ident(self.table_name)}", ()), False)
         def __repr__(self):  # noqa: D401
@@ -284,6 +287,8 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
             self.worker_thread = threading.Thread(target=self._process_queue, daemon=True)
         self.worker_thread.start()
         self.create_table(table_name=table_name, schema=schema)
+        # TableProxy キャッシュ (テーブルごとに 1 回生成して再利用)
+        self._proxy_cache: Dict[str, FastDictSQLite.TableProxy] = {}
         self._closed = False
 
     # ---------- validation / pragmas ----------
@@ -382,6 +387,12 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
             blob = blob.encode('utf-8')
         raw = self._decrypt(blob)
         if self._config.storage_mode == 'pickle':
+            # 高速パス: ポリシー未指定なら安全チェックを飛ばし pickle.loads 直接使用
+            if self._safe_pickle_policy is None:
+                try:
+                    return pickle.loads(raw)
+                except Exception:  # noqa: BLE001
+                    pass  # フォールバックして safe_loads / 他処理へ
             try:
                 return safe_loads(raw, policy=self._safe_pickle_policy,
                                   allowed_module_prefixes=self._safe_pickle_allowed_module_prefixes,
@@ -439,8 +450,10 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
         cur = self._conn.cursor(); cur.execute(sql, params); return cur.fetchone()
     def _fetchall(self, sql: str, params=()):  # noqa: D401
         cur = self._conn.cursor(); cur.execute(sql, params); return cur.fetchall()
+    def _executemany(self, sql: str, seq_params: Iterable[Tuple]):  # noqa: D401
+        cur = self._conn.cursor(); cur.executemany(sql, seq_params); return None
 
-    # ---------- proxy wrap ----------
+    # ---------- proxy wrap / cache ----------
     def _wrap_in_proxy(self, key, proxy, value, path=()):  # noqa: D401
         if isinstance(value, dict): return FastDictSQLite.RecursiveDict(proxy, key, path)
         if isinstance(value, list): return value if path else DBSyncedList(key, proxy, value)
@@ -448,30 +461,37 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
         return value
     def wrap_in_proxy(self, key, proxy, value, path=()):  # noqa: D401
         return self._wrap_in_proxy(key, proxy, value, path)
+    def _get_proxy(self, table_name: str | None = None):  # noqa: D401
+        t = table_name or self.table_name
+        proxy = self._proxy_cache.get(t)
+        if proxy is None:
+            proxy = self.TableProxy(self, t)
+            self._proxy_cache[t] = proxy
+        return proxy
 
     # ---------- dict-like API ----------
     def __setitem__(self, key, value):  # noqa: D401
         if self._config.version == 2:
             if not isinstance(key, tuple): raise ValueError("version=2 の場合 key は (key, table) 形式")
-            real_key, table = key; proxy = self.TableProxy(self, table); proxy[real_key] = value; return
-        proxy = self.TableProxy(self, self.table_name); proxy[key] = value
+            real_key, table = key; proxy = self._get_proxy(table); proxy[real_key] = value; return
+        proxy = self._get_proxy(self.table_name); proxy[key] = value
     def __getitem__(self, key):  # noqa: D401
         if self._config.version == 2:
             # version2: テーブル名アクセス or (key, table) での get は未サポート (互換性: table名 -> TableProxy)
             if key not in self.tables(): raise KeyError(f"Table {key} not found")
-            return self.TableProxy(self, key)
-        proxy = self.TableProxy(self, self.table_name); return proxy[key]
+            return self._get_proxy(key)
+        proxy = self._get_proxy(self.table_name); return proxy[key]
     def get(self, key, default=None):  # noqa: D401
         try: return self[key]
         except KeyError: return default
     def __delitem__(self, key):  # noqa: D401
-        proxy = self.TableProxy(self, self.table_name); del proxy[key]
+        proxy = self._get_proxy(self.table_name); del proxy[key]
     def __contains__(self, key):  # noqa: D401
-        proxy = self.TableProxy(self, self.table_name); return key in proxy
+        proxy = self._get_proxy(self.table_name); return key in proxy
     def clear(self):  # noqa: D401
-        proxy = self.TableProxy(self, self.table_name); proxy.clear()
+        proxy = self._get_proxy(self.table_name); proxy.clear()
     def items(self):  # noqa: D401
-        proxy = self.TableProxy(self, self.table_name)
+        proxy = self._get_proxy(self.table_name)
         for k, v in proxy:
             yield k, v
 
@@ -491,6 +511,8 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
         cur = self._conn.cursor(); cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
         for (tname,) in cur.fetchall(): cur.execute(f"DROP TABLE IF EXISTS {_quote_ident(tname)}")
         cur.execute("VACUUM"); self.table_name = 'main'; cur.execute("CREATE TABLE IF NOT EXISTS 'main'(key TEXT PRIMARY KEY, value BLOB)")
+        # テーブル全削除後は TableProxy キャッシュを無効化
+        self._proxy_cache.clear()
 
     # ---------- transactions ----------
     def begin(self):  # noqa: D401
@@ -558,7 +580,7 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
                 data = {}
                 for t in self.tables():
                     try:
-                        proxy = self.TableProxy(self, t)
+                        proxy = self._get_proxy(t)
                         data[t] = {k: v for k, v in proxy}
                     except Exception:  # noqa: BLE001
                         data[t] = '...'

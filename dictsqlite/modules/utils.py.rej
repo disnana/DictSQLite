@@ -1,0 +1,10 @@
+diff a/dictsqlite/modules/utils.py b/dictsqlite/modules/utils.py	(rejected hunks)
+@@ -17,7 +17,7 @@
+     def __init__(self, expiration_time: float):
+         self.data = {}
+         self.expiration_time = expiration_time
+-        self.expiration_tasks = {}  # 非同期タスク管理
++        self.expiration_tasks = {}  # 非同期 loop.call_later ハンドル管理 (以前は asyncio.Task)
+         self.expiration_timers = {}  # 同期タイマー管理
+         self._loop = None
+ 
