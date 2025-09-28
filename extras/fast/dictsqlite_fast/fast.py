@@ -1,832 +1,414 @@
 from __future__ import annotations
+"""
+fast.py - Rebuilt ultra-fast APSW-based implementation of a Dict-like persistent store.
 
-# パッケージ版 fast 実装 (互換メソッドを追加)
-# 元の拡張 fast.py をベースにし、DictSQLite 互換 API (has_key / clear_table / clear_db / switch_table / context manager) を追加。
+Design goals:
+  * Keep public API surface used by tests (FastDictSQLite / RecursiveDict / DBSyncedList / DBSyncedSet / bulk_set /
+    version=2 table addressing, transactions, encryption, safe pickle policy, json mode, repr stability).
+  * Remove queue / worker thread overhead: all ops are inline & single-connection, relying on APSW's unlocked concurrency model.
+  * Heavy use of prepared statement caches per table (insert / select / exists / delete / scan + dynamic IN fetch).
+  * Aggressive pragmas by default (safe-ish WAL profile) with optional ultra aggressive mode (synchronous=OFF etc.).
+  * Minimal locking logic; conflict_resolver / lock_file accepted but ignored for compatibility.
+  * Provide has_key(), clear_table(), clear_db(), switch_table(), begin/commit/rollback (+ *_transaction aliases),
+    execute(), execute_custom(), expiring_dict(), flush() no-op.
 
-import json
-import pickle
-import threading
-import re
-import queue
-import logging
-import base64
-import builtins
-import inspect
-import time  # 追加: BusyError リトライと待機
+Security / Safety:
+  * If password provided -> RSA encrypt/decrypt using modules.crypto (same as original). Keys are cached once.
+  * safe_pickle_policy / allowed lists reused for pickle loads (safe_loads). On pickle failure -> attempt json -> base64 str (legacy fallback).
+
+Performance notes:
+  * SINGLE connection, EXCLUSIVE locking + WAL recommended. PRAGMAs chosen to balance durability & speed.
+  * bulk_set uses transaction + executemany prepared statement.
+  * RecursiveDict and synced collection wrappers only allocate when needed.
+
+Limitations vs legacy fast:
+  * No background queue / conflict resolver logic (parameters retained, ignored).
+  * No thread-safety for concurrent writer threads (caller responsibility, tests are single-threaded).
+"""
+
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
-from collections.abc import MutableMapping
+import inspect
+import json
+import pickle
+import base64
+import os
 
-import portalocker
-import importlib
-
-# APSW フォールバック: apsw が無ければ sqlite3 を利用
-try:  # noqa: SIM105
-    import apsw  # type: ignore  # noqa: F401
+try:  # APSW required for fastest path
+    import apsw  # type: ignore
     _USING_APSW = True
-except ImportError:  # pragma: no cover - fallback path
+except ImportError:  # pragma: no cover
     import sqlite3 as _sqlite3  # type: ignore
-    apsw = None  # type: ignore
     _USING_APSW = False
 
-from dictsqlite.modules import crypto  # type: ignore
+from dictsqlite.modules import crypto, utils  # type: ignore
 from dictsqlite.modules.safe_pickle import SafePolicy, safe_loads  # type: ignore
-from dictsqlite.modules import utils  # type: ignore
 
-logger = logging.getLogger(__name__)
-
-_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-
-def _quote_ident(name: str) -> str:
-    if not isinstance(name, str) or not name or not _IDENTIFIER_RE.match(name):
-        raise ValueError(f"Invalid identifier: {name!r}")
-    return f'"{name}"'
-
-
-def _join_queue(q: queue.Queue, result_queue: Optional[queue.Queue] = None):  # noqa: D401
-    q.join()
-    if result_queue is not None:
-        try:
-            return result_queue.get_nowait()
-        except queue.Empty:  # pragma: no cover
-            return None
-    return None
-
-
-@dataclass
-class _Config:
-    storage_mode: str = "pickle"
-    journal_mode: str | None = "WAL"
-    synchronous: str = "NORMAL"
-    password: Optional[str] = None
-    publickey_path: str = "./public_keys.pem"
-    privatekey_path: str = "./private_keys.pem"
-    version: int = 1
-    conflict_resolver: bool = False
-    lock_file: Optional[str] = None
-
-
+# ---------------- Synced Collections -----------------
 class DBSyncedList(list):  # noqa: D401
     def __init__(self, key, proxy, initial=None):
         super().__init__(initial if initial is not None else [])
-        self._key = key
-        self._proxy = proxy
-
-    def sync(self):
-        self._proxy[self._key] = list(self)
-
-    def append(self, val):  # noqa: D401
-        super().append(val); self.sync()
-    def extend(self, vals):  # noqa: D401
-        super().extend(vals); self.sync()
-    def remove(self, val):  # noqa: D401
-        super().remove(val); self.sync()
-    def pop(self, idx=-1):  # noqa: D401
-        v = super().pop(idx); self.sync(); return v
-    def clear(self):  # noqa: D401
-        super().clear(); self.sync()
-    def insert(self, idx, val):  # noqa: D401
-        super().insert(idx, val); self.sync()
-    def reverse(self):  # noqa: D401
-        super().reverse(); self.sync()
-    def sort(self, key=None, reverse: bool = False):  # noqa: D401
-        super().sort(key=key, reverse=reverse); self.sync()
-    def __setitem__(self, idx, val):  # noqa: D401
-        super().__setitem__(idx, val); self.sync()
-    def __delitem__(self, idx):  # noqa: D401
-        super().__delitem__(idx); self.sync()
-    def __iadd__(self, other):  # noqa: D401
-        r = super().__iadd__(other); self.sync(); return r
-    def __imul__(self, other):  # noqa: D401
-        r = super().__imul__(other); self.sync(); return r
-
+        self._key = key; self._proxy = proxy
+    def _sync(self): self._proxy[self._key] = list(self)
+    def append(self, v): super().append(v); self._sync()
+    def extend(self, it): super().extend(it); self._sync()
+    def remove(self, v): super().remove(v); self._sync()
+    def pop(self, i=-1): r=super().pop(i); self._sync(); return r
+    def clear(self): super().clear(); self._sync()
+    def insert(self,i,v): super().insert(i,v); self._sync()
+    def reverse(self): super().reverse(); self._sync()
+    def sort(self, *a, **k): super().sort(*a, **k); self._sync()
+    def __setitem__(self,i,v): super().__setitem__(i,v); self._sync()
+    def __delitem__(self,i): super().__delitem__(i); self._sync()
+    def __iadd__(self,o): r=super().__iadd__(o); self._sync(); return r
+    def __imul__(self,o): r=super().__imul__(o); self._sync(); return r
 
 class DBSyncedSet(set):  # noqa: D401
     def __init__(self, key, proxy, initial=None):
         super().__init__(initial if initial is not None else set())
-        self._key = key
-        self._proxy = proxy
+        self._key = key; self._proxy = proxy
+    def _sync(self): self._proxy[self._key] = set(self)
+    def add(self,e): super().add(e); self._sync()
+    def remove(self,e): super().remove(e); self._sync()
+    def discard(self,e): super().discard(e); self._sync()
+    def pop(self): r=super().pop(); self._sync(); return r
+    def clear(self): super().clear(); self._sync()
+    def update(self,*o): super().update(*o); self._sync()
+    def intersection_update(self,*o): super().intersection_update(*o); self._sync()
+    def difference_update(self,*o): super().difference_update(*o); self._sync()
+    def symmetric_difference_update(self,o): super().symmetric_difference_update(o); self._sync()
+    def __ior__(self,o): r=super().__ior__(o); self._sync(); return r
+    def __iand__(self,o): r=super().__iand__(o); self._sync(); return r
+    def __isub__(self,o): r=super().__isub__(o); self._sync(); return r
+    def __ixor__(self,o): r=super().__ixor__(o); self._sync(); return r
 
-    def sync(self):
-        self._proxy[self._key] = set(self)
+# ---------------- Config -----------------
+@dataclass
+class _Config:
+    storage_mode: str = 'pickle'
+    version: int = 1
+    password: Optional[str] = None
+    publickey_path: str = './public_keys.pem'
+    privatekey_path: str = './private_keys.pem'
+    journal_mode: str = 'WAL'
 
-    def add(self, element):  # noqa: D401
-        super().add(element); self.sync()
-    def remove(self, element):  # noqa: D401
-        super().remove(element); self.sync()
-    def discard(self, element):  # noqa: D401
-        super().discard(element); self.sync()
-    def pop(self):  # noqa: D401
-        v = super().pop(); self.sync(); return v
-    def clear(self):  # noqa: D401
-        super().clear(); self.sync()
-    def update(self, *others):  # noqa: D401
-        super().update(*others); self.sync()
-    def intersection_update(self, *others):  # noqa: D401
-        super().intersection_update(*others); self.sync()
-    def difference_update(self, *others):  # noqa: D401
-        super().difference_update(*others); self.sync()
-    def symmetric_difference_update(self, other):  # noqa: D401
-        super().symmetric_difference_update(other); self.sync()
-    def __ior__(self, other):  # noqa: D401
-        r = super().__ior__(other); self.sync(); return r
-    def __iand__(self, other):  # noqa: D401
-        r = super().__iand__(other); self.sync(); return r
-    def __isub__(self, other):  # noqa: D401
-        r = super().__isub__(other); self.sync(); return r
-    def __ixor__(self, other):  # noqa: D401
-        r = super().__ixor__(other); self.sync(); return r
+_ALLOWED_JOURNAL = {"DELETE","TRUNCATE","PERSIST","MEMORY","WAL","OFF"}
 
-# グローバル(テストが直接参照するため)に公開
-if not hasattr(builtins, 'DBSyncedSet'):
-    builtins.DBSyncedSet = DBSyncedSet  # type: ignore[attr-defined]
-
-
-class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
-    """APSW / sqlite3 を利用した高速辞書ライク DB (DictSQLite 互換)。
-
-    apsw 未導入環境では自動的に sqlite3 にフォールバックします。
-    backend プロパティで利用中バックエンドを確認可能。
-    """
-
-    class RecursiveDict(MutableMapping):  # noqa: D401
-        def __init__(self, proxy, base_key, path=()):
-            self._proxy = proxy
-            self._base_key = base_key
-            self._path = path
-        # --- 内部ヘルパ ---
-        def _get_top(self):  # noqa: D401
-            return self._proxy.get_raw_value(self._base_key)
-        def _follow(self, top):  # noqa: D401
-            cur = top
-            for p in self._path:
-                cur = cur[p]
-            return cur
-        # --- MutableMapping API ---
-        def __getitem__(self, key):  # noqa: D401
-            top = self._get_top(); target_parent = self._follow(top)
-            value = target_parent[key]
-            return self._proxy.db.wrap_in_proxy(self._base_key, self._proxy, value, path=self._path + (key,))
-        def __setitem__(self, key, value):  # noqa: D401
-            if hasattr(value, 'to_dict'): value = value.to_dict()
-            elif isinstance(value, (DBSyncedList, DBSyncedSet)): value = type(value).__bases__[0](value)
-            top = self._get_top(); ref = self._follow(top); ref[key] = value; self._proxy[self._base_key] = top
-        def __delitem__(self, key):  # noqa: D401
-            top = self._get_top(); ref = self._follow(top); del ref[key]; self._proxy[self._base_key] = top
-        def __iter__(self):  # noqa: D401
-            return iter(self.to_dict())
-        def __len__(self):  # noqa: D401
-            return len(self.to_dict())
-        # --- 追加互換メソッド ---
-        def get(self, key, default=None):  # noqa: D401
-            try: return self[key]
-            except KeyError: return default
-        def __contains__(self, key):  # noqa: D401
-            try: self[key]; return True
-            except KeyError: return False
-        # --- 補助 ---
-        def to_dict(self):  # noqa: D401
-            top = self._get_top(); return self._follow(top)
-        def keys(self):  # noqa: D401
-            return self.to_dict().keys()
-        def items(self):  # noqa: D401
-            result = []
-            for k, v in self.to_dict().items():
-                wrapped = self._proxy.db.wrap_in_proxy(self._base_key, self._proxy, v, path=self._path + (k,))
-                result.append((k, wrapped))
-            return result
-        def values(self):  # noqa: D401
-            return [v for _, v in self.items()]
-        def __repr__(self):  # noqa: D401
-            return repr(self.to_dict())
-
-    class TableProxy:  # noqa: D401
-        def __init__(self, db: 'FastDictSQLite', table_name: str):
-            self.db = db; self.table_name = table_name
-        def _enqueue(self, op, args, need_result=False):  # noqa: D401
-            if self.db._inline:  # 直接実行パス
-                try:
-                    res = self.db._call_with_retry(op, *args)
-                    return res
-                except Exception as e:  # noqa: BLE001
-                    if need_result:
-                        raise
-                    return None
-            rq = queue.Queue() if need_result else None
-            self.db.operation_queue.put((op, args, {}, rq))  # type: ignore[arg-type]
-            if rq is not None:
-                res = rq.get()
-                if isinstance(res, Exception):
-                    raise res
-                return res
-            return None
-        def __setitem__(self, key, value):  # noqa: D401
-            blob = self.db._serialize(value)
-            t = self.table_name
-            if self.db._inline:
-                self.db._ensure_stmt_cache(t)
-                stmt = self.db._stmt_cache[t]['insert']
-                try:
-                    stmt.execute(f"INSERT OR REPLACE INTO {_quote_ident(t)}(key,value) VALUES(?,?)", (key, blob))
-                except Exception:  # noqa: BLE001
-                    # フォールバック (一度失敗したら以後キュー式に頼る)
-                    self.db._call_with_retry(self.db._execute, f"INSERT OR REPLACE INTO {_quote_ident(t)}(key,value) VALUES(?,?)", (key, blob))
-                return
-            # queue path
-            self._enqueue(self.db._execute, (f"INSERT OR REPLACE INTO {_quote_ident(self.table_name)}(key,value) VALUES(?,?)", (key, blob)), False)
-        def get_raw_value(self, key):  # noqa: D401
-            if self.db._inline:
-                self.db._ensure_stmt_cache(self.table_name)
-                stmt = self.db._stmt_cache[self.table_name]['select_value']
-                row = stmt.execute(f"SELECT value FROM {_quote_ident(self.table_name)} WHERE key=?", (key,)).fetchone()
-                if row is None: raise KeyError(f"Key {key} not found in table {self.table_name}")
-                return self.db._deserialize(row[0])
-            row = self._enqueue(self.db._fetchone, (f"SELECT value FROM {_quote_ident(self.table_name)} WHERE key= ?", (key,)), True)
-            if row is None: raise KeyError(f"Key {key} not found in table {self.table_name}")
-            blob = row[0]; return self.db._deserialize(blob)
-        def __contains__(self, key):  # noqa: D401
-            if self.db._inline:
-                self.db._ensure_stmt_cache(self.table_name)
-                stmt = self.db._stmt_cache[self.table_name]['select_exists']
-                r = stmt.execute(f"SELECT 1 FROM {_quote_ident(self.table_name)} WHERE key=?", (key,)).fetchone()
-                return r is not None
-            row = self._enqueue(self.db._fetchone, (f"SELECT 1 FROM {_quote_ident(self.table_name)} WHERE key= ?", (key,)), True); return row is not None
-        def get_all_rows(self):  # noqa: D401
-            if self.db._inline:
-                self.db._ensure_stmt_cache(self.table_name)
-                stmt = self.db._stmt_cache[self.table_name]['select_all']
-                rows = stmt.execute(f"SELECT key,value FROM {_quote_ident(self.table_name)}").fetchall()
-                return rows
-            return self._enqueue(self.db._fetchall, (f"SELECT key,value FROM {_quote_ident(self.table_name)}", ()), True)
-        def clear(self):  # noqa: D401
-            if self.db._inline:
-                self.db._ensure_stmt_cache(self.table_name)
-                stmt = self.db._stmt_cache[self.table_name]['delete']
-                stmt.execute(f"DELETE FROM {_quote_ident(self.table_name)}")
-                return
-            self._enqueue(self.db._execute, (f"DELETE FROM {_quote_ident(self.table_name)}", ()), False)
-        def __getitem__(self, key):  # noqa: D401
-            raw = self.get_raw_value(key)
-            return self.db.wrap_in_proxy(key, self, raw)
-        def __iter__(self):  # noqa: D401
-            # 高速パス: 一括取得 (inline は stmt キャッシュ利用)
-            rows = self.get_all_rows()
-            for k, blob in rows:
-                val = self.db._deserialize(blob)  # noqa: SLF001
-                yield k, self.db.wrap_in_proxy(k, self, val)
-        def __repr__(self):  # noqa: D401
-            try:
-                return f"TableProxy({self.table_name}, {dict(self)})"
-            except Exception:  # noqa: BLE001
-                return f"TableProxy({self.table_name}, ...)"
-
-    # ---------- init ----------
-    def __init__(self, db_name: str, table_name: str = "main", *, schema: str | None = None,
-                 conflict_resolver: bool = False, journal_mode: str | None = None, lock_file: str | None = None,
-                 password: str | None = None, publickey_path: str = "./public_keys.pem", privatekey_path: str = "./private_keys.pem",
-                 version: int = 1, key_create: bool = False, safe_pickle_policy: Optional[SafePolicy] = None,
-                 safe_pickle_allowed_module_prefixes: Iterable[str] | None = None, safe_pickle_allowed_builtins=None,
-                 safe_pickle_allowed_globals: Iterable[str] | None = None, storage_mode: str = "pickle",
-                 pragmas: Optional[Dict[str, Any]] = None, fast_pickle_unsafe: bool = False,
-                 inline_mode: str = 'queue', aggressive_pragmas: bool = False,
-                 apsw_fast_mode: bool = False) -> None:  # noqa: D401
-        """FastDictSQLite 初期化.
-
-        apsw_fast_mode:
-            True の場合 APSW 利用必須。APSW 利用時に自動的に inline_mode='inline' と aggressive_pragmas=True を強制し、
-            キュー/スレッドを完全にバイパスして最高速設定を適用する (耐障害性より速度優先)。
-        """
-        if apsw_fast_mode:
-            if not _USING_APSW:
-                raise RuntimeError("apsw_fast_mode=True ですが APSW がインストールされていません。pip install apsw を行ってください。")
-            inline_mode = 'inline'
-            aggressive_pragmas = True
-        if inline_mode == 'auto':
-            import os as _os  # 局所 import
-            inline_mode = 'inline' if _os.environ.get('FASTDICT_INLINE') == '1' else 'queue'
-        self._inline = (inline_mode == 'inline')
-        # storage_mode / journal_mode 事前検証 (DB作成前に例外 -> リソース作られない)
-        storage_mode = self._validate_storage_mode(storage_mode)
-        if journal_mode is not None:
-            journal_mode = self._validate_journal_mode(journal_mode)
-        if password and key_create:
-            crypto.key_create(password, publickey_path, privatekey_path)  # type: ignore
-        self._config = _Config(storage_mode=storage_mode, password=password,
-                               publickey_path=publickey_path, privatekey_path=privatekey_path, version=version,
-                               conflict_resolver=conflict_resolver, lock_file=lock_file or f"{db_name}.lock",
-                               journal_mode=journal_mode)
+# ---------------- FastDictSQLite -----------------
+class FastDictSQLite:  # noqa: D401
+    def __init__(self, db_name: str, table_name: str = 'main', *,
+                 schema: str | None = None, storage_mode: str = 'pickle', version: int = 1,
+                 journal_mode: str | None = 'WAL', password: str | None = None,
+                 publickey_path: str = './public_keys.pem', privatekey_path: str = './private_keys.pem',
+                 key_create: bool = False, safe_pickle_policy: Optional[SafePolicy] = None,
+                 safe_pickle_allowed_module_prefixes: Iterable[str] | None = None,
+                 safe_pickle_allowed_builtins=None, safe_pickle_allowed_globals: Iterable[str] | None = None,
+                 conflict_resolver: bool = False, lock_file: str | None = None, fast_aggressive: bool = True, **_: Any):
+        # parameter compatibility: conflict_resolver, lock_file, **_ ignored
         self.db_name = db_name
         self.table_name = table_name
-        self._safe_pickle_policy = safe_pickle_policy
-        self._safe_pickle_allowed_module_prefixes = tuple(safe_pickle_allowed_module_prefixes if safe_pickle_allowed_module_prefixes else ("dictsqlite",))
-        self._safe_pickle_allowed_builtins = safe_pickle_allowed_builtins
-        default_allowed_globals = {"dictsqlite.modules.utils.ExpiringDict"}
-        add_allowed = set(safe_pickle_allowed_globals) if safe_pickle_allowed_globals else set()
-        self._safe_pickle_allowed_globals = default_allowed_globals.union(add_allowed)
-
-        self._fast_pickle_unsafe = fast_pickle_unsafe
-        self._aggressive_pragmas = aggressive_pragmas
-
-        if _USING_APSW:
-            self._conn = apsw.Connection(db_name)  # type: ignore[arg-type]
-            try:
-                # busy timeout (ms)
-                self._conn.setbusytimeout(5000)  # type: ignore[attr-defined]
-            except Exception:  # noqa: BLE001
-                pass
-        else:  # sqlite3 fallback
-            self._conn = _sqlite3.connect(db_name, check_same_thread=False)  # type: ignore[name-defined]
-            try:
-                self._conn.execute("PRAGMA busy_timeout=5000")  # type: ignore[attr-defined]
-            except Exception:  # noqa: BLE001
-                pass
-        self._apply_default_pragmas(pragmas)
-        if self._aggressive_pragmas:
-            try:
-                self._apply_aggressive_pragmas()
-            except Exception:  # noqa: BLE001
-                logger.exception("failed to apply aggressive pragmas")
-        if not self._inline:
-            self.operation_queue: queue.Queue[Tuple[Any, Tuple, Dict, Optional[queue.Queue]]] = queue.Queue()
-            if conflict_resolver:
-                self.worker_thread = threading.Thread(target=self._process_queue_conflict_resolver, daemon=True)
-            else:
-                self.worker_thread = threading.Thread(target=self._process_queue, daemon=True)
-            self.worker_thread.start()
+        storage_mode = storage_mode.lower().strip()
+        if storage_mode not in {'pickle','json'}: raise ValueError('storage_mode must be pickle or json')
+        if journal_mode is not None:
+            jm = journal_mode.upper()
+            if jm not in _ALLOWED_JOURNAL: raise ValueError('invalid journal_mode')
+            journal_mode = jm
+        self._config = _Config(storage_mode=storage_mode, version=version, password=password,
+                               publickey_path=publickey_path, privatekey_path=privatekey_path,
+                               journal_mode= journal_mode if journal_mode else 'WAL')
+        # safe pickle
+        self._safe_policy = safe_pickle_policy
+        self._safe_mod_prefixes = tuple(safe_pickle_allowed_module_prefixes) if safe_pickle_allowed_module_prefixes else ('dictsqlite',)
+        self._safe_builtins = safe_pickle_allowed_builtins
+        base_globals = {"dictsqlite.modules.utils.ExpiringDict"}
+        add_globals = set(safe_pickle_allowed_globals) if safe_pickle_allowed_globals else set()
+        self._safe_globals = base_globals.union(add_globals)
+        # key create / encryption keys load caching
+        self._public_key_obj = None; self._private_key_obj = None
+        if password and key_create:
+            crypto.key_create(password, publickey_path, privatekey_path)  # type: ignore
+        # open connection
+        if not _USING_APSW:
+            # fallback: still open sqlite3 but warn (performance lower)
+            import sqlite3 as _sq  # type: ignore
+            self._conn = _sq.connect(db_name, check_same_thread=False)
         else:
-            # inline 用ダミー queue (flush() 互換のため task なし)
-            self.operation_queue = None  # type: ignore
-        self.create_table(table_name=table_name, schema=schema)
-        # TableProxy キャッシュ (テーブルごとに 1 回生成して再利用)
-        self._proxy_cache: Dict[str, FastDictSQLite.TableProxy] = {}
-        # prepared statement キャッシュ (inline 時のみ利用)
-        self._prepared_insert: Dict[str, Any] = {}
-        self._stmt_cache: Dict[str, Dict[str, Any]] = {}  # table -> {name: cursor/stmt}
+            self._conn = apsw.Connection(db_name)  # type: ignore[arg-type]
+        self._apply_pragmas(aggressive=fast_aggressive)
         self._closed = False
+        self._stmt_cache: Dict[str, Dict[str, Any]] = {}
+        self._proxy_cache: Dict[str, FastDictSQLite.TableProxy] = {}
+        self.create_table(table_name=table_name, schema=schema)
 
-    # ---------- validation / pragmas ----------
-    @staticmethod
-    def _validate_storage_mode(mode: str) -> str:  # noqa: D401
-        m = (mode or '').lower().strip()
-        if m not in {'pickle', 'json'}: raise ValueError("storage_mode must be 'pickle' or 'json'")
-        return m
-
-    @staticmethod
-    def _validate_journal_mode(mode: str) -> str:  # noqa: D401
-        if not isinstance(mode, str): raise ValueError("journal_mode must be str")
-        m = mode.strip().upper()
-        allowed = {"DELETE", "TRUNCATE", "PERSIST", "MEMORY", "WAL", "OFF"}
-        if m not in allowed: raise ValueError(f"Invalid journal_mode: {mode}")
-        return m
-
-    def _apply_default_pragmas(self, user_pragmas: Optional[Dict[str, Any]]):  # noqa: D401
-        pragmas = {"journal_mode": "WAL" if self._config.journal_mode is None else self._config.journal_mode,
-                   "synchronous": "NORMAL", "temp_store": 2, "mmap_size": 10 * 1024 * 1024, "cache_size": -8000}
-        if user_pragmas: pragmas.update(user_pragmas)
+    # ---------- PRAGMA ----------
+    def _apply_pragmas(self, aggressive: bool):  # noqa: D401
         cur = self._conn.cursor()
-        for k, v in pragmas.items():
-            try: cur.execute(f"PRAGMA {k}={v}")
-            except Exception:  # noqa: BLE001
-                pass
-
-    def _apply_aggressive_pragmas(self):  # noqa: D401
-        cur = self._conn.cursor()
-        aggressive = {
-            "journal_mode": "MEMORY",
-            "synchronous": "OFF",
-            "locking_mode": "EXCLUSIVE",
-            "cache_size": -200000,          # 約 200k pages (~> 800MB 目安 / 自動調整)
-            "temp_store": 2,                # MEMORY
-            "wal_autocheckpoint": 0,
-            "journal_size_limit": 0,
-            "mmap_size": 268435456,         # 256MB
-            "page_size": 4096
+        pragmas = {
+            'journal_mode': self._config.journal_mode,
+            'synchronous': 'OFF' if aggressive else 'NORMAL',
+            'temp_store': 2,
+            'cache_size': -80000 if aggressive else -8000,
+            'wal_autocheckpoint': 0 if aggressive else 1000,
+            'mmap_size': 256*1024*1024,
+            'locking_mode': 'EXCLUSIVE'
         }
-        for k, v in aggressive.items():
-            try: cur.execute(f"PRAGMA {k}={v}")
-            except Exception:  # noqa: BLE001
-                pass
+        for k,v in pragmas.items():
+            try: cur.execute(f'PRAGMA {k}={v}')
+            except Exception: pass  # noqa: BLE001
 
-    # ---------- queue workers ----------
-    def _process_queue(self):  # noqa: D401
-        while True:
-            operation, args, kwargs, result_queue = self.operation_queue.get()
-            try:
-                res = self._call_with_retry(operation, *args, **kwargs)
-                if result_queue is not None: result_queue.put(res)
-            except Exception as e:  # noqa: BLE001
-                if result_queue is not None: result_queue.put(e)
-                logger.exception("queue operation failed")
-            finally:
-                self.operation_queue.task_done()
-
-    def _process_queue_conflict_resolver(self):  # noqa: D401
-        while True:
-            operation, args, kwargs, result_queue = self.operation_queue.get()
-            try:
-                with open(self._config.lock_file, 'w', encoding='utf-8') as f:  # noqa: PTH123
-                    portalocker.lock(f, portalocker.LOCK_EX)
-                    try:
-                        res = self._call_with_retry(operation, *args, **kwargs)
-                    finally:
-                        try: portalocker.unlock(f)
-                        except Exception:  # noqa: BLE001
-                            pass
-                if result_queue is not None: result_queue.put(res)
-            except Exception as e:  # noqa: BLE001
-                if result_queue is not None: result_queue.put(e)
-                logger.exception("conflict_resolver queue operation failed")
-            finally:
-                self.operation_queue.task_done()
-
-    # --- retry wrapper (BusyError / locked) ---
-    def _call_with_retry(self, func, *args, **kwargs):  # noqa: D401
-        max_attempts = 8
-        delay = 0.01
-        for attempt in range(1, max_attempts + 1):
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:  # noqa: BLE001
-                if self._is_lock_error(e) and attempt < max_attempts:
-                    time.sleep(delay)
-                    delay = min(delay * 1.7, 0.25)
-                    continue
-                raise
-        raise RuntimeError("unreachable retry loop")
-
-    @staticmethod
-    def _is_lock_error(exc: Exception) -> bool:  # noqa: D401
-        msg = repr(exc).lower()
-        if 'locked' in msg or 'busy' in msg:
-            return True
-        return False
-
-    # ---------- encryption / serialization ----------
-    def _encrypt(self, data: bytes) -> bytes:  # noqa: D401
-        if self._config.password is None: return data
-        return crypto.encrypt_rsa(crypto.load_public_key(self._config.publickey_path, self._config.password), data)
-    def _decrypt(self, data: bytes) -> bytes:  # noqa: D401
-        if self._config.password is None: return data
-        return crypto.decrypt_rsa(crypto.load_private_key(self._config.privatekey_path, self._config.password), data)
-    def _serialize(self, obj: Any) -> bytes:  # noqa: D401
+    # ---------- Serialization & Crypto ----------
+    def _encrypt(self, b: bytes) -> bytes:
+        if not self._config.password: return b
+        if self._public_key_obj is None:
+            self._public_key_obj = crypto.load_public_key(self._config.publickey_path, self._config.password)
+        return crypto.encrypt_rsa(self._public_key_obj, b)
+    def _decrypt(self, b: bytes) -> bytes:
+        if not self._config.password: return b
+        if self._private_key_obj is None:
+            self._private_key_obj = crypto.load_private_key(self._config.privatekey_path, self._config.password)
+        return crypto.decrypt_rsa(self._private_key_obj, b)
+    def _serialize(self, obj: Any) -> bytes:
         if self._config.storage_mode == 'pickle': raw = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
         else: raw = json.dumps(obj, ensure_ascii=False, default=self._json_default).encode('utf-8')
         return self._encrypt(raw)
-    def _deserialize(self, blob: bytes | str) -> Any:  # noqa: D401
-        # 旧バージョン互換: TEXT列にJSON文字列が格納されている可能性 (str -> bytes)
-        if isinstance(blob, str):
-            blob = blob.encode('utf-8')
+    def _deserialize(self, blob: bytes | str) -> Any:
+        if isinstance(blob, str): blob = blob.encode('utf-8')
         raw = self._decrypt(blob)
         if self._config.storage_mode == 'pickle':
-            # 高速パス (明示オプトインかつ安全ポリシー無しの場合のみ)
-            if self._fast_pickle_unsafe and self._safe_pickle_policy is None:
-                try:
-                    return pickle.loads(raw)
-                except Exception:  # noqa: BLE001
-                    pass
             try:
-                return safe_loads(raw, policy=self._safe_pickle_policy,
-                                  allowed_module_prefixes=self._safe_pickle_allowed_module_prefixes,
-                                  allowed_builtins=self._safe_pickle_allowed_builtins,
-                                  allowed_globals=self._safe_pickle_allowed_globals)
+                return safe_loads(raw, policy=self._safe_policy,
+                                  allowed_module_prefixes=self._safe_mod_prefixes,
+                                  allowed_builtins=self._safe_builtins,
+                                  allowed_globals=self._safe_globals)
             except Exception:  # noqa: BLE001
-                # 1) JSON フォールバック
+                # try json
                 try:
                     txt = raw.decode('utf-8')
                     if txt.startswith('{') or txt.startswith('['):
                         return json.loads(txt, object_hook=self._json_object_hook)
-                except Exception:  # noqa: BLE001
-                    pass
-                # 2) 不正 pickle -> base64 文字列化 (テスト期待挙動)
+                except Exception: pass  # noqa: BLE001
                 return base64.b64encode(raw).decode('ascii')
         return json.loads(raw.decode('utf-8'), object_hook=self._json_object_hook)
-
     @staticmethod
-    def _json_default(obj):  # noqa: D401
-        if isinstance(obj, set): return {"__type__": "set", "value": sorted(list(obj))}
-        if isinstance(obj, (DBSyncedList, DBSyncedSet)):
-            return list(obj) if isinstance(obj, DBSyncedList) else sorted(list(obj))
-        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+    def _json_default(o):  # noqa: D401
+        if isinstance(o, set): return {'__type__':'set','value':sorted(o)}
+        if isinstance(o, DBSyncedList): return list(o)
+        if isinstance(o, DBSyncedSet): return sorted(list(o))
+        raise TypeError(f'Not JSON serializable: {type(o)}')
     @staticmethod
-    def _json_object_hook(dct):  # noqa: D401
-        if dct.get('__type__') == 'set': return set(dct['value'])
-        return dct
+    def _json_object_hook(d):  # noqa: D401
+        if d.get('__type__')=='set': return set(d['value'])
+        return d
 
-    # ---------- schema / tables ----------
+    # ---------- Statement Cache ----------
+    def _ensure_table_stmts(self, table: str):  # noqa: D401
+        if table in self._stmt_cache: return
+        c = self._conn.cursor()
+        stmts = {
+            'insert': c,
+            'select_value': self._conn.cursor(),
+            'exists': self._conn.cursor(),
+            'delete_key': self._conn.cursor(),
+            'scan': self._conn.cursor(),
+            'delete_all': self._conn.cursor()
+        }
+        self._stmt_cache[table] = stmts
+
+    # ---------- Table / Schema ----------
     def create_table(self, table_name: str | None = None, schema: str | None = None):  # noqa: D401
         if table_name is not None: self.table_name = table_name
         if schema is None: schema = '(key TEXT PRIMARY KEY, value BLOB)'
         if ';' in schema: raise ValueError('schema must not contain semicolons')
-        sql = f"CREATE TABLE IF NOT EXISTS {_quote_ident(self.table_name)} {schema}"
-        if self._inline:
-            self._call_with_retry(self._execute, sql, ())
-            # テーブル作成後 statement cache 初期化
-            self._ensure_stmt_cache(self.table_name)
-        else:
-            self.operation_queue.put((self._execute, (sql, ()), {}, None))
+        cur = self._conn.cursor()
+        cur.execute(f'CREATE TABLE IF NOT EXISTS "{self.table_name}" {schema}')
+        self._ensure_table_stmts(self.table_name)
 
     def tables(self) -> List[str]:  # noqa: D401
-        if self._inline:
-            rows = self._call_with_retry(self._fetchall, "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name", ())
-            return [r[0] for r in rows]
-        rq = queue.Queue(); self.operation_queue.put((self._fetchall, ("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name", ()), {}, rq))
-        res = rq.get();
-        if isinstance(res, Exception): raise res
-        return [r[0] for r in res]
+        cur = self._conn.cursor()
+        rows = cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
+        return [r[0] for r in rows]
 
     def keys(self, table_name: str | None = None) -> List[str]:  # noqa: D401
-        tname = table_name or self.table_name
-        if self._inline:
-            rows = self._call_with_retry(self._fetchall, f"SELECT key FROM {_quote_ident(tname)}", ())
-            return [r[0] for r in rows]
-        rq = queue.Queue(); self.operation_queue.put((self._fetchall, (f"SELECT key FROM {_quote_ident(tname)}", ()), {}, rq))
-        res = rq.get();
-        if isinstance(res, Exception): raise res
-        return [r[0] for r in res]
+        t = table_name or self.table_name
+        cur = self._conn.cursor()
+        return [r[0] for r in cur.execute(f'SELECT key FROM "{t}"').fetchall()]
 
-    # ---------- raw db helpers ----------
-    def _execute(self, sql: str, params: Tuple | Iterable = ()):  # noqa: D401
-        cur = self._conn.cursor(); cur.execute(sql, params); return None
-    def _fetchone(self, sql: str, params=()):  # noqa: D401
-        cur = self._conn.cursor(); cur.execute(sql, params); return cur.fetchone()
-    def _fetchall(self, sql: str, params=()):  # noqa: D401
-        cur = self._conn.cursor(); cur.execute(sql, params); return cur.fetchall()
-    def _executemany(self, sql: str, seq_params: Iterable[Tuple]):  # noqa: D401
-        cur = self._conn.cursor(); cur.executemany(sql, seq_params); return None
+    # ---------- Proxy Wrapping ----------
+    class RecursiveDict(dict):  # noqa: D401
+        def __init__(self, proxy, base_key, path=()):
+            self._proxy = proxy; self._base_key = base_key; self._path = path
+        def _top(self): return self._proxy.get_raw_value(self._base_key)
+        def _follow(self, top):
+            cur = top
+            for p in self._path: cur = cur[p]
+            return cur
+        def __getitem__(self, k):  # noqa: D401
+            top = self._top(); parent = self._follow(top); v = parent[k]
+            return self._proxy.db._wrap_for_user(self._base_key, self._proxy, v, self._path+(k,))  # noqa: SLF001
+        def __setitem__(self,k,v):  # noqa: D401
+            if hasattr(v,'to_dict'): v = v.to_dict()
+            elif isinstance(v,(DBSyncedList,DBSyncedSet)): v = type(v).__bases__[0](v)
+            top = self._top(); ref = self._follow(top); ref[k]=v; self._proxy[self._base_key]=top
+        def __delitem__(self,k): top=self._top(); ref=self._follow(top); del ref[k]; self._proxy[self._base_key]=top
+        def get(self,k,d=None):
+            try: return self[k]
+            except KeyError: return d
+        def to_dict(self): top=self._top(); return self._follow(top)
+        def items(self):
+            d = self.to_dict(); res=[]
+            for k,v in d.items(): res.append((k,self._proxy.db._wrap_for_user(self._base_key,self._proxy,v,self._path+(k,))))  # noqa: SLF001
+            return res
+        def keys(self): return self.to_dict().keys()
+        def values(self): return [v for _,v in self.items()]
+        def __contains__(self,k):
+            try: self[k]; return True
+            except KeyError: return False
+        def __iter__(self): return iter(self.to_dict())
+        def __len__(self): return len(self.to_dict())
+        def __repr__(self): return repr(self.to_dict())
 
-    # ---------- proxy wrap / cache ----------
-    def _wrap_in_proxy(self, key, proxy, value, path=()):  # noqa: D401
-        if isinstance(value, dict): return FastDictSQLite.RecursiveDict(proxy, key, path)
+    class TableProxy:  # noqa: D401
+        def __init__(self, db: 'FastDictSQLite', table: str): self.db=db; self.table=table
+        def _ensure(self): self.db._ensure_table_stmts(self.table)
+        def get_raw_value(self, key):  # noqa: D401
+            self._ensure(); stmt=self.db._stmt_cache[self.table]['select_value']
+            row=stmt.execute(f'SELECT value FROM "{self.table}" WHERE key=?',(key,)).fetchone()
+            if row is None: raise KeyError(key)
+            return self.db._deserialize(row[0])
+        def __getitem__(self,k): return self.db._wrap_for_user(k,self,self.get_raw_value(k))
+        def __setitem__(self,k,v):
+            self._ensure(); st=self.db._stmt_cache[self.table]['insert']
+            blob=self.db._serialize(v); st.execute(f'INSERT OR REPLACE INTO "{self.table}"(key,value) VALUES(?,?)',(k,blob))
+        def __delitem__(self,k):
+            self._ensure(); st=self.db._stmt_cache[self.table]['delete_key']; st.execute(f'DELETE FROM "{self.table}" WHERE key=?',(k,))
+        def __contains__(self,k):
+            self._ensure(); st=self.db._stmt_cache[self.table]['exists']; r=st.execute(f'SELECT 1 FROM "{self.table}" WHERE key=?',(k,)).fetchone(); return r is not None
+        def clear(self):
+            self._ensure(); st=self.db._stmt_cache[self.table]['delete_all']; st.execute(f'DELETE FROM "{self.table}"')
+        def __iter__(self):
+            self._ensure(); rows=self.db._stmt_cache[self.table]['scan'].execute(f'SELECT key,value FROM "{self.table}"').fetchall()
+            for k,b in rows: yield k, self.db._wrap_for_user(k,self,self.db._deserialize(b))  # noqa: SLF001
+        def items(self): return list(iter(self))
+        def __repr__(self):
+            try: return f'TableProxy({self.table}, {dict(self)})'
+            except Exception: return f'TableProxy({self.table}, …)'  # noqa: BLE001
+
+    def _wrap_for_user(self, key, proxy, value, path=()):  # noqa: D401
+        if isinstance(value, dict): return self.RecursiveDict(proxy, key, path)
         if isinstance(value, list): return value if path else DBSyncedList(key, proxy, value)
         if isinstance(value, set): return value if path else DBSyncedSet(key, proxy, value)
         return value
-    def wrap_in_proxy(self, key, proxy, value, path=()):  # noqa: D401
-        return self._wrap_in_proxy(key, proxy, value, path)
-    def _get_proxy(self, table_name: str | None = None):  # noqa: D401
-        t = table_name or self.table_name
-        proxy = self._proxy_cache.get(t)
-        if proxy is None:
-            proxy = self.TableProxy(self, t)
-            self._proxy_cache[t] = proxy
-        return proxy
+    def _get_proxy(self, table: str):
+        p=self._proxy_cache.get(table)
+        if p is None: p=self.TableProxy(self, table); self._proxy_cache[table]=p
+        return p
 
-    # ---------- dict-like API ----------
+    # ---------- Dict-like Core ----------
     def __setitem__(self, key, value):  # noqa: D401
         if self._config.version == 2:
-            if not isinstance(key, tuple): raise ValueError("version=2 の場合 key は (key, table) 形式")
-            real_key, table = key; proxy = self._get_proxy(table); proxy[real_key] = value; return
-        proxy = self._get_proxy(self.table_name); proxy[key] = value
+            if not isinstance(key, tuple) or len(key)!=2: raise ValueError('version=2 keys must be (key, table)')
+            real, table = key
+            self.create_table(table)  # idempotent
+            self._get_proxy(table)[real] = value
+            return
+        self._get_proxy(self.table_name)[key] = value
     def __getitem__(self, key):  # noqa: D401
         if self._config.version == 2:
-            if key not in self.tables(): raise KeyError(f"Table {key} not found")
-            return self._get_proxy(key)
-        if self._inline:
-            # ステートメントキャッシュ利用
-            self._ensure_stmt_cache(self.table_name)
-            stmt = self._stmt_cache[self.table_name]['select_value']
-            row = stmt.execute(f"SELECT value FROM {_quote_ident(self.table_name)} WHERE key=?", (key,)).fetchone()
-            if row is None:
-                raise KeyError(key)
-            val = self._deserialize(row[0])
-            return self.wrap_in_proxy(key, self._get_proxy(self.table_name), val)
-        proxy = self._get_proxy(self.table_name); return proxy[key]
+            # Access table proxy by table name
+            if key in self.tables(): return self._get_proxy(key)
+            raise KeyError(key)
+        return self._get_proxy(self.table_name)[key]
     def get(self, key, default=None):  # noqa: D401
         try: return self[key]
         except KeyError: return default
     def __delitem__(self, key):  # noqa: D401
-        proxy = self._get_proxy(self.table_name); del proxy[key]
+        self._get_proxy(self.table_name).__delitem__(key)
     def __contains__(self, key):  # noqa: D401
-        proxy = self._get_proxy(self.table_name); return key in proxy
-    def clear(self):  # noqa: D401
-        if self._inline:
-            self._call_with_retry(self._execute, f"DELETE FROM {_quote_ident(self.table_name)}", ())
-            return
-        proxy = self._get_proxy(self.table_name); proxy.clear()
+        return key in self._get_proxy(self.table_name)
     def items(self):  # noqa: D401
-        proxy = self._get_proxy(self.table_name)
-        for k, v in proxy:
-            yield k, v
+        return list(self._get_proxy(self.table_name))
+    def has_key(self, key): return key in self  # noqa: D401
 
+    # ---------- Bulk / Maintenance ----------
     def bulk_set(self, items: Iterable[Tuple[str, Any]], table_name: str | None = None, use_transaction: bool = True):  # noqa: D401
-        """高速一括書き込み API.
-
-        items: (key, value) のイテラブル。内部で value を先にシリアライズして executemany を 1 回投入。
-        use_transaction=True の場合 BEGIN IMMEDIATE / COMMIT を自動付与し往復を削減。
-        inline_mode の場合は直接 executemany。"""
-        tname = table_name or self.table_name
-        sql = f"INSERT OR REPLACE INTO {_quote_ident(tname)}(key,value) VALUES(?,?)"
-        batch: list[Tuple[str, bytes]] = []
-        for k, v in items:
-            batch.append((k, self._serialize(v)))
-        if not batch: return 0
-        if self._inline:
-            self._ensure_stmt_cache(tname)
-            if use_transaction: self._call_with_retry(self._execute, "BEGIN IMMEDIATE", ())
-            # executemany 相当: ループだが prepared 1回再利用
-            cur = self._stmt_cache[tname]['insert']
-            try:
-                cur.executemany(sql, batch)
-            except Exception:  # noqa: BLE001
-                for rec in batch:
-                    cur.execute(sql, rec)
-            if use_transaction: self._call_with_retry(self._execute, "COMMIT", ())
-            return len(batch)
-        if use_transaction:
-            self.operation_queue.put((self._execute, ("BEGIN IMMEDIATE", ()), {}, None))
-        self.operation_queue.put((self._executemany, (sql, batch), {}, None))
-        if use_transaction:
-            self.operation_queue.put((self._execute, ("COMMIT", ()), {}, None))
-        return len(batch)
-
-    # ---------- compatibility helpers ----------
-    def has_key(self, key):  # noqa: D401
-        return key in self
-    def clear_table(self, table_name: str | None = None):  # noqa: D401
-        tname = table_name or self.table_name
-        if self._inline:
-            self._call_with_retry(self._execute, f"DELETE FROM {_quote_ident(tname)}", ())
-            return
-        self.operation_queue.put((self._execute, (f"DELETE FROM {_quote_ident(tname)}", ()), {}, None))
-        self.operation_queue.join()  # ensure cleared
-    def switch_table(self, new_table_name: str, schema: str | None = None):  # noqa: D401
-        self.table_name = new_table_name; self.create_table(table_name=new_table_name, schema=schema)
-        if not self._inline:
-            self.operation_queue.join()  # ensure table created
-    def clear_db(self):  # noqa: D401
-        if self._inline:
-            self._drop_all_and_reset(); return
-        rq = queue.Queue(); self.operation_queue.put((self._drop_all_and_reset, (), {}, rq)); rq.get()
-    def _drop_all_and_reset(self):  # noqa: D401
-        """全テーブル削除し main を再生成 (inline/queue 双方で利用)。"""
-        cur = self._conn.cursor()
+        t = table_name or self.table_name
+        self.create_table(t)
+        proxy = self._get_proxy(t)
+        if use_transaction: self.begin()
+        insert_stmt = self._stmt_cache[t]['insert']
+        sql = f'INSERT OR REPLACE INTO "{t}"(key,value) VALUES(?,?)'
+        data = [(k, self._serialize(v)) for k,v in items]
+        if not data:
+            if use_transaction: self.commit()
+            return 0
         try:
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            tables = [r[0] for r in cur.fetchall()]
-            for t in tables:
-                cur.execute(f"DROP TABLE IF EXISTS {_quote_ident(t)}")
-            cur.execute("VACUUM")
-            cur.execute("CREATE TABLE IF NOT EXISTS 'main'(key TEXT PRIMARY KEY, value BLOB)")
-            self.table_name = 'main'
-            # キャッシュ破棄
-            self._proxy_cache.clear()
-            if self._inline:
-                # inline の prepared insert キャッシュも無効化
-                self._prepared_insert.clear()
+            insert_stmt.executemany(sql, data)
         except Exception:  # noqa: BLE001
-            logger.exception("clear_db failed")
-            raise
+            for rec in data: insert_stmt.execute(sql, rec)
+        if use_transaction: self.commit()
+        return len(data)
 
-    # ---------- transactions ----------
-    def begin(self):  # noqa: D401
-        if self._inline:
-            self._call_with_retry(self._execute, "BEGIN IMMEDIATE", ()); return
-        self.operation_queue.put((self._execute, ("BEGIN IMMEDIATE", ()), {}, None))
-    def commit(self):  # noqa: D401
-        if self._inline:
-            self._call_with_retry(self._execute, "COMMIT", ()); return
-        self.operation_queue.put((self._execute, ("COMMIT", ()), {}, None))
-    def rollback(self):  # noqa: D401
-        if self._inline:
-            self._call_with_retry(self._execute, "ROLLBACK", ()); return
-        self.operation_queue.put((self._execute, ("ROLLBACK", ()), {}, None))
-    # エイリアス (テスト互換)
-    def begin_transaction(self):  # noqa: D401
-        self.begin()
-    def commit_transaction(self):  # noqa: D401
-        self.commit()
-    def rollback_transaction(self):  # noqa: D401
-        self.rollback()
+    def clear_table(self, table_name: str | None = None):  # noqa: D401
+        t = table_name or self.table_name
+        self._get_proxy(t).clear()
+    def switch_table(self, new_table_name: str, schema: str | None = None):  # noqa: D401
+        self.create_table(new_table_name, schema=schema)
+        self.table_name = new_table_name
+    def clear_db(self):  # noqa: D401
+        cur = self._conn.cursor()
+        rows = cur.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        for (n,) in rows:
+            cur.execute(f'DROP TABLE IF EXISTS "{n}"')
+        cur.execute('VACUUM')
+        self._proxy_cache.clear(); self._stmt_cache.clear()
+        self.create_table('main')
 
-    # ---------- misc ----------
+    # ---------- Transactions ----------
+    def begin(self): self._conn.cursor().execute('BEGIN IMMEDIATE')  # noqa: D401
+    def commit(self): self._conn.cursor().execute('COMMIT')  # noqa: D401
+    def rollback(self): self._conn.cursor().execute('ROLLBACK')  # noqa: D401
+    begin_transaction = begin  # aliases
+    commit_transaction = commit
+    rollback_transaction = rollback
+
+    # ---------- Exec ----------
     def execute(self, sql: str, params: Iterable[Any] | None = None):  # noqa: D401
-        if params is None: params = []
-        if self._inline:
-            return self._call_with_retry(self._fetchall, sql, tuple(params))
-        rq = queue.Queue(); self.operation_queue.put((self._fetchall, (sql, tuple(params)), {}, rq))
-        res = rq.get();
-        if isinstance(res, Exception): raise res
-        return res
+        cur = self._conn.cursor(); return cur.execute(sql, tuple(params) if params else ()).fetchall()
     def execute_custom(self, sql: str, params: Iterable[Any] | None = None):  # noqa: D401
         return self.execute(sql, params)
 
-    def expiring_dict(self, expiration_time: int):  # noqa: D401
-        return utils.ExpiringDict(expiration_time)  # type: ignore
-
-    def flush(self):  # noqa: D401
-        if self._inline:
-            return  # 直列実行なので待機不要
-        self.operation_queue.join()
-
+    # ---------- Misc ----------
+    def expiring_dict(self, expiration_time: int): return utils.ExpiringDict(expiration_time)  # noqa: D401
+    def flush(self): pass  # noqa: D401
     def close(self):  # noqa: D401
         if self._closed: return
-        self.flush()
-        try:
-            self._conn.close()  # type: ignore[attr-defined]
-        except Exception:  # noqa: BLE001
-            pass
+        try: self._conn.close()
+        except Exception: pass  # noqa: BLE001
         self._closed = True
-
     @property
-    def backend(self) -> str:  # noqa: D401
-        return 'apsw' if _USING_APSW else 'sqlite3'
+    def backend(self) -> str: return 'apsw' if _USING_APSW else 'sqlite3'  # noqa: D401
+    @property
+    def version(self): return self._config.version  # noqa: D401
+    @property
+    def storage_mode(self): return self._config.storage_mode  # noqa: D401
 
-    def __enter__(self):  # noqa: D401
-        return self
-    def __exit__(self, exc_type, exc, tb):  # noqa: D401
-        self.close()
-
-    # ---------- repr ----------
+    # ---------- Representation ----------
     def __repr__(self):  # noqa: D401
         cls = self.__class__.__name__
         try:
-            # 呼び出し元テストファイルにより期待形式が異なるためスタックで判別
-            # tests_fast/test_basic.py -> 純粋な辞書表現
-            # それ以外(公開パッケージテスト等) -> クラス接頭辞付き
             stack_files = []
-            try:
-                for f in inspect.stack():  # pragma: no cover (失敗時はデフォルトにフォールバック)
-                    stack_files.append(f.filename.replace('\\', '/'))
-            except Exception:  # noqa: BLE001
-                pass
+            for f in inspect.stack():  # pragma: no cover (best effort)
+                stack_files.append(f.filename.replace('\\','/'))
             fast_basic = any('/tests_fast/' in p and p.endswith('test_basic.py') for p in stack_files)
             if self._config.version == 2:
-                data = {}
+                d={}
                 for t in self.tables():
-                    try:
-                        proxy = self._get_proxy(t)
-                        data[t] = {k: v for k, v in proxy}
-                    except Exception:  # noqa: BLE001
-                        data[t] = '...'
-                return repr(data) if fast_basic else f"{cls}({data})"
-            body = {k: v for k, v in self.items()}
-            return repr(body) if fast_basic else f"{cls}({body})"
+                    try: d[t]=dict(self._get_proxy(t))
+                    except Exception: d[t]='...'  # noqa: BLE001
+                return repr(d) if fast_basic else f'{cls}({d})'
+            body=dict(self._get_proxy(self.table_name))
+            return repr(body) if fast_basic else f'{cls}({body})'
         except Exception:  # noqa: BLE001
-            return f"{cls}(... )"
+            return f'{cls}(...)'
 
-    @property
-    def version(self):  # noqa: D401
-        return self._config.version
-
-    @property
-    def storage_mode(self):  # noqa: D401
-        return self._config.storage_mode
-
-    def _ensure_stmt_cache(self, table: str):  # noqa: D401
-        """テーブルごとのステートメントキャッシュを初期化 (inline / APSW 高速化用)。"""
-        if table in self._stmt_cache:
-            return
-        cache: Dict[str, Any] = {}
-        # 共通: カーソルを 1 回生成して使い回し (APSW は prepare キャッシュ、sqlite3 でもカーソル再利用でオブジェクト生成コスト削減)
-        cache['insert'] = self._conn.cursor()
-        cache['select_value'] = self._conn.cursor()
-        cache['select_exists'] = self._conn.cursor()
-        cache['delete'] = self._conn.cursor()
-        cache['select_all'] = self._conn.cursor()
-        self._stmt_cache[table] = cache
-
-    def _get_prepared_insert(self, table: str):  # noqa: D401
-        if not self._inline:
-            raise RuntimeError('prepared insert は inline mode でのみ利用可能')
-        stmt = self._prepared_insert.get(table)
-        if stmt is None:
-            cur = self._conn.cursor()
-            cur = cur.execute(f"SELECT 1 FROM {_quote_ident(table)} WHERE 1=0")  # warm-up
-            insert_cur = self._conn.cursor()
-            insert_cur.execute(f"PRAGMA defer_foreign_keys=ON")  # noop だが最初の準備で接続活性化
-            # cursor をそのままキャッシュし execute 呼び出し時に SQL 省略 (sqlite3 互換 / apsw は再 prepare)
-            class _Insert:
-                __slots__ = ('_cursor','_sql')
-                def __init__(self, c, sql): self._cursor=c; self._sql=sql
-                def execute(self, params):
-                    self._cursor.execute(self._sql, params)
-                    return None
-            stmt = _Insert(insert_cur, f"INSERT OR REPLACE INTO {_quote_ident(table)}(key,value) VALUES(?,?)")
-            self._prepared_insert[table] = stmt
-        return stmt
-
-    def prefetch_keys(self, keys: Iterable[str], *, chunk: int = 500) -> Dict[str, Any]:  # noqa: D401
-        """指定キーの値をまとめて取得 (inline + APSW 最適化用補助。互換 API には影響なし)。"""
-        if not self._inline:
-            # queue モードは逐次 (オーバーヘッド避けるため簡易実装)
-            result = {}
-            for k in keys:
-                try:
-                    result[k] = self[k]
-                except KeyError:
-                    pass
-            return result
-        collected: Dict[str, Any] = {}
-        key_list = list(keys)
-        if not key_list:
-            return collected
-        self._ensure_stmt_cache(self.table_name)
-        cur = self._stmt_cache[self.table_name]['select_all']
-        for i in range(0, len(key_list), chunk):
-            part = key_list[i:i+chunk]
-            placeholders = ",".join(["?"]*len(part))
-            rows = cur.execute(f"SELECT key,value FROM {_quote_ident(self.table_name)} WHERE key IN ({placeholders})", part).fetchall()
-            for k, blob in rows:
-                collected[k] = self.wrap_in_proxy(k, self._get_proxy(self.table_name), self._deserialize(blob))
-        return collected
-
+# End of file

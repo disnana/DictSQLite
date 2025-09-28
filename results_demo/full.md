@@ -5,10 +5,10 @@ Runs: 1
 
 | Scenario | dictsqlite.async | dictsqlite.sync | fast.async | fast.sync |
 |---|---|---|---|---|
-| bulk_set | 346 | 357 | 33,744 | 40,623 |
-| large_insert | 382 | 404 | 4,975 | 5,820 |
-| mixed_update | 379 | 502 | 2,168 | 4,527 |
-| random_get | 355 | 390 | 2,966 | 4,686 |
-| small_insert | 417 | 430 | 10,023 | 10,098 |
-| table_switch | 3,584 | 1,558 | 9,706 | 15,209 |
-| transaction_bulk | 400 | 37,324 | 26,596 | 36,571 |
+| bulk_set | 370 | 429 | 91,982 | 147,586 |
+| large_insert | 395 | 430 | 8,243 | 8,567 |
+| mixed_update | 459 | 283 | 3,769 | 27,212 |
+| random_get | 381 | 366 | 5,634 | 27,497 |
+| small_insert | 420 | 414 | 19,252 | 27,452 |
+| table_switch | 4,177 | 2,089 | 21,089 | 50,273 |
+| transaction_bulk | 420 | 33,448 | 96,871 | 128,738 |
