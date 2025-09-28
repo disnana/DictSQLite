@@ -1,19 +1,13 @@
-"""dictsqlite-fast: APSW ベース高速/互換版 DictSQLite
+"""dictsqlite-fast (rebuilt)
 
-インポート例:
-    from dictsqlite_fast import FastDictSQLite, AsyncFastDictSQLite
+fast.py に同期/非同期実装を統合。
+利用例:
+    from extras.fast.dictsqlite_fast import FastDictSQLite, AsyncFastDictSQLite
+またはルートのフォワーダ:
+    from dictsqlite_fast import FastDictSQLite
+を継続利用可能。
 """
 from __future__ import annotations
 
 __all__ = ["FastDictSQLite", "AsyncFastDictSQLite", "__version__"]
-
-__version__ = "0.1.0"
-
-from .fast import FastDictSQLite  # noqa: E402,F401
-try:
-    from .async_fast import AsyncFastDictSQLite  # noqa: E402,F401
-except Exception:  # pragma: no cover
-    # 非同期機能が壊れている/依存欠如時でも同期版は利用可能
-    class AsyncFastDictSQLite:  # type: ignore
-        def __init__(self, *_, **__):  # noqa: D401
-            raise ImportError("AsyncFastDictSQLite 利用には 'apsw' と Python >=3.9 が必要です")
+from .fast import FastDictSQLite, AsyncFastDictSQLite, __version__  # noqa: F401,E402
