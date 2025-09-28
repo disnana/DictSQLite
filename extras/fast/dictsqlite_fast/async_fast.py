@@ -89,6 +89,10 @@ class AsyncFastDictSQLite:
     async def switch_table(self, name: str, schema: str | None = None):  # noqa: D401
         await self._run(self._sync.switch_table, name, schema)
 
+    async def create_table(self, table_name: str | None = None, schema: str | None = None):  # noqa: D401
+        """FastDictSQLite.create_table の非同期版。schema validation / table_name 更新を委譲。"""
+        await self._run(self._sync.create_table, table_name, schema)
+
     async def clear_db(self):  # noqa: D401
         await self._run(self._sync.clear_db)
 
