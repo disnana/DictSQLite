@@ -283,16 +283,19 @@ class DictSQLiteFastest:
         """データベースの初期化を一度だけ実行（グローバル同期）"""
         global _db_init_locks, _db_init_states, _db_init_lock
         
+        # データベースファイル+テーブル名をキーとして使用
+        init_key = f"{self.db_name}:{self.table_name}"
+        
         # データベースファイルごとの初期化ロック取得
         with _db_init_lock:
-            if self.db_name not in _db_init_locks:
-                _db_init_locks[self.db_name] = threading.RLock()
-                _db_init_states[self.db_name] = False
-            db_lock = _db_init_locks[self.db_name]
+            if init_key not in _db_init_locks:
+                _db_init_locks[init_key] = threading.RLock()
+                _db_init_states[init_key] = False
+            db_lock = _db_init_locks[init_key]
         
         # データベースファイル固有のロックで初期化
         with db_lock:
-            if not _db_init_states[self.db_name]:
+            if not _db_init_states[init_key]:
                 # 初期化用の接続を作成
                 init_conn = apsw.Connection(self.db_name)
                 init_conn.pragma("busy_timeout", 30000)
@@ -312,7 +315,7 @@ class DictSQLiteFastest:
                 
                 # 初期化完了フラグを設定
                 init_conn.close()
-                _db_init_states[self.db_name] = True
+                _db_init_states[init_key] = True
 
     def _get_connection(self):
         """スレッドローカルなAPSW接続を取得"""
@@ -727,6 +730,13 @@ class AsyncDictSQLiteFastest:
         self._kwargs = kwargs
         # セマフォで同時接続数を制限
         self._semaphore = asyncio.Semaphore(10)  # 最大10同時接続
+        # 初期化確保のため一度だけ同期DB作成
+        self._ensure_initialized()
+        
+    def _ensure_initialized(self):
+        """初期化を確保"""
+        init_db = DictSQLiteFastest(*self._args, **self._kwargs)
+        init_db.close()
         
     def _create_sync_db(self):
         """新しい同期DB接続を作成"""

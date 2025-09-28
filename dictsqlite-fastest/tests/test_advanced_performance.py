@@ -307,9 +307,7 @@ class TestAsyncAdvancedPerformance:
                 finally:
                     await db.aclose()
                     
-                # クリーンアップ for next iteration
-                if os.path.exists(db_path):
-                    os.unlink(db_path)
+                # Note: Don't delete db_path here, reuse it for next batch size
                     
         finally:
             if os.path.exists(db_path):
