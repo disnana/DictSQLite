@@ -373,6 +373,25 @@ class DictSQLiteFastest:
         else:
             return cursor.execute(query)
 
+    def _get_prepared_statement(self, stmt_type):
+        """プリペアドステートメントをキャッシュから取得"""
+        if not hasattr(self._local, 'stmt_cache'):
+            self._local.stmt_cache = {}
+        
+        if stmt_type not in self._local.stmt_cache:
+            if stmt_type == 'insert':
+                self._local.stmt_cache[stmt_type] = self._insert_stmt
+            elif stmt_type == 'select':
+                self._local.stmt_cache[stmt_type] = self._select_stmt
+            elif stmt_type == 'delete':
+                self._local.stmt_cache[stmt_type] = self._delete_stmt
+            elif stmt_type == 'exists':
+                self._local.stmt_cache[stmt_type] = self._exists_stmt
+            elif stmt_type == 'select_all':
+                self._local.stmt_cache[stmt_type] = self._select_all_stmt
+        
+        return self._local.stmt_cache[stmt_type]
+
     def _ensure_table_exists(self, schema=None):
         """テーブルが存在することを確認 (初期化時に既に作成済み)"""
         # テーブルは _initialize_database で既に作成済み
@@ -508,8 +527,9 @@ class DictSQLiteFastest:
 
         def get_raw_value(self, key):
             """DBから生の値を取得し、必要に応じて復号/デコードして返す。"""
-            # 再利用可能なカーソルを使用
-            result = self.db._execute_with_cursor(self.db._select_stmt, (key,)).fetchone()
+            # プリペアドステートメントを使用
+            stmt = self.db._get_prepared_statement('select')
+            result = self.db._execute_with_cursor(stmt, (key,)).fetchone()
             if result is None:
                 raise KeyError(f"Key {key} not found in table {self.table_name}.")
 
@@ -576,16 +596,19 @@ class DictSQLiteFastest:
             if self.db.password is not None:
                 value_str = self.db._encrypt(value_str)
 
-            # 再利用可能なカーソルを使用
-            self.db._execute_with_cursor(self.db._insert_stmt, (key, value_str))
+            # 再利用可能なカーソルを使用（プリペアドステートメント）
+            stmt = self.db._get_prepared_statement('insert')
+            self.db._execute_with_cursor(stmt, (key, value_str))
 
         def __delitem__(self, key):
-            # 再利用可能なカーソルを使用
-            self.db._execute_with_cursor(self.db._delete_stmt, (key,))
+            # プリペアドステートメントを使用
+            stmt = self.db._get_prepared_statement('delete')
+            self.db._execute_with_cursor(stmt, (key,))
 
         def __contains__(self, key):
-            # 再利用可能なカーソルを使用
-            result = self.db._execute_with_cursor(self.db._exists_stmt, (key,)).fetchone()
+            # プリペアドステートメントを使用
+            stmt = self.db._get_prepared_statement('exists')
+            result = self.db._execute_with_cursor(stmt, (key,)).fetchone()
             return result is not None
 
         def __repr__(self):
@@ -713,6 +736,41 @@ class DictSQLiteFastest:
         result = self._execute_with_cursor(f"SELECT key FROM {self._quote_ident(self.table_name)}")
         return [row[0] for row in result]
 
+    def keys_iter(self):
+        """メモリ効率的なキーのイテレータ"""
+        # 大量のデータに対してメモリ効率的
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            for row in cursor.execute(f"SELECT key FROM {self._quote_ident(self.table_name)}"):
+                yield row[0]
+        finally:
+            cursor.close()
+
+    def items_iter(self, batch_size=1000):
+        """メモリ効率的なアイテムのイテレータ（バッチ処理）"""
+        # バッチ処理で大量のデータを扱う
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            offset = 0
+            while True:
+                query = f"SELECT key, value FROM {self._quote_ident(self.table_name)} LIMIT {batch_size} OFFSET {offset}"
+                rows = list(cursor.execute(query))
+                if not rows:
+                    break
+                
+                for key, value_str in rows:
+                    if self.storage_mode == 'pickle':
+                        value = pickle.loads(base64.b64decode(value_str.encode('ascii')))
+                    else:  # json
+                        value = json.loads(value_str, object_hook=self._extended_json_decoder_hook)
+                    yield key, value
+                
+                offset += batch_size
+        finally:
+            cursor.close()
+
     def has_key(self, key):
         """キーが存在するか確認。"""
         return key in self
@@ -748,6 +806,46 @@ class DictSQLiteFastest:
                 cursor.execute(self._insert_stmt, (key, value_str))
             
             # トランザクションをコミット
+            cursor.execute("COMMIT")
+        except Exception:
+            cursor.execute("ROLLBACK")
+            raise
+        finally:
+            cursor.close()
+
+    def bulk_insert_chunked(self, items, chunk_size=1000):
+        """チャンク処理による大容量データの効率的挿入"""
+        if not items:
+            return
+        
+        # メモリ効率を考慮してチャンク処理
+        items_iter = items.items() if hasattr(items, 'items') else items
+        
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("BEGIN IMMEDIATE")
+            
+            chunk = []
+            for key, value in items_iter:
+                if self.storage_mode == 'pickle':
+                    value_str = base64.b64encode(pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)).decode('ascii')
+                else:  # json - 最適化されたオプション
+                    value_str = json.dumps(value, default=self._extended_json_encoder_hook, 
+                                         separators=(',', ':'), ensure_ascii=False)
+                chunk.append((key, value_str))
+                
+                if len(chunk) >= chunk_size:
+                    # チャンクを挿入
+                    for k, v in chunk:
+                        cursor.execute(self._insert_stmt, (k, v))
+                    chunk = []
+            
+            # 残りのチャンクを処理
+            if chunk:
+                for k, v in chunk:
+                    cursor.execute(self._insert_stmt, (k, v))
+            
             cursor.execute("COMMIT")
         except Exception:
             cursor.execute("ROLLBACK")
@@ -966,10 +1064,14 @@ class AsyncDictSQLiteFastest:
         await self._run_in_thread(clear_table)
 
     async def abulk_insert(self, items):
-        """非同期バルク挿入 - 大量のキー/値ペアを効率的に挿入"""
-        def bulk_insert(db, items_data):
-            db.bulk_insert(items_data)
-        await self._run_in_thread(bulk_insert, items)
+        """非同期バルク挿入 - 大量のキー/値ペアを効率的に挿入（最適化版）"""
+        def bulk_insert_optimized(db, items_data):
+            # チャンク処理を使用してメモリ効率を改善
+            if len(items_data) > 1000:
+                db.bulk_insert_chunked(items_data)
+            else:
+                db.bulk_insert(items_data)
+        await self._run_in_thread(bulk_insert_optimized, items)
 
     async def abulk_get(self, keys):
         """非同期バルク取得 - 複数のキーを効率的に取得"""
