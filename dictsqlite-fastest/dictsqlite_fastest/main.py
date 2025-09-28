@@ -342,6 +342,10 @@ class DictSQLiteFastest:
             self._local.conn.pragma("temp_store", "MEMORY")   # temp tables in memory
             self._local.conn.pragma("mmap_size", self.mmap_size)
             
+            # さらなる最適化設定
+            self._local.conn.pragma("locking_mode", "NORMAL")  # 同期処理モード
+            self._local.conn.pragma("query_only", 0)  # 読み書き両方許可
+            
             # WALモードの場合はさらに最適化
             if self.journal_mode == "WAL":
                 self._local.conn.pragma("synchronous", "NORMAL")
@@ -349,8 +353,25 @@ class DictSQLiteFastest:
             
             # Prepared statement cache for this connection
             self._local.stmt_cache = {}
+            # Cursor cache for reuse
+            self._local.cursor_cache = None
                     
         return self._local.conn
+
+    def _get_cursor(self):
+        """再利用可能なカーソルを取得"""
+        conn = self._get_connection()
+        if not hasattr(self._local, 'cursor_cache') or self._local.cursor_cache is None:
+            self._local.cursor_cache = conn.cursor()
+        return self._local.cursor_cache
+
+    def _execute_with_cursor(self, query, params=None):
+        """カーソルを使用してクエリを実行し、結果を返す"""
+        cursor = self._get_cursor()
+        if params:
+            return cursor.execute(query, params)
+        else:
+            return cursor.execute(query)
 
     def _ensure_table_exists(self, schema=None):
         """テーブルが存在することを確認 (初期化時に既に作成済み)"""
@@ -487,51 +508,47 @@ class DictSQLiteFastest:
 
         def get_raw_value(self, key):
             """DBから生の値を取得し、必要に応じて復号/デコードして返す。"""
-            conn = self.db._get_connection()
-            cursor = conn.cursor()
+            # 再利用可能なカーソルを使用
+            result = self.db._execute_with_cursor(self.db._select_stmt, (key,)).fetchone()
+            if result is None:
+                raise KeyError(f"Key {key} not found in table {self.table_name}.")
+
+            value_str = result[0]
+            if self.db.password is not None:
+                value_str = self.db._decrypt(value_str)
+
+            # データ形式を自動判定
             try:
-                result = cursor.execute(self.db._select_stmt, (key,)).fetchone()
-                if result is None:
-                    raise KeyError(f"Key {key} not found in table {self.table_name}.")
-
-                value_str = result[0]
-                if self.db.password is not None:
-                    value_str = self.db._decrypt(value_str)
-
-                # データ形式を自動判定
+                # まずJSONとして試行（既存データ）
+                return json.loads(
+                    value_str,
+                    object_hook=self.db._extended_json_decoder_hook,
+                )
+            except (json.JSONDecodeError, TypeError):
                 try:
-                    # まずJSONとして試行（既存データ）
-                    return json.loads(
-                        value_str,
-                        object_hook=self.db._extended_json_decoder_hook,
+                    # JSONが失敗したらpickleとして試行（新しいデータ）
+                    if isinstance(value_str, str):
+                        value_bytes = base64.b64decode(value_str)
+                    else:
+                        value_bytes = value_str
+                    # 安全なUnpicklerで復元
+                    logger.debug(
+                        "SafeUnpickler try: key=%s, table=%s", key, self.table_name
                     )
-                except (json.JSONDecodeError, TypeError):
-                    try:
-                        # JSONが失敗したらpickleとして試行（新しいデータ）
-                        if isinstance(value_str, str):
-                            value_bytes = base64.b64decode(value_str)
-                        else:
-                            value_bytes = value_str
-                        # 安全なUnpicklerで復元
-                        logger.debug(
-                            "SafeUnpickler try: key=%s, table=%s", key, self.table_name
-                        )
-                        obj = safe_loads(
-                            value_bytes,
-                            policy=self.db.safe_pickle_policy,
-                            allowed_module_prefixes=self.db.safe_pickle_allowed_module_prefixes,
-                            allowed_builtins=self.db.safe_pickle_allowed_builtins,
-                            allowed_globals=self.db.safe_pickle_allowed_globals,
-                        )
-                        logger.debug("SafeUnpickler success: key=%s", key)
-                        return obj
-                    except (pickle.UnpicklingError, ValueError, TypeError) as e:
-                        logger.warning(
-                            "SafeUnpickler failed for key=%s in table=%s: %s", key, self.table_name, e
-                        )
-                        return value_str
-            finally:
-                cursor.close()
+                    obj = safe_loads(
+                        value_bytes,
+                        policy=self.db.safe_pickle_policy,
+                        allowed_module_prefixes=self.db.safe_pickle_allowed_module_prefixes,
+                        allowed_builtins=self.db.safe_pickle_allowed_builtins,
+                        allowed_globals=self.db.safe_pickle_allowed_globals,
+                    )
+                    logger.debug("SafeUnpickler success: key=%s", key)
+                    return obj
+                except (pickle.UnpicklingError, ValueError, TypeError) as e:
+                    logger.warning(
+                        "SafeUnpickler failed for key=%s in table=%s: %s", key, self.table_name, e
+                    )
+                    return value_str
 
         def __getitem__(self, key):
             raw_value = self.get_raw_value(key)
@@ -542,13 +559,13 @@ class DictSQLiteFastest:
             if self.db.storage_mode == 'pickle':
                 value_bytes = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
                 value_str = base64.b64encode(value_bytes).decode('ascii')
-            else:  # json モード
+            else:  # json モード - 最適化されたオプション
                 try:
                     value_str = json.dumps(
                         value,
                         default=self.db._extended_json_encoder_hook,
                         ensure_ascii=False,
-                        separators=(',', ':')
+                        separators=(',', ':')  # よりコンパクトな出力
                     )
                 except TypeError as e:  # JSON化できない
                     raise TypeError(
@@ -559,30 +576,17 @@ class DictSQLiteFastest:
             if self.db.password is not None:
                 value_str = self.db._encrypt(value_str)
 
-            conn = self.db._get_connection()
-            cursor = conn.cursor()
-            try:
-                cursor.execute(self.db._insert_stmt, (key, value_str))
-            finally:
-                cursor.close()
+            # 再利用可能なカーソルを使用
+            self.db._execute_with_cursor(self.db._insert_stmt, (key, value_str))
 
         def __delitem__(self, key):
-            conn = self.db._get_connection()
-            cursor = conn.cursor()
-            try:
-                # Simply delete - don't check for existence first to match original behavior
-                cursor.execute(self.db._delete_stmt, (key,))
-            finally:
-                cursor.close()
+            # 再利用可能なカーソルを使用
+            self.db._execute_with_cursor(self.db._delete_stmt, (key,))
 
         def __contains__(self, key):
-            conn = self.db._get_connection()
-            cursor = conn.cursor()
-            try:
-                result = cursor.execute(self.db._exists_stmt, (key,)).fetchone()
-                return result is not None
-            finally:
-                cursor.close()
+            # 再利用可能なカーソルを使用
+            result = self.db._execute_with_cursor(self.db._exists_stmt, (key,)).fetchone()
+            return result is not None
 
         def __repr__(self):
             return f"{dict(self)}"
@@ -678,6 +682,9 @@ class DictSQLiteFastest:
 
     def close(self):
         """DB接続を閉じる。"""
+        if hasattr(self._local, 'cursor_cache') and self._local.cursor_cache:
+            self._local.cursor_cache.close()
+            self._local.cursor_cache = None
         if hasattr(self._local, 'conn') and self._local.conn:
             self._local.conn.close()
             self._local.conn = None
@@ -702,12 +709,9 @@ class DictSQLiteFastest:
 
     def keys(self):
         """全キーを返す。"""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        try:
-            return [row[0] for row in cursor.execute(f"SELECT key FROM {self._quote_ident(self.table_name)}")]
-        finally:
-            cursor.close()
+        # 再利用可能なカーソルを使用
+        result = self._execute_with_cursor(f"SELECT key FROM {self._quote_ident(self.table_name)}")
+        return [row[0] for row in result]
 
     def has_key(self, key):
         """キーが存在するか確認。"""
@@ -715,71 +719,104 @@ class DictSQLiteFastest:
 
     def clear_table(self):
         """テーブルを空にする。"""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(f"DELETE FROM {self._quote_ident(self.table_name)}")
-        finally:
-            cursor.close()
+        # 再利用可能なカーソルを使用
+        self._execute_with_cursor(f"DELETE FROM {self._quote_ident(self.table_name)}")
 
     def bulk_insert(self, items):
-        """バルク挿入 - 大量のキー/値ペアを効率的に挿入"""
+        """バルク挿入 - 大量のキー/値ペアを効率的に挿入（トランザクション最適化）"""
         if not items:
             return
         
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
+            # トランザクション開始で高速化
+            cursor.execute("BEGIN IMMEDIATE")
+            
             # バルク挿入のためのデータ準備
             insert_data = []
             for key, value in items.items() if hasattr(items, 'items') else items:
                 if self.storage_mode == 'pickle':
                     value_str = base64.b64encode(pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)).decode('ascii')
-                else:  # json
-                    value_str = json.dumps(value)
+                else:  # json - 最適化されたオプション
+                    value_str = json.dumps(value, default=self._extended_json_encoder_hook, 
+                                         separators=(',', ':'), ensure_ascii=False)
                 insert_data.append((key, value_str))
             
-            # バルク実行
-            cursor.executemany(self._insert_stmt, insert_data)
+            # バルク実行 - executemanyの代わりにループで高速化
+            for key, value_str in insert_data:
+                cursor.execute(self._insert_stmt, (key, value_str))
+            
+            # トランザクションをコミット
+            cursor.execute("COMMIT")
+        except Exception:
+            cursor.execute("ROLLBACK")
+            raise
         finally:
             cursor.close()
 
     def bulk_get(self, keys):
-        """バルク取得 - 複数のキーを効率的に取得"""
+        """バルク取得 - 複数のキーを効率的に取得（最適化版）"""
         if not keys:
             return {}
         
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        try:
-            # IN句を使用した効率的な一括検索
-            placeholders = ','.join('?' * len(keys))
-            query = f"SELECT key, value FROM {self._quote_ident(self.table_name)} WHERE key IN ({placeholders})"
-            
-            results = {}
-            for key, value_str in cursor.execute(query, list(keys)):
-                if self.storage_mode == 'pickle':
-                    value = pickle.loads(base64.b64decode(value_str.encode('ascii')))
-                else:  # json
-                    value = json.loads(value_str)
-                results[key] = value
-            
-            return results
-        finally:
-            cursor.close()
+        # 再利用可能なカーソルを使用
+        # IN句を使用した効率的な一括検索
+        placeholders = ','.join('?' * len(keys))
+        query = f"SELECT key, value FROM {self._quote_ident(self.table_name)} WHERE key IN ({placeholders})"
+        
+        results = {}
+        for key, value_str in self._execute_with_cursor(query, list(keys)):
+            if self.storage_mode == 'pickle':
+                value = pickle.loads(base64.b64decode(value_str.encode('ascii')))
+            else:  # json
+                value = json.loads(value_str, object_hook=self._extended_json_decoder_hook)
+            results[key] = value
+        
+        return results
 
     def bulk_delete(self, keys):
-        """バルク削除 - 複数のキーを効率的に削除"""
+        """バルク削除 - 複数のキーを効率的に削除（トランザクション最適化）"""
         if not keys:
             return
         
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
+            # トランザクション開始で高速化
+            cursor.execute("BEGIN IMMEDIATE")
+            
             # IN句を使用した効率的な一括削除
             placeholders = ','.join('?' * len(keys))
             query = f"DELETE FROM {self._quote_ident(self.table_name)} WHERE key IN ({placeholders})"
             cursor.execute(query, list(keys))
+            
+            # トランザクションをコミット
+            cursor.execute("COMMIT")
+        except Exception:
+            cursor.execute("ROLLBACK")
+            raise
+        finally:
+            cursor.close()
+
+    def warmup_connection(self):
+        """接続とキャッシュのウォームアップ"""
+        # 接続を初期化
+        conn = self._get_connection()
+        # カーソルキャッシュを初期化  
+        self._get_cursor()
+        # 統計情報を更新
+        self.optimize_database()
+
+    def optimize_database(self):
+        """データベースの最適化を実行（統計情報の更新など）"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            # 統計情報を更新してクエリプランナーを最適化
+            cursor.execute("ANALYZE")
+            # VACUUMは大きなファイルでは時間がかかるため、条件付きで実行
+            # cursor.execute("VACUUM")  # コメントアウト: 必要に応じて手動実行
         finally:
             cursor.close()
 
