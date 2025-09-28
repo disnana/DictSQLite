@@ -115,8 +115,10 @@ class TestSyncPerformanceComparison:
                 # 読み取り＆更新
                 for i in range(0, n, 2):
                     value = db[f"key_{i}"]
-                    value["updated"] = True
-                    db[f"key_{i}"] = value
+                    # Create a new dict to avoid pickle issues with RecursiveDict
+                    updated_value = dict(value)
+                    updated_value["updated"] = True
+                    db[f"key_{i}"] = updated_value
                 
                 # 削除
                 for i in range(0, n, 4):
@@ -132,8 +134,10 @@ class TestSyncPerformanceComparison:
                 # 読み取り＆更新
                 for i in range(0, n, 2):
                     value = db[f"key_{i}"]
-                    value["updated"] = True
-                    db[f"key_{i}"] = value
+                    # Create a new dict to avoid any potential issues
+                    updated_value = dict(value)
+                    updated_value["updated"] = True
+                    db[f"key_{i}"] = updated_value
                 
                 # 削除
                 for i in range(0, n, 4):
