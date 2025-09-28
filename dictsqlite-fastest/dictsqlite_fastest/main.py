@@ -36,6 +36,11 @@ __all__ = [
 # ロガーの設定
 logger = logging.getLogger(__name__)
 
+# グローバルデータベース初期化管理
+_db_init_locks = {}
+_db_init_states = {}  # データベースファイルごとの初期化状態
+_db_init_lock = threading.RLock()
+
 
 def randomstrings(n):
     """英字からなる長さnのランダム文字列を返す。"""
@@ -254,8 +259,8 @@ class DictSQLiteFastest:
         else:
             self.lock_file = lock_file
 
-        # 初期化時に最初のテーブルを作成
-        self._ensure_table_exists(schema)
+        # データベースの初期化を一度だけ実行
+        self._initialize_database(schema)
 
         # 安全pickle設定
         self.safe_pickle_policy = safe_pickle_policy
@@ -274,41 +279,67 @@ class DictSQLiteFastest:
         # Prepared statements for performance
         self._prepare_statements()
 
+    def _initialize_database(self, schema=None):
+        """データベースの初期化を一度だけ実行（グローバル同期）"""
+        global _db_init_locks, _db_init_states, _db_init_lock
+        
+        # データベースファイルごとの初期化ロック取得
+        with _db_init_lock:
+            if self.db_name not in _db_init_locks:
+                _db_init_locks[self.db_name] = threading.RLock()
+                _db_init_states[self.db_name] = False
+            db_lock = _db_init_locks[self.db_name]
+        
+        # データベースファイル固有のロックで初期化
+        with db_lock:
+            if not _db_init_states[self.db_name]:
+                # 初期化用の接続を作成
+                init_conn = apsw.Connection(self.db_name)
+                init_conn.pragma("busy_timeout", 30000)
+                
+                # journal_mode設定
+                if self.journal_mode is not None:
+                    init_conn.pragma("journal_mode", self.journal_mode)
+                
+                # テーブル作成
+                cursor = init_conn.cursor()
+                try:
+                    if schema is None:
+                        schema = f'CREATE TABLE IF NOT EXISTS {self._quote_ident(self.table_name)} (key TEXT PRIMARY KEY, value TEXT)'
+                    cursor.execute(schema)
+                finally:
+                    cursor.close()
+                
+                # 初期化完了フラグを設定
+                init_conn.close()
+                _db_init_states[self.db_name] = True
+
     def _get_connection(self):
         """スレッドローカルなAPSW接続を取得"""
         if not hasattr(self._local, 'conn') or self._local.conn is None:
-            with self._lock:
-                # 新しい接続を作成
-                self._local.conn = apsw.Connection(self.db_name)
-                
-                # journal_mode設定（最初に設定）
-                if self.journal_mode is not None:
-                    self._local.conn.pragma("journal_mode", self.journal_mode)
-                
-                # APSWのパフォーマンス最適化設定
-                self._local.conn.pragma("synchronous", "NORMAL")  # FULL -> NORMALで高速化
-                self._local.conn.pragma("cache_size", -64000)     # 64MB cache
-                self._local.conn.pragma("temp_store", "MEMORY")   # temp tables in memory
-                self._local.conn.pragma("mmap_size", 268435456)   # 256MB mmap
-                
-                # WALモードの場合はさらに最適化
-                if self.journal_mode == "WAL":
-                    self._local.conn.pragma("synchronous", "NORMAL")
-                    self._local.conn.pragma("wal_autocheckpoint", 1000)
-                    self._local.conn.pragma("busy_timeout", 30000)  # 30 second timeout
+            # 新しい接続を作成
+            self._local.conn = apsw.Connection(self.db_name)
+            
+            # busy_timeoutを設定（ロック解決のため）
+            self._local.conn.pragma("busy_timeout", 30000)  # 30 second timeout
+            
+            # APSWのパフォーマンス最適化設定（journal_modeは初期化時に設定済み）
+            self._local.conn.pragma("synchronous", "NORMAL")  # FULL -> NORMALで高速化
+            self._local.conn.pragma("cache_size", -64000)     # 64MB cache
+            self._local.conn.pragma("temp_store", "MEMORY")   # temp tables in memory
+            self._local.conn.pragma("mmap_size", 268435456)   # 256MB mmap
+            
+            # WALモードの場合はさらに最適化
+            if self.journal_mode == "WAL":
+                self._local.conn.pragma("synchronous", "NORMAL")
+                self._local.conn.pragma("wal_autocheckpoint", 1000)
                     
         return self._local.conn
 
     def _ensure_table_exists(self, schema=None):
-        """テーブルが存在することを確認"""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        try:
-            if schema is None:
-                schema = f'CREATE TABLE IF NOT EXISTS {self._quote_ident(self.table_name)} (key TEXT PRIMARY KEY, value TEXT)'
-            cursor.execute(schema)
-        finally:
-            cursor.close()
+        """テーブルが存在することを確認 (初期化時に既に作成済み)"""
+        # テーブルは _initialize_database で既に作成済み
+        pass
 
     def _prepare_statements(self):
         """パフォーマンス向上のためのprepared statements"""
