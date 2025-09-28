@@ -12,9 +12,7 @@ import string
 import threading
 import logging
 from typing import Optional
-
 import portalocker
-
 from dictsqlite.modules import crypto, utils
 from dictsqlite.modules.safe_pickle import SafePolicy, safe_loads
 from dictsqlite.modules import safe_pickle
