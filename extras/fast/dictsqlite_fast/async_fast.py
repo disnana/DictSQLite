@@ -4,6 +4,7 @@
   - 非ブロッキング操作(set / delete / begin / commit / rollback) は直接呼び出し (以前は run_in_executor 経由で不要なオーバーヘッド)。
   - items()/values() はキーを列挙して個別 get する N+1 クエリを避け、内部 TableProxy.get_all_rows を一括取得 -> 逆シリアライズ。
   - _run -> _run_blocking に名称変更し、明示的にブロッキング操作のみ executor 利用。
+  - bulk_set を追加し高速一括挿入をサポート (sync 実装の bulk_set をそのまま利用)
 """
 from __future__ import annotations
 
@@ -38,6 +39,12 @@ class AsyncFastDictSQLite:
         # 非ブロッキング (enqueue のみ)
         self._sync.__setitem__(key, value)
         await asyncio.sleep(0)  # 協調的に制御を返す
+
+    async def bulk_set(self, items: Iterable[Tuple[str, Any]], *, use_transaction: bool = True):  # noqa: D401
+        """高速一括書き込み (sync bulk_set を利用)。"""
+        self._ensure_open()
+        self._sync.bulk_set(items, use_transaction=use_transaction)
+        await asyncio.sleep(0)  # enqueue 後譲歩
 
     async def get(self, key, default=None):  # noqa: D401
         self._ensure_open()
@@ -117,13 +124,10 @@ class AsyncFastDictSQLite:
         await self.rollback()
 
     async def transaction_bulk(self, items: Iterable[tuple]):  # noqa: D401
-        self._ensure_open(); await self.begin()
-        try:
-            for k, v in items:
-                await self.set(k, v)
-            await self.commit()
-        except Exception:  # noqa: BLE001
-            await self.rollback(); raise
+        """一括トランザクション。items が実体化可能なら bulk_set に委譲。"""
+        data = list(items)
+        # bulk_set で内部 BEGIN/COMMIT を行う (高速)
+        await self.bulk_set(data, use_transaction=True)
 
     # ---- exec / helpers ----
     async def execute(self, sql: str, params: Iterable[Any] | None = None):  # noqa: D401

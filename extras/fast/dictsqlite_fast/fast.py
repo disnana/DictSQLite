@@ -246,7 +246,14 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
                  version: int = 1, key_create: bool = False, safe_pickle_policy: Optional[SafePolicy] = None,
                  safe_pickle_allowed_module_prefixes: Iterable[str] | None = None, safe_pickle_allowed_builtins=None,
                  safe_pickle_allowed_globals: Iterable[str] | None = None, storage_mode: str = "pickle",
-                 pragmas: Optional[Dict[str, Any]] = None) -> None:  # noqa: D401
+                 pragmas: Optional[Dict[str, Any]] = None, fast_pickle_unsafe: bool = False) -> None:  # noqa: D401
+        """FastDictSQLite 初期化.
+
+        fast_pickle_unsafe:
+            True の場合、storage_mode == 'pickle' かつ safe_pickle_policy が None のとき
+            pickle.loads を直接使用してデシリアライズ高速化 (安全検査を行わないため任意コード実行リスクがある)。
+            デフォルト False (常に safe_loads 経由で安全なフォールバック挙動を維持)。
+        """
         # storage_mode / journal_mode 事前検証 (DB作成前に例外 -> リソース作られない)
         storage_mode = self._validate_storage_mode(storage_mode)
         if journal_mode is not None:
@@ -265,6 +272,8 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
         default_allowed_globals = {"dictsqlite.modules.utils.ExpiringDict"}
         add_allowed = set(safe_pickle_allowed_globals) if safe_pickle_allowed_globals else set()
         self._safe_pickle_allowed_globals = default_allowed_globals.union(add_allowed)
+
+        self._fast_pickle_unsafe = fast_pickle_unsafe
 
         if _USING_APSW:
             self._conn = apsw.Connection(db_name)  # type: ignore[arg-type]
@@ -387,28 +396,27 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
             blob = blob.encode('utf-8')
         raw = self._decrypt(blob)
         if self._config.storage_mode == 'pickle':
-            # 高速パス: ポリシー未指定なら安全チェックを飛ばし pickle.loads 直接使用
-            if self._safe_pickle_policy is None:
+            # 高速パス (明示オプトインかつ安全ポリシー無しの場合のみ)
+            if self._fast_pickle_unsafe and self._safe_pickle_policy is None:
                 try:
                     return pickle.loads(raw)
                 except Exception:  # noqa: BLE001
-                    pass  # フォールバックして safe_loads / 他処理へ
+                    pass
             try:
                 return safe_loads(raw, policy=self._safe_pickle_policy,
                                   allowed_module_prefixes=self._safe_pickle_allowed_module_prefixes,
                                   allowed_builtins=self._safe_pickle_allowed_builtins,
                                   allowed_globals=self._safe_pickle_allowed_globals)
             except Exception:  # noqa: BLE001
-                # 1) JSON フォールバック (旧フォーマット / 互換目的)
+                # 1) JSON フォールバック
                 try:
                     txt = raw.decode('utf-8')
                     if txt.startswith('{') or txt.startswith('['):
                         return json.loads(txt, object_hook=self._json_object_hook)
                 except Exception:  # noqa: BLE001
                     pass
-                # 2) セキュリティ or 不正データ: base64 文字列化フォールバック
+                # 2) 不正 pickle -> base64 文字列化 (テスト期待挙動)
                 return base64.b64encode(raw).decode('ascii')
-        # JSON モード
         return json.loads(raw.decode('utf-8'), object_hook=self._json_object_hook)
 
     @staticmethod
@@ -494,6 +502,26 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
         proxy = self._get_proxy(self.table_name)
         for k, v in proxy:
             yield k, v
+
+    def bulk_set(self, items: Iterable[Tuple[str, Any]], table_name: str | None = None, use_transaction: bool = True):  # noqa: D401
+        """高速一括書き込み API.
+
+        items: (key, value) のイテラブル。内部で value を先にシリアライズして executemany を 1 回投入。
+        use_transaction=True の場合 BEGIN IMMEDIATE / COMMIT を自動付与し往復を削減。
+        """
+        tname = table_name or self.table_name
+        sql = f"INSERT OR REPLACE INTO {_quote_ident(tname)}(key,value) VALUES(?,?)"
+        batch: list[Tuple[str, bytes]] = []
+        for k, v in items:
+            batch.append((k, self._serialize(v)))
+        if not batch:
+            return 0
+        if use_transaction:
+            self.operation_queue.put((self._execute, ("BEGIN IMMEDIATE", ()), {}, None))
+        self.operation_queue.put((self._executemany, (sql, batch), {}, None))
+        if use_transaction:
+            self.operation_queue.put((self._execute, ("COMMIT", ()), {}, None))
+        return len(batch)
 
     # ---------- compatibility helpers ----------
     def has_key(self, key):  # noqa: D401
