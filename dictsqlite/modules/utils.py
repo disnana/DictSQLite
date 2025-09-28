@@ -17,7 +17,7 @@ class ExpiringDict(collections.abc.MutableMapping):
     def __init__(self, expiration_time: float):
         self.data = {}
         self.expiration_time = expiration_time
-        self.expiration_tasks = {}  # 非同期 loop.call_later ハンドル管理 (以前は asyncio.Task)
+        self.expiration_tasks = {}  # 非同期タスク管理
         self.expiration_timers = {}  # 同期タイマー管理
         self._loop = None
 
@@ -52,16 +52,20 @@ class ExpiringDict(collections.abc.MutableMapping):
     def _get_or_create_loop(self) -> Optional[asyncio.AbstractEventLoop]:
         """実行中のループを取得、なければ新規作成"""
         try:
+            # 実行中のループがあるか確認
             loop = asyncio.get_running_loop()
             return loop
         except RuntimeError:
+            # ループが実行中でない場合
             try:
+                # 既存のループがあるか確認
                 loop = asyncio.get_event_loop()
                 if loop.is_closed():
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                 return loop
             except RuntimeError:
+                # 新しいループを作成
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 return loop
@@ -83,32 +87,34 @@ class ExpiringDict(collections.abc.MutableMapping):
         timer.start()
         self.expiration_timers[key] = timer
 
-    # 旧: async def _set_expiration_async + asyncio.create_task + sleep
-    # 新: loop.call_later を使い Task を生成しないのでテスト終了時の "Task was destroyed" 警告回避
-    def _set_expiration_async(self, key: str):
+    async def _set_expiration_async(self, key: str):
+        """非同期版の有効期限設定"""
+        # 既存のタスクをキャンセル
         if key in self.expiration_tasks:
-            handle = self.expiration_tasks.pop(key)
-            try:
-                handle.cancel()
-            except Exception:  # noqa: BLE001
-                pass
-        loop = asyncio.get_running_loop()
+            self.expiration_tasks[key].cancel()
 
-        def remove_key():
-            if key in self.data:
-                self.data.pop(key, None)
-                logger.info("Key '%s' expired and removed at %s", key, time.time())
-            self.expiration_tasks.pop(key, None)
+        # 新しいタスクを設定
+        task = asyncio.create_task(self._remove_after_delay(key))
+        self.expiration_tasks[key] = task
 
-        handle = loop.call_later(self.expiration_time, remove_key)
-        self.expiration_tasks[key] = handle
+    async def _remove_after_delay(self, key: str):
+        """指定されたキーを一定時間後に削除（非同期版）"""
+        await asyncio.sleep(self.expiration_time)
+        if key in self.data:
+            del self.data[key]
+            logger.info("Key '%s' expired and removed at %s", key, time.time())
+        if key in self.expiration_tasks:
+            del self.expiration_tasks[key]
 
     def _set_expiration(self, key: str):
         """自動判定で有効期限を設定"""
         try:
-            asyncio.get_running_loop()
-            self._set_expiration_async(key)
+            # 実行中のループがあるかチェック
+            asyncio.get_running_loop()  # pylint: disable=unused-variable
+            # ループが実行中なら非同期で処理
+            asyncio.create_task(self._set_expiration_async(key))
         except RuntimeError:
+            # ループが実行中でなければ同期で処理
             self._set_expiration_sync(key)
 
     def __setitem__(self, key: str, value: Any):
@@ -117,25 +123,27 @@ class ExpiringDict(collections.abc.MutableMapping):
         self._set_expiration(key)
 
     def __getitem__(self, key: str):
+        """辞書風の値取得"""
         return self.data[key]
 
     def __delitem__(self, key: str):
+        """辞書風の値削除"""
         if key in self.data:
             del self.data[key]
+            # タイマー/タスクのクリーンアップ
             if key in self.expiration_timers:
                 self.expiration_timers[key].cancel()
                 del self.expiration_timers[key]
             if key in self.expiration_tasks:
-                try:
-                    self.expiration_tasks[key].cancel()
-                except Exception:  # noqa: BLE001
-                    pass
+                self.expiration_tasks[key].cancel()
                 del self.expiration_tasks[key]
 
     def __iter__(self):
+        """辞書のキーをイテレートするためのメソッド"""
         return iter(self.data)
 
     def __len__(self):
+        """辞書の要素数を返すためのメソッド"""
         return len(self.data)
 
     def __contains__(self, key: str):
@@ -157,13 +165,11 @@ class ExpiringDict(collections.abc.MutableMapping):
         return self.data.items()
 
     def clear(self):
+        """全データとタスクをクリア"""
         self.data.clear()
         for timer in self.expiration_timers.values():
             timer.cancel()
         self.expiration_timers.clear()
-        for handle in self.expiration_tasks.values():
-            try:
-                handle.cancel()
-            except Exception:  # noqa: BLE001
-                pass
+        for task in self.expiration_tasks.values():
+            task.cancel()
         self.expiration_tasks.clear()
