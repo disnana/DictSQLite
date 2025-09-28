@@ -115,9 +115,10 @@ async def test_async_basic_crud():
 def test_performance_optimizations(db: DictSQLiteFastest):
     """パフォーマンス最適化の確認"""
     # APSWの設定が適用されているか確認
-    assert db.conn.pragma("synchronous") in [0, 1, 2]  # NORMALまたは設定値
-    assert db.conn.pragma("cache_size") < 0  # negative means KB
-    assert db.conn.pragma("temp_store") == 2  # MEMORY
+    conn = db._get_connection()
+    assert conn.pragma("synchronous") in [0, 1, 2]  # NORMALまたは設定値
+    assert conn.pragma("cache_size") < 0  # negative means KB
+    assert conn.pragma("temp_store") == 2  # MEMORY
     
     # Prepared statementsが設定されているか確認
     assert hasattr(db, '_insert_stmt')

@@ -182,7 +182,7 @@ class DBSyncedList(list):
 
 
 class DictSQLiteFastest:
-    """High-performance SQLite dictionary using APSW."""
+    """High-performance SQLite dictionary using APSW with thread-safe connections."""
 
     def _validate_journal_mode(self, mode: str) -> str:
         """Journal modeを検証し、正規化する。"""
@@ -244,14 +244,9 @@ class DictSQLiteFastest:
         if self.password is not None and key_create:
             crypto.key_create(password, publickey_path, privatekey_path)
 
-        # APSW接続 (高速化のため)
-        self.conn = apsw.Connection(db_name)
-        
-        # APSWのパフォーマンス最適化設定
-        self.conn.pragma("synchronous", "NORMAL")  # FULL -> NORMALで高速化
-        self.conn.pragma("cache_size", -64000)     # 64MB cache
-        self.conn.pragma("temp_store", "MEMORY")   # temp tables in memory
-        self.conn.pragma("mmap_size", 268435456)   # 256MB mmap
+        # スレッドローカルストレージ用
+        self._local = threading.local()
+        self._lock = threading.RLock()
         
         # ロックファイル設定
         if lock_file is None:
@@ -259,12 +254,8 @@ class DictSQLiteFastest:
         else:
             self.lock_file = lock_file
 
-        # テーブル作成
-        self.create_table(schema=schema)
-
-        # journal_mode設定
-        if self.journal_mode is not None:
-            self.conn.pragma("journal_mode", self.journal_mode)
+        # 初期化時に最初のテーブルを作成
+        self._ensure_table_exists(schema)
 
         # 安全pickle設定
         self.safe_pickle_policy = safe_pickle_policy
@@ -282,6 +273,41 @@ class DictSQLiteFastest:
 
         # Prepared statements for performance
         self._prepare_statements()
+
+    def _get_connection(self):
+        """スレッドローカルなAPSW接続を取得"""
+        if not hasattr(self._local, 'conn') or self._local.conn is None:
+            with self._lock:
+                # 新しい接続を作成
+                self._local.conn = apsw.Connection(self.db_name)
+                
+                # APSWのパフォーマンス最適化設定
+                self._local.conn.pragma("synchronous", "NORMAL")  # FULL -> NORMALで高速化
+                self._local.conn.pragma("cache_size", -64000)     # 64MB cache
+                self._local.conn.pragma("temp_store", "MEMORY")   # temp tables in memory
+                self._local.conn.pragma("mmap_size", 268435456)   # 256MB mmap
+                
+                # journal_mode設定
+                if self.journal_mode is not None:
+                    self._local.conn.pragma("journal_mode", self.journal_mode)
+                    
+                # WALモードの場合は同期モードを最適化
+                if self.journal_mode == "WAL":
+                    self._local.conn.pragma("synchronous", "NORMAL")
+                    self._local.conn.pragma("wal_autocheckpoint", 1000)
+                    
+        return self._local.conn
+
+    def _ensure_table_exists(self, schema=None):
+        """テーブルが存在することを確認"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            if schema is None:
+                schema = f'CREATE TABLE IF NOT EXISTS {self._quote_ident(self.table_name)} (key TEXT PRIMARY KEY, value TEXT)'
+            cursor.execute(schema)
+        finally:
+            cursor.close()
 
     def _prepare_statements(self):
         """パフォーマンス向上のためのprepared statements"""
@@ -378,6 +404,21 @@ class DictSQLiteFastest:
                 result.append(wrapped_value)
             return result
 
+        def __getstate__(self):
+            """Pickle時の状態保存（接続情報を除外）"""
+            # 実際のデータのみを保存
+            return self.to_dict()
+
+        def __setstate__(self, state):
+            """Pickle復元時の状態復元"""
+            # 通常の辞書として復元
+            if isinstance(state, dict):
+                self.__dict__.clear()
+                self.__dict__.update(state)
+            else:
+                # バックアップとして元のstate辞書を設定
+                self.__dict__.update(state)
+
     class TableProxy:
         """特定テーブルのキー/値へ直接アクセスするプロキシ（APSW版）。"""
 
@@ -387,7 +428,8 @@ class DictSQLiteFastest:
 
         def get_raw_value(self, key):
             """DBから生の値を取得し、必要に応じて復号/デコードして返す。"""
-            cursor = self.db.conn.cursor()
+            conn = self.db._get_connection()
+            cursor = conn.cursor()
             try:
                 result = cursor.execute(self.db._select_stmt, (key,)).fetchone()
                 if result is None:
@@ -458,21 +500,24 @@ class DictSQLiteFastest:
             if self.db.password is not None:
                 value_str = self.db._encrypt(value_str)
 
-            cursor = self.db.conn.cursor()
+            conn = self.db._get_connection()
+            cursor = conn.cursor()
             try:
                 cursor.execute(self.db._insert_stmt, (key, value_str))
             finally:
                 cursor.close()
 
         def __delitem__(self, key):
-            cursor = self.db.conn.cursor()
+            conn = self.db._get_connection()
+            cursor = conn.cursor()
             try:
                 cursor.execute(self.db._delete_stmt, (key,))
             finally:
                 cursor.close()
 
         def __contains__(self, key):
-            cursor = self.db.conn.cursor()
+            conn = self.db._get_connection()
+            cursor = conn.cursor()
             try:
                 result = cursor.execute(self.db._exists_stmt, (key,)).fetchone()
                 return result is not None
@@ -483,7 +528,8 @@ class DictSQLiteFastest:
             return f"{dict(self)}"
 
         def __iter__(self):
-            cursor = self.db.conn.cursor()
+            conn = self.db._get_connection()
+            cursor = conn.cursor()
             try:
                 for row in cursor.execute(self.db._select_all_stmt):
                     key = row[0]
@@ -496,7 +542,8 @@ class DictSQLiteFastest:
 
         def get_all_rows(self):
             """テーブル内の全行を (key, value) のタプルで返す。"""
-            cursor = self.db.conn.cursor()
+            conn = self.db._get_connection()
+            cursor = conn.cursor()
             try:
                 return list(cursor.execute(self.db._select_all_stmt))
             finally:
@@ -556,7 +603,8 @@ class DictSQLiteFastest:
         if schema is None:
             schema = f'CREATE TABLE IF NOT EXISTS {self._quote_ident(self.table_name)} (key TEXT PRIMARY KEY, value TEXT)'
         
-        cursor = self.conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
         try:
             cursor.execute(schema)
         finally:
@@ -570,8 +618,9 @@ class DictSQLiteFastest:
 
     def close(self):
         """DB接続を閉じる。"""
-        if hasattr(self, 'conn') and self.conn:
-            self.conn.close()
+        if hasattr(self._local, 'conn') and self._local.conn:
+            self._local.conn.close()
+            self._local.conn = None
 
     # Dict-like interface (v1 compatibility)
     def __getitem__(self, key):
@@ -593,7 +642,8 @@ class DictSQLiteFastest:
 
     def keys(self):
         """全キーを返す。"""
-        cursor = self.conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
         try:
             return [row[0] for row in cursor.execute(f"SELECT key FROM {self._quote_ident(self.table_name)}")]
         finally:
@@ -605,7 +655,8 @@ class DictSQLiteFastest:
 
     def clear_table(self):
         """テーブルを空にする。"""
-        cursor = self.conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
         try:
             cursor.execute(f"DELETE FROM {self._quote_ident(self.table_name)}")
         finally:
@@ -624,49 +675,71 @@ class DictSQLiteFastest:
 
 
 class AsyncDictSQLiteFastest:
-    """非同期版のDictSQLiteFastest"""
+    """非同期版のDictSQLiteFastest with per-operation connections"""
     
     def __init__(self, *args, **kwargs):
-        # スレッドプールでsync版を実行
-        self._executor = ThreadPoolExecutor(max_workers=4)
-        self._sync_db = DictSQLiteFastest(*args, **kwargs)
+        # 引数を保存して各操作で新しい接続を使用
+        self._args = args
+        self._kwargs = kwargs
+        # セマフォで同時接続数を制限
+        self._semaphore = asyncio.Semaphore(10)  # 最大10同時接続
+        
+    def _create_sync_db(self):
+        """新しい同期DB接続を作成"""
+        return DictSQLiteFastest(*self._args, **self._kwargs)
         
     async def __aenter__(self):
         return self
         
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.aclose()
+        # 特に何もしない（各操作で接続をクリーンアップ）
+        pass
         
     async def aclose(self):
-        """非同期でDB接続を閉じる。"""
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(self._executor, self._sync_db.close)
-        self._executor.shutdown(wait=True)
+        """非同期でクリーンアップ（実際にはnoop）"""
+        pass
+        
+    async def _run_in_thread(self, func, *args, **kwargs):
+        """スレッドプールでDB操作を実行"""
+        async with self._semaphore:
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                db = self._create_sync_db()
+                try:
+                    result = await loop.run_in_executor(executor, func, db, *args, **kwargs)
+                    return result
+                finally:
+                    db.close()
         
     async def __agetitem__(self, key):
         """非同期でキーを取得。"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(self._executor, self._sync_db.__getitem__, key)
+        def get_item(db, k):
+            return db[k]
+        return await self._run_in_thread(get_item, key)
         
     async def __asetitem__(self, key, value):
         """非同期でキーを設定。"""
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(self._executor, self._sync_db.__setitem__, key, value)
+        def set_item(db, k, v):
+            db[k] = v
+        await self._run_in_thread(set_item, key, value)
         
     async def __adelitem__(self, key):
         """非同期でキーを削除。"""
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(self._executor, self._sync_db.__delitem__, key)
+        def del_item(db, k):
+            del db[k]
+        await self._run_in_thread(del_item, key)
         
     async def __acontains__(self, key):
         """非同期でキー存在確認。"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(self._executor, self._sync_db.__contains__, key)
+        def contains_item(db, k):
+            return k in db
+        return await self._run_in_thread(contains_item, key)
         
     async def akeys(self):
         """非同期で全キーを取得。"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(self._executor, self._sync_db.keys)
+        def get_keys(db):
+            return db.keys()
+        return await self._run_in_thread(get_keys)
         
     async def ahas_key(self, key):
         """非同期でキー存在確認。"""
@@ -674,8 +747,9 @@ class AsyncDictSQLiteFastest:
         
     async def aclear_table(self):
         """非同期でテーブルをクリア。"""
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(self._executor, self._sync_db.clear_table)
+        def clear_table(db):
+            db.clear_table()
+        await self._run_in_thread(clear_table)
 
     # 便利メソッド
     async def aget(self, key, default=None):
