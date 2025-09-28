@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""benchmark_full_v2
+"""benchmark_full_v2 (with optional inline fast mode)
 
 v1 で提供していた DictSQLite (baseline) と dictsqlite_fast (高速版) の
 同期/非同期実装を同一テーブル形式で比較し、コンソール表示 + ファイル出力
@@ -270,13 +270,17 @@ class Sample:
 
 # ---------------- 計測実行 ----------------
 
-def run_sync_impl(impl: str, scenario: str, keys: int, tmp: Path) -> float:
+def run_sync_impl(impl: str, scenario: str, keys: int, tmp: Path, *, fast_inline: bool, fast_aggressive: bool, fast_apsw_mode: bool) -> float:  # noqa: D401
     if impl == 'dictsqlite':
         db = DictSQLite(str(tmp / 'baseline.db'))
     elif impl == 'fast':
         if not FAST_AVAILABLE:
             return float('nan')
-        db = FastDictSQLite(str(tmp / 'fast.db'))  # type: ignore
+        inline_mode = 'inline' if fast_inline or fast_apsw_mode else 'queue'
+        try:
+            db = FastDictSQLite(str(tmp / 'fast.db'), inline_mode=inline_mode, aggressive_pragmas=(fast_aggressive or fast_apsw_mode), apsw_fast_mode=fast_apsw_mode)  # type: ignore
+        except Exception:
+            return float('nan')
     else:
         raise ValueError(impl)
     fn = SYNC_SCENARIOS[scenario]
@@ -291,13 +295,17 @@ def run_sync_impl(impl: str, scenario: str, keys: int, tmp: Path) -> float:
         db.close()
     return time.perf_counter() - start
 
-async def _run_async_impl(impl: str, scenario: str, keys: int, tmp: Path) -> float:
+async def _run_async_impl(impl: str, scenario: str, keys: int, tmp: Path, *, fast_inline: bool, fast_aggressive: bool, fast_apsw_mode: bool) -> float:  # noqa: D401
     if impl == 'dictsqlite':
         adb = AsyncDictSQLiteWrapper(str(tmp / 'abs.db'))
     elif impl == 'fast':
         if not FAST_AVAILABLE or AsyncFastDictSQLite is None:  # type: ignore
             return float('nan')
-        adb = AsyncFastDictSQLite(str(tmp / 'afs.db'))  # type: ignore
+        inline_mode = 'inline' if fast_inline or fast_apsw_mode else 'queue'
+        try:
+            adb = AsyncFastDictSQLite(str(tmp / 'afs.db'), inline_mode=inline_mode, aggressive_pragmas=(fast_aggressive or fast_apsw_mode), apsw_fast_mode=fast_apsw_mode)  # type: ignore
+        except Exception:
+            return float('nan')
     else:
         raise ValueError(impl)
     fn = ASYNC_SCENARIOS[scenario]
@@ -316,12 +324,12 @@ async def _run_async_impl(impl: str, scenario: str, keys: int, tmp: Path) -> flo
             pass
     return time.perf_counter() - start
 
-def run_async_impl(impl: str, scenario: str, keys: int, tmp: Path) -> float:
-    return asyncio.run(_run_async_impl(impl, scenario, keys, tmp))
+def run_async_impl(impl: str, scenario: str, keys: int, tmp: Path, *, fast_inline: bool, fast_aggressive: bool, fast_apsw_mode: bool) -> float:  # noqa: D401
+    return asyncio.run(_run_async_impl(impl, scenario, keys, tmp, fast_inline=fast_inline, fast_aggressive=fast_aggressive, fast_apsw_mode=fast_apsw_mode))
 
 # ---------------- メインロジック ----------------
 
-def benchmark(args) -> List[Sample]:
+def benchmark(args) -> List[Sample]:  # noqa: D401
     scenarios = args.only or list(SYNC_SCENARIOS.keys())
     selected_modes: List[str]
     if args.modes == 'both':
@@ -342,15 +350,23 @@ def benchmark(args) -> List[Sample]:
                     with tempfile.TemporaryDirectory() as d:
                         tmp = Path(d)
                         if mode == 'sync':
-                            seconds = run_sync_impl(impl, scenario, args.keys, tmp)
+                            seconds = run_sync_impl(impl, scenario, args.keys, tmp, fast_inline=args.fast_inline, fast_aggressive=args.fast_aggressive, fast_apsw_mode=args.fast_apsw_mode)
                         else:
-                            seconds = run_async_impl(impl, scenario, args.keys, tmp)
+                            seconds = run_async_impl(impl, scenario, args.keys, tmp, fast_inline=args.fast_inline, fast_aggressive=args.fast_aggressive, fast_apsw_mode=args.fast_apsw_mode)
                         if math.isnan(seconds):
                             continue
-                        operations = args.keys  # 簡易: 各シナリオ主操作数=keys とする
-                        samples.append(Sample(scenario, impl, mode, run, seconds, operations))
+                        operations = args.keys
+                        label = impl
+                        if impl == 'fast':
+                            if args.fast_apsw_mode:
+                                label += '+apsw'
+                            elif args.fast_inline:
+                                label += '+inline'
+                            if args.fast_aggressive and not args.fast_apsw_mode:
+                                label += '+aggr'
+                        samples.append(Sample(scenario, label, mode, run, seconds, operations))
                         if args.verbose:
-                            print(f"[detail] scenario={scenario} impl={impl} mode={mode} run={run} seconds={seconds:.4f} ops/s={operations/seconds:,.0f}")
+                            print(f"[detail] scenario={scenario} impl={label} mode={mode} run={run} seconds={seconds:.4f} ops/s={operations/seconds:,.0f}")
     return samples
 
 # ---------------- 出力フォーマット ----------------
@@ -401,7 +417,7 @@ def print_console_table(agg_rows: List[Dict[str, Any]]):
 
 # ---------------- ファイル書き出し ----------------
 
-def write_outputs(samples: List[Sample], args, agg_rows: List[Dict[str, Any]]):
+def write_outputs(samples: List[Sample], args, agg_rows: List[Dict[str, Any]]):  # noqa: D401
     out_dir = Path(args.output_dir) if args.output_dir else Path('results') / time.strftime('%Y%m%d_%H%M%S')
     out_dir.mkdir(parents=True, exist_ok=True)
     # JSON (raw + aggregate)
@@ -412,6 +428,9 @@ def write_outputs(samples: List[Sample], args, agg_rows: List[Dict[str, Any]]):
                 'runs': args.runs,
                 'modes': args.modes,
                 'implementations': ["dictsqlite" if not args.no_baseline else None, "fast" if not args.no_fast else None],
+                'fast_inline': args.fast_inline,
+                'fast_aggressive': args.fast_aggressive,
+                'fast_apsw_mode': args.fast_apsw_mode,
                 'timestamp': time.time(),
             },
             'samples': [dataclasses.asdict(s) for s in samples],
@@ -460,6 +479,9 @@ def parse_args():
     p.add_argument('--modes', choices=['sync','async','both'], default='both')
     p.add_argument('--no-baseline', action='store_true', help='DictSQLite を除外')
     p.add_argument('--no-fast', action='store_true', help='FastDictSQLite を除外')
+    p.add_argument('--fast-inline', action='store_true', help='FastDictSQLite を inline_mode=inline で計測 (queue バイパス)')
+    p.add_argument('--fast-aggressive', action='store_true', help='FastDictSQLite で攻撃的 PRAGMA (synchronous=OFF 等) を有効化')
+    p.add_argument('--fast-apsw-mode', action='store_true', help='APSW 専用最速モード (inline + aggressive_pragmas 強制)。APSW 必須')
     p.add_argument('--json', default='benchmark.json')
     p.add_argument('--csv', default='benchmark.csv')
     p.add_argument('--markdown', default='benchmark.md')
@@ -482,4 +504,3 @@ def main():  # noqa: D401
 
 if __name__ == '__main__':  # pragma: no cover
     raise SystemExit(main())
-

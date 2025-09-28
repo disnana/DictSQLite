@@ -205,39 +205,81 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
         def __init__(self, db: 'FastDictSQLite', table_name: str):
             self.db = db; self.table_name = table_name
         def _enqueue(self, op, args, need_result=False):  # noqa: D401
+            if self.db._inline:  # 直接実行パス
+                try:
+                    res = self.db._call_with_retry(op, *args)
+                    return res
+                except Exception as e:  # noqa: BLE001
+                    if need_result:
+                        raise
+                    return None
             rq = queue.Queue() if need_result else None
-            self.db.operation_queue.put((op, args, {}, rq))
+            self.db.operation_queue.put((op, args, {}, rq))  # type: ignore[arg-type]
             if rq is not None:
                 res = rq.get()
                 if isinstance(res, Exception):
                     raise res
                 return res
             return None
+        def __setitem__(self, key, value):  # noqa: D401
+            blob = self.db._serialize(value)
+            t = self.table_name
+            if self.db._inline:
+                self.db._ensure_stmt_cache(t)
+                stmt = self.db._stmt_cache[t]['insert']
+                try:
+                    stmt.execute(f"INSERT OR REPLACE INTO {_quote_ident(t)}(key,value) VALUES(?,?)", (key, blob))
+                except Exception:  # noqa: BLE001
+                    # フォールバック (一度失敗したら以後キュー式に頼る)
+                    self.db._call_with_retry(self.db._execute, f"INSERT OR REPLACE INTO {_quote_ident(t)}(key,value) VALUES(?,?)", (key, blob))
+                return
+            # queue path
+            self._enqueue(self.db._execute, (f"INSERT OR REPLACE INTO {_quote_ident(self.table_name)}(key,value) VALUES(?,?)", (key, blob)), False)
         def get_raw_value(self, key):  # noqa: D401
+            if self.db._inline:
+                self.db._ensure_stmt_cache(self.table_name)
+                stmt = self.db._stmt_cache[self.table_name]['select_value']
+                row = stmt.execute(f"SELECT value FROM {_quote_ident(self.table_name)} WHERE key=?", (key,)).fetchone()
+                if row is None: raise KeyError(f"Key {key} not found in table {self.table_name}")
+                return self.db._deserialize(row[0])
             row = self._enqueue(self.db._fetchone, (f"SELECT value FROM {_quote_ident(self.table_name)} WHERE key= ?", (key,)), True)
             if row is None: raise KeyError(f"Key {key} not found in table {self.table_name}")
             blob = row[0]; return self.db._deserialize(blob)
-        def __getitem__(self, key):  # noqa: D401
-            raw = self.get_raw_value(key); return self.db.wrap_in_proxy(key, self, raw)
-        def __setitem__(self, key, value):  # noqa: D401
-            blob = self.db._serialize(value)
-            self._enqueue(self.db._execute, (f"INSERT OR REPLACE INTO {_quote_ident(self.table_name)}(key,value) VALUES(?,?)", (key, blob)), False)
-        def __delitem__(self, key):  # noqa: D401
-            self._enqueue(self.db._execute, (f"DELETE FROM {_quote_ident(self.table_name)} WHERE key= ?", (key,)), False)
         def __contains__(self, key):  # noqa: D401
+            if self.db._inline:
+                self.db._ensure_stmt_cache(self.table_name)
+                stmt = self.db._stmt_cache[self.table_name]['select_exists']
+                r = stmt.execute(f"SELECT 1 FROM {_quote_ident(self.table_name)} WHERE key=?", (key,)).fetchone()
+                return r is not None
             row = self._enqueue(self.db._fetchone, (f"SELECT 1 FROM {_quote_ident(self.table_name)} WHERE key= ?", (key,)), True); return row is not None
         def get_all_rows(self):  # noqa: D401
+            if self.db._inline:
+                self.db._ensure_stmt_cache(self.table_name)
+                stmt = self.db._stmt_cache[self.table_name]['select_all']
+                rows = stmt.execute(f"SELECT key,value FROM {_quote_ident(self.table_name)}").fetchall()
+                return rows
             return self._enqueue(self.db._fetchall, (f"SELECT key,value FROM {_quote_ident(self.table_name)}", ()), True)
+        def clear(self):  # noqa: D401
+            if self.db._inline:
+                self.db._ensure_stmt_cache(self.table_name)
+                stmt = self.db._stmt_cache[self.table_name]['delete']
+                stmt.execute(f"DELETE FROM {_quote_ident(self.table_name)}")
+                return
+            self._enqueue(self.db._execute, (f"DELETE FROM {_quote_ident(self.table_name)}", ()), False)
+        def __getitem__(self, key):  # noqa: D401
+            raw = self.get_raw_value(key)
+            return self.db.wrap_in_proxy(key, self, raw)
         def __iter__(self):  # noqa: D401
-            # N+1 クエリを避け一括フェッチ結果を逆シリアライズ
+            # 高速パス: 一括取得 (inline は stmt キャッシュ利用)
             rows = self.get_all_rows()
             for k, blob in rows:
                 val = self.db._deserialize(blob)  # noqa: SLF001
                 yield k, self.db.wrap_in_proxy(k, self, val)
-        def clear(self):  # noqa: D401
-            self._enqueue(self.db._execute, (f"DELETE FROM {_quote_ident(self.table_name)}", ()), False)
         def __repr__(self):  # noqa: D401
-            return repr(dict(self))
+            try:
+                return f"TableProxy({self.table_name}, {dict(self)})"
+            except Exception:  # noqa: BLE001
+                return f"TableProxy({self.table_name}, ...)"
 
     # ---------- init ----------
     def __init__(self, db_name: str, table_name: str = "main", *, schema: str | None = None,
@@ -246,14 +288,24 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
                  version: int = 1, key_create: bool = False, safe_pickle_policy: Optional[SafePolicy] = None,
                  safe_pickle_allowed_module_prefixes: Iterable[str] | None = None, safe_pickle_allowed_builtins=None,
                  safe_pickle_allowed_globals: Iterable[str] | None = None, storage_mode: str = "pickle",
-                 pragmas: Optional[Dict[str, Any]] = None, fast_pickle_unsafe: bool = False) -> None:  # noqa: D401
+                 pragmas: Optional[Dict[str, Any]] = None, fast_pickle_unsafe: bool = False,
+                 inline_mode: str = 'queue', aggressive_pragmas: bool = False,
+                 apsw_fast_mode: bool = False) -> None:  # noqa: D401
         """FastDictSQLite 初期化.
 
-        fast_pickle_unsafe:
-            True の場合、storage_mode == 'pickle' かつ safe_pickle_policy が None のとき
-            pickle.loads を直接使用してデシリアライズ高速化 (安全検査を行わないため任意コード実行リスクがある)。
-            デフォルト False (常に safe_loads 経由で安全なフォールバック挙動を維持)。
+        apsw_fast_mode:
+            True の場合 APSW 利用必須。APSW 利用時に自動的に inline_mode='inline' と aggressive_pragmas=True を強制し、
+            キュー/スレッドを完全にバイパスして最高速設定を適用する (耐障害性より速度優先)。
         """
+        if apsw_fast_mode:
+            if not _USING_APSW:
+                raise RuntimeError("apsw_fast_mode=True ですが APSW がインストールされていません。pip install apsw を行ってください。")
+            inline_mode = 'inline'
+            aggressive_pragmas = True
+        if inline_mode == 'auto':
+            import os as _os  # 局所 import
+            inline_mode = 'inline' if _os.environ.get('FASTDICT_INLINE') == '1' else 'queue'
+        self._inline = (inline_mode == 'inline')
         # storage_mode / journal_mode 事前検証 (DB作成前に例外 -> リソース作られない)
         storage_mode = self._validate_storage_mode(storage_mode)
         if journal_mode is not None:
@@ -274,6 +326,7 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
         self._safe_pickle_allowed_globals = default_allowed_globals.union(add_allowed)
 
         self._fast_pickle_unsafe = fast_pickle_unsafe
+        self._aggressive_pragmas = aggressive_pragmas
 
         if _USING_APSW:
             self._conn = apsw.Connection(db_name)  # type: ignore[arg-type]
@@ -289,15 +342,27 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
             except Exception:  # noqa: BLE001
                 pass
         self._apply_default_pragmas(pragmas)
-        self.operation_queue: queue.Queue[Tuple[Any, Tuple, Dict, Optional[queue.Queue]]] = queue.Queue()
-        if conflict_resolver:
-            self.worker_thread = threading.Thread(target=self._process_queue_conflict_resolver, daemon=True)
+        if self._aggressive_pragmas:
+            try:
+                self._apply_aggressive_pragmas()
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to apply aggressive pragmas")
+        if not self._inline:
+            self.operation_queue: queue.Queue[Tuple[Any, Tuple, Dict, Optional[queue.Queue]]] = queue.Queue()
+            if conflict_resolver:
+                self.worker_thread = threading.Thread(target=self._process_queue_conflict_resolver, daemon=True)
+            else:
+                self.worker_thread = threading.Thread(target=self._process_queue, daemon=True)
+            self.worker_thread.start()
         else:
-            self.worker_thread = threading.Thread(target=self._process_queue, daemon=True)
-        self.worker_thread.start()
+            # inline 用ダミー queue (flush() 互換のため task なし)
+            self.operation_queue = None  # type: ignore
         self.create_table(table_name=table_name, schema=schema)
         # TableProxy キャッシュ (テーブルごとに 1 回生成して再利用)
         self._proxy_cache: Dict[str, FastDictSQLite.TableProxy] = {}
+        # prepared statement キャッシュ (inline 時のみ利用)
+        self._prepared_insert: Dict[str, Any] = {}
+        self._stmt_cache: Dict[str, Dict[str, Any]] = {}  # table -> {name: cursor/stmt}
         self._closed = False
 
     # ---------- validation / pragmas ----------
@@ -321,6 +386,24 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
         if user_pragmas: pragmas.update(user_pragmas)
         cur = self._conn.cursor()
         for k, v in pragmas.items():
+            try: cur.execute(f"PRAGMA {k}={v}")
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _apply_aggressive_pragmas(self):  # noqa: D401
+        cur = self._conn.cursor()
+        aggressive = {
+            "journal_mode": "MEMORY",
+            "synchronous": "OFF",
+            "locking_mode": "EXCLUSIVE",
+            "cache_size": -200000,          # 約 200k pages (~> 800MB 目安 / 自動調整)
+            "temp_store": 2,                # MEMORY
+            "wal_autocheckpoint": 0,
+            "journal_size_limit": 0,
+            "mmap_size": 268435456,         # 256MB
+            "page_size": 4096
+        }
+        for k, v in aggressive.items():
             try: cur.execute(f"PRAGMA {k}={v}")
             except Exception:  # noqa: BLE001
                 pass
@@ -436,9 +519,17 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
         if schema is None: schema = '(key TEXT PRIMARY KEY, value BLOB)'
         if ';' in schema: raise ValueError('schema must not contain semicolons')
         sql = f"CREATE TABLE IF NOT EXISTS {_quote_ident(self.table_name)} {schema}"
-        self.operation_queue.put((self._execute, (sql, ()), {}, None))
+        if self._inline:
+            self._call_with_retry(self._execute, sql, ())
+            # テーブル作成後 statement cache 初期化
+            self._ensure_stmt_cache(self.table_name)
+        else:
+            self.operation_queue.put((self._execute, (sql, ()), {}, None))
 
     def tables(self) -> List[str]:  # noqa: D401
+        if self._inline:
+            rows = self._call_with_retry(self._fetchall, "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name", ())
+            return [r[0] for r in rows]
         rq = queue.Queue(); self.operation_queue.put((self._fetchall, ("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name", ()), {}, rq))
         res = rq.get();
         if isinstance(res, Exception): raise res
@@ -446,6 +537,9 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
 
     def keys(self, table_name: str | None = None) -> List[str]:  # noqa: D401
         tname = table_name or self.table_name
+        if self._inline:
+            rows = self._call_with_retry(self._fetchall, f"SELECT key FROM {_quote_ident(tname)}", ())
+            return [r[0] for r in rows]
         rq = queue.Queue(); self.operation_queue.put((self._fetchall, (f"SELECT key FROM {_quote_ident(tname)}", ()), {}, rq))
         res = rq.get();
         if isinstance(res, Exception): raise res
@@ -485,9 +579,17 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
         proxy = self._get_proxy(self.table_name); proxy[key] = value
     def __getitem__(self, key):  # noqa: D401
         if self._config.version == 2:
-            # version2: テーブル名アクセス or (key, table) での get は未サポート (互換性: table名 -> TableProxy)
             if key not in self.tables(): raise KeyError(f"Table {key} not found")
             return self._get_proxy(key)
+        if self._inline:
+            # ステートメントキャッシュ利用
+            self._ensure_stmt_cache(self.table_name)
+            stmt = self._stmt_cache[self.table_name]['select_value']
+            row = stmt.execute(f"SELECT value FROM {_quote_ident(self.table_name)} WHERE key=?", (key,)).fetchone()
+            if row is None:
+                raise KeyError(key)
+            val = self._deserialize(row[0])
+            return self.wrap_in_proxy(key, self._get_proxy(self.table_name), val)
         proxy = self._get_proxy(self.table_name); return proxy[key]
     def get(self, key, default=None):  # noqa: D401
         try: return self[key]
@@ -497,6 +599,9 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
     def __contains__(self, key):  # noqa: D401
         proxy = self._get_proxy(self.table_name); return key in proxy
     def clear(self):  # noqa: D401
+        if self._inline:
+            self._call_with_retry(self._execute, f"DELETE FROM {_quote_ident(self.table_name)}", ())
+            return
         proxy = self._get_proxy(self.table_name); proxy.clear()
     def items(self):  # noqa: D401
         proxy = self._get_proxy(self.table_name)
@@ -508,14 +613,25 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
 
         items: (key, value) のイテラブル。内部で value を先にシリアライズして executemany を 1 回投入。
         use_transaction=True の場合 BEGIN IMMEDIATE / COMMIT を自動付与し往復を削減。
-        """
+        inline_mode の場合は直接 executemany。"""
         tname = table_name or self.table_name
         sql = f"INSERT OR REPLACE INTO {_quote_ident(tname)}(key,value) VALUES(?,?)"
         batch: list[Tuple[str, bytes]] = []
         for k, v in items:
             batch.append((k, self._serialize(v)))
-        if not batch:
-            return 0
+        if not batch: return 0
+        if self._inline:
+            self._ensure_stmt_cache(tname)
+            if use_transaction: self._call_with_retry(self._execute, "BEGIN IMMEDIATE", ())
+            # executemany 相当: ループだが prepared 1回再利用
+            cur = self._stmt_cache[tname]['insert']
+            try:
+                cur.executemany(sql, batch)
+            except Exception:  # noqa: BLE001
+                for rec in batch:
+                    cur.execute(sql, rec)
+            if use_transaction: self._call_with_retry(self._execute, "COMMIT", ())
+            return len(batch)
         if use_transaction:
             self.operation_queue.put((self._execute, ("BEGIN IMMEDIATE", ()), {}, None))
         self.operation_queue.put((self._executemany, (sql, batch), {}, None))
@@ -528,28 +644,53 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
         return key in self
     def clear_table(self, table_name: str | None = None):  # noqa: D401
         tname = table_name or self.table_name
+        if self._inline:
+            self._call_with_retry(self._execute, f"DELETE FROM {_quote_ident(tname)}", ())
+            return
         self.operation_queue.put((self._execute, (f"DELETE FROM {_quote_ident(tname)}", ()), {}, None))
         self.operation_queue.join()  # ensure cleared
     def switch_table(self, new_table_name: str, schema: str | None = None):  # noqa: D401
         self.table_name = new_table_name; self.create_table(table_name=new_table_name, schema=schema)
-        self.operation_queue.join()  # ensure table created
+        if not self._inline:
+            self.operation_queue.join()  # ensure table created
     def clear_db(self):  # noqa: D401
+        if self._inline:
+            self._drop_all_and_reset(); return
         rq = queue.Queue(); self.operation_queue.put((self._drop_all_and_reset, (), {}, rq)); rq.get()
     def _drop_all_and_reset(self):  # noqa: D401
-        cur = self._conn.cursor(); cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        for (tname,) in cur.fetchall(): cur.execute(f"DROP TABLE IF EXISTS {_quote_ident(tname)}")
-        cur.execute("VACUUM"); self.table_name = 'main'; cur.execute("CREATE TABLE IF NOT EXISTS 'main'(key TEXT PRIMARY KEY, value BLOB)")
-        # テーブル全削除後は TableProxy キャッシュを無効化
-        self._proxy_cache.clear()
+        """全テーブル削除し main を再生成 (inline/queue 双方で利用)。"""
+        cur = self._conn.cursor()
+        try:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = [r[0] for r in cur.fetchall()]
+            for t in tables:
+                cur.execute(f"DROP TABLE IF EXISTS {_quote_ident(t)}")
+            cur.execute("VACUUM")
+            cur.execute("CREATE TABLE IF NOT EXISTS 'main'(key TEXT PRIMARY KEY, value BLOB)")
+            self.table_name = 'main'
+            # キャッシュ破棄
+            self._proxy_cache.clear()
+            if self._inline:
+                # inline の prepared insert キャッシュも無効化
+                self._prepared_insert.clear()
+        except Exception:  # noqa: BLE001
+            logger.exception("clear_db failed")
+            raise
 
     # ---------- transactions ----------
     def begin(self):  # noqa: D401
+        if self._inline:
+            self._call_with_retry(self._execute, "BEGIN IMMEDIATE", ()); return
         self.operation_queue.put((self._execute, ("BEGIN IMMEDIATE", ()), {}, None))
     def commit(self):  # noqa: D401
+        if self._inline:
+            self._call_with_retry(self._execute, "COMMIT", ()); return
         self.operation_queue.put((self._execute, ("COMMIT", ()), {}, None))
     def rollback(self):  # noqa: D401
+        if self._inline:
+            self._call_with_retry(self._execute, "ROLLBACK", ()); return
         self.operation_queue.put((self._execute, ("ROLLBACK", ()), {}, None))
-    # aliases
+    # エイリアス (テスト互換)
     def begin_transaction(self):  # noqa: D401
         self.begin()
     def commit_transaction(self):  # noqa: D401
@@ -560,16 +701,21 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
     # ---------- misc ----------
     def execute(self, sql: str, params: Iterable[Any] | None = None):  # noqa: D401
         if params is None: params = []
+        if self._inline:
+            return self._call_with_retry(self._fetchall, sql, tuple(params))
         rq = queue.Queue(); self.operation_queue.put((self._fetchall, (sql, tuple(params)), {}, rq))
         res = rq.get();
         if isinstance(res, Exception): raise res
         return res
     def execute_custom(self, sql: str, params: Iterable[Any] | None = None):  # noqa: D401
         return self.execute(sql, params)
+
     def expiring_dict(self, expiration_time: int):  # noqa: D401
         return utils.ExpiringDict(expiration_time)  # type: ignore
 
     def flush(self):  # noqa: D401
+        if self._inline:
+            return  # 直列実行なので待機不要
         self.operation_queue.join()
 
     def close(self):  # noqa: D401
@@ -625,3 +771,62 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
     @property
     def storage_mode(self):  # noqa: D401
         return self._config.storage_mode
+
+    def _ensure_stmt_cache(self, table: str):  # noqa: D401
+        """テーブルごとのステートメントキャッシュを初期化 (inline / APSW 高速化用)。"""
+        if table in self._stmt_cache:
+            return
+        cache: Dict[str, Any] = {}
+        # 共通: カーソルを 1 回生成して使い回し (APSW は prepare キャッシュ、sqlite3 でもカーソル再利用でオブジェクト生成コスト削減)
+        cache['insert'] = self._conn.cursor()
+        cache['select_value'] = self._conn.cursor()
+        cache['select_exists'] = self._conn.cursor()
+        cache['delete'] = self._conn.cursor()
+        cache['select_all'] = self._conn.cursor()
+        self._stmt_cache[table] = cache
+
+    def _get_prepared_insert(self, table: str):  # noqa: D401
+        if not self._inline:
+            raise RuntimeError('prepared insert は inline mode でのみ利用可能')
+        stmt = self._prepared_insert.get(table)
+        if stmt is None:
+            cur = self._conn.cursor()
+            cur = cur.execute(f"SELECT 1 FROM {_quote_ident(table)} WHERE 1=0")  # warm-up
+            insert_cur = self._conn.cursor()
+            insert_cur.execute(f"PRAGMA defer_foreign_keys=ON")  # noop だが最初の準備で接続活性化
+            # cursor をそのままキャッシュし execute 呼び出し時に SQL 省略 (sqlite3 互換 / apsw は再 prepare)
+            class _Insert:
+                __slots__ = ('_cursor','_sql')
+                def __init__(self, c, sql): self._cursor=c; self._sql=sql
+                def execute(self, params):
+                    self._cursor.execute(self._sql, params)
+                    return None
+            stmt = _Insert(insert_cur, f"INSERT OR REPLACE INTO {_quote_ident(table)}(key,value) VALUES(?,?)")
+            self._prepared_insert[table] = stmt
+        return stmt
+
+    def prefetch_keys(self, keys: Iterable[str], *, chunk: int = 500) -> Dict[str, Any]:  # noqa: D401
+        """指定キーの値をまとめて取得 (inline + APSW 最適化用補助。互換 API には影響なし)。"""
+        if not self._inline:
+            # queue モードは逐次 (オーバーヘッド避けるため簡易実装)
+            result = {}
+            for k in keys:
+                try:
+                    result[k] = self[k]
+                except KeyError:
+                    pass
+            return result
+        collected: Dict[str, Any] = {}
+        key_list = list(keys)
+        if not key_list:
+            return collected
+        self._ensure_stmt_cache(self.table_name)
+        cur = self._stmt_cache[self.table_name]['select_all']
+        for i in range(0, len(key_list), chunk):
+            part = key_list[i:i+chunk]
+            placeholders = ",".join(["?"]*len(part))
+            rows = cur.execute(f"SELECT key,value FROM {_quote_ident(self.table_name)} WHERE key IN ({placeholders})", part).fetchall()
+            for k, blob in rows:
+                collected[k] = self.wrap_in_proxy(k, self._get_proxy(self.table_name), self._deserialize(blob))
+        return collected
+
