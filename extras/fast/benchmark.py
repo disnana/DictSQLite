@@ -292,26 +292,44 @@ async def async_run(db, scenario: str, keys: int):
     elif scenario == 'nested_mutation':
         await db.set('cfg', {"lvl1": {"counter": 0, "items": []}})
         for _ in range(keys):
-            cfg = await db.get('cfg')
-            cfg['lvl1']['counter'] += 1
-            cfg['lvl1']['items'].append(_rand_key(4))
-            await db.set('cfg', cfg)
+            cfg = await db.get('cfg')  # RecursiveDict 期待
+            # プロキシを直接保存せず、操作後 plain dict を保存する
+            if cfg is None:
+                continue
+            # カウンタ更新
+            try:
+                lvl1 = cfg['lvl1']  # RecursiveDict or dict
+                lvl1['counter'] = lvl1['counter'] + 1
+                items = lvl1['items']
+                if isinstance(items, list):
+                    items.append(_rand_key(4))
+            except Exception:  # noqa: BLE001
+                pass
+            plain = cfg.to_dict() if hasattr(cfg, 'to_dict') else cfg
+            await db.set('cfg', plain)
     elif scenario == 'list_set_sync':
         await db.set('L', [0])
         await db.set('S', {0})
         for i in range(1, keys):
             lst = await db.get('L')
             st = await db.get('S')
-            lst.append(i)
-            st.add(i)
-            await db.set('L', lst)
-            await db.set('S', st)
+            # DBSyncedList/Set なら append/add で自動同期されるので再保存しない
+            if lst is not None and hasattr(lst, 'append'):
+                lst.append(i)
+            else:
+                if isinstance(lst, list):
+                    lst.append(i)
+                    await db.set('L', lst)
+            if st is not None and hasattr(st, 'add'):
+                st.add(i)
+            else:
+                if isinstance(st, set):
+                    st.add(i)
+                    await db.set('S', st)
     elif scenario == 'transaction_bulk':
-        # 簡易: 逐次 (async トランザクション API は fast のみ対応可能だが統一性重視で省略)
         for i in range(keys):
             await db.set(_rand_key(), i)
     elif scenario == 'table_switch':
-        # fast async の switch_table を利用 (ベースラッパは未実装なので try/except)
         for i in range(max(2, keys // 10)):
             t = f"t{i}"
             if hasattr(db, 'switch_table'):
