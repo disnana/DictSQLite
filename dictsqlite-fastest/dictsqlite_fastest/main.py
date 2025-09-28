@@ -208,7 +208,7 @@ class DictSQLiteFastest:
         db_name: str,
         table_name: str = 'main',
         schema: Optional[str] = None,
-        journal_mode: str = None,
+        journal_mode: str = "WAL",  # Default to WAL for better concurrency
         lock_file: str = None,
         password: str = None,
         publickey_path: str = "./public_keys.pem",
@@ -235,7 +235,7 @@ class DictSQLiteFastest:
         self.storage_mode = self._validate_storage_mode(storage_mode)
 
         # journal_mode検証
-        validated_journal_mode = None
+        validated_journal_mode = "WAL"  # Default to WAL
         if journal_mode is not None:
             validated_journal_mode = self._validate_journal_mode(journal_mode)
         self.journal_mode = validated_journal_mode
@@ -281,20 +281,21 @@ class DictSQLiteFastest:
                 # 新しい接続を作成
                 self._local.conn = apsw.Connection(self.db_name)
                 
+                # journal_mode設定（最初に設定）
+                if self.journal_mode is not None:
+                    self._local.conn.pragma("journal_mode", self.journal_mode)
+                
                 # APSWのパフォーマンス最適化設定
                 self._local.conn.pragma("synchronous", "NORMAL")  # FULL -> NORMALで高速化
                 self._local.conn.pragma("cache_size", -64000)     # 64MB cache
                 self._local.conn.pragma("temp_store", "MEMORY")   # temp tables in memory
                 self._local.conn.pragma("mmap_size", 268435456)   # 256MB mmap
                 
-                # journal_mode設定
-                if self.journal_mode is not None:
-                    self._local.conn.pragma("journal_mode", self.journal_mode)
-                    
-                # WALモードの場合は同期モードを最適化
+                # WALモードの場合はさらに最適化
                 if self.journal_mode == "WAL":
                     self._local.conn.pragma("synchronous", "NORMAL")
                     self._local.conn.pragma("wal_autocheckpoint", 1000)
+                    self._local.conn.pragma("busy_timeout", 30000)  # 30 second timeout
                     
         return self._local.conn
 
@@ -404,6 +405,17 @@ class DictSQLiteFastest:
                 result.append(wrapped_value)
             return result
 
+        def copy(self):
+            """辞書のコピーを返す"""
+            return dict(self._get_db_value())
+
+        def get(self, key, default=None):
+            """辞書のget()メソッド"""
+            try:
+                return self.__getitem__(key)
+            except KeyError:
+                return default
+
         def __getstate__(self):
             """Pickle時の状態保存（接続情報を除外）"""
             # 実際のデータのみを保存
@@ -511,6 +523,7 @@ class DictSQLiteFastest:
             conn = self.db._get_connection()
             cursor = conn.cursor()
             try:
+                # Simply delete - don't check for existence first to match original behavior
                 cursor.execute(self.db._delete_stmt, (key,))
             finally:
                 cursor.close()
