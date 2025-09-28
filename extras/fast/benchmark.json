@@ -1,0 +1,542 @@
+[
+  {
+    "scenario": "small_insert",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 4.6818874000164215,
+    "operations": 2000,
+    "ops_per_sec": 427.17815041707007
+  },
+  {
+    "scenario": "small_insert",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 4.9273878000094555,
+    "operations": 2000,
+    "ops_per_sec": 405.8945796789451
+  },
+  {
+    "scenario": "small_insert",
+    "impl": "dictsqlite",
+    "mode": "async",
+    "run": 1,
+    "seconds": 2.487181500007864,
+    "operations": 1000,
+    "ops_per_sec": 402.0615302891398
+  },
+  {
+    "scenario": "small_insert",
+    "impl": "dictsqlite",
+    "mode": "async",
+    "run": 2,
+    "seconds": 2.6810601000033785,
+    "operations": 1000,
+    "ops_per_sec": 372.9867898144991
+  },
+  {
+    "scenario": "small_insert",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 0.20513149999896996,
+    "operations": 2000,
+    "ops_per_sec": 9749.843393189456
+  },
+  {
+    "scenario": "small_insert",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 0.21522849999018945,
+    "operations": 2000,
+    "ops_per_sec": 9292.449652769796
+  },
+  {
+    "scenario": "small_insert",
+    "impl": "fast",
+    "mode": "async",
+    "run": 1,
+    "seconds": 0.0013707000180147588,
+    "operations": 1000,
+    "ops_per_sec": 729554.232769575
+  },
+  {
+    "scenario": "small_insert",
+    "impl": "fast",
+    "mode": "async",
+    "run": 2,
+    "seconds": 0.0007817000150680542,
+    "operations": 1000,
+    "ops_per_sec": 1279263.119769725
+  },
+  {
+    "scenario": "large_insert",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 6.167234499996994,
+    "operations": 2000,
+    "ops_per_sec": 324.2944629397463
+  },
+  {
+    "scenario": "large_insert",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 6.268660500005353,
+    "operations": 2000,
+    "ops_per_sec": 319.0474264794356
+  },
+  {
+    "scenario": "large_insert",
+    "impl": "dictsqlite",
+    "mode": "async",
+    "run": 1,
+    "seconds": 2.8510705000080634,
+    "operations": 1000,
+    "ops_per_sec": 350.7454480684262
+  },
+  {
+    "scenario": "large_insert",
+    "impl": "dictsqlite",
+    "mode": "async",
+    "run": 2,
+    "seconds": 3.0259667999926023,
+    "operations": 1000,
+    "ops_per_sec": 330.4728921686929
+  },
+  {
+    "scenario": "large_insert",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 0.45339069998590276,
+    "operations": 2000,
+    "ops_per_sec": 4411.206493786012
+  },
+  {
+    "scenario": "large_insert",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 0.4393153999990318,
+    "operations": 2000,
+    "ops_per_sec": 4552.537880539603
+  },
+  {
+    "scenario": "large_insert",
+    "impl": "fast",
+    "mode": "async",
+    "run": 1,
+    "seconds": 0.000978600000962615,
+    "operations": 1000,
+    "ops_per_sec": 1021867.973652498
+  },
+  {
+    "scenario": "large_insert",
+    "impl": "fast",
+    "mode": "async",
+    "run": 2,
+    "seconds": 0.0005669000092893839,
+    "operations": 1000,
+    "ops_per_sec": 1763979.5089322934
+  },
+  {
+    "scenario": "random_get",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 6.301430700026685,
+    "operations": 2000,
+    "ops_per_sec": 317.3882401010187
+  },
+  {
+    "scenario": "random_get",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 6.359067099983804,
+    "operations": 2000,
+    "ops_per_sec": 314.5115421104919
+  },
+  {
+    "scenario": "random_get",
+    "impl": "dictsqlite",
+    "mode": "async",
+    "run": 1,
+    "seconds": 3.3445105999999214,
+    "operations": 1000,
+    "ops_per_sec": 298.9974078718792
+  },
+  {
+    "scenario": "random_get",
+    "impl": "dictsqlite",
+    "mode": "async",
+    "run": 2,
+    "seconds": 3.2585862999840174,
+    "operations": 1000,
+    "ops_per_sec": 306.88154553553017
+  },
+  {
+    "scenario": "random_get",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 0.4290210000181105,
+    "operations": 2000,
+    "ops_per_sec": 4661.776462960025
+  },
+  {
+    "scenario": "random_get",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 0.4416684999887366,
+    "operations": 2000,
+    "ops_per_sec": 4528.283090261144
+  },
+  {
+    "scenario": "random_get",
+    "impl": "fast",
+    "mode": "async",
+    "run": 1,
+    "seconds": 0.0010079000203404576,
+    "operations": 1000,
+    "ops_per_sec": 992161.9008026322
+  },
+  {
+    "scenario": "random_get",
+    "impl": "fast",
+    "mode": "async",
+    "run": 2,
+    "seconds": 0.0006551000114995986,
+    "operations": 1000,
+    "ops_per_sec": 1526484.479386416
+  },
+  {
+    "scenario": "mixed_update",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 9.489869400014868,
+    "operations": 2000,
+    "ops_per_sec": 210.7510562786951
+  },
+  {
+    "scenario": "mixed_update",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 8.352655199996661,
+    "operations": 2000,
+    "ops_per_sec": 239.44481749956583
+  },
+  {
+    "scenario": "mixed_update",
+    "impl": "dictsqlite",
+    "mode": "async",
+    "run": 1,
+    "seconds": 4.045034099981422,
+    "operations": 1000,
+    "ops_per_sec": 247.21670455252598
+  },
+  {
+    "scenario": "mixed_update",
+    "impl": "dictsqlite",
+    "mode": "async",
+    "run": 2,
+    "seconds": 4.128825300023891,
+    "operations": 1000,
+    "ops_per_sec": 242.19963968788255
+  },
+  {
+    "scenario": "mixed_update",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 0.4106028000242077,
+    "operations": 2000,
+    "ops_per_sec": 4870.887387718952
+  },
+  {
+    "scenario": "mixed_update",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 0.4294631999800913,
+    "operations": 2000,
+    "ops_per_sec": 4656.976430326776
+  },
+  {
+    "scenario": "mixed_update",
+    "impl": "fast",
+    "mode": "async",
+    "run": 1,
+    "seconds": 0.0008682000043336302,
+    "operations": 1000,
+    "ops_per_sec": 1151808.3333431105
+  },
+  {
+    "scenario": "mixed_update",
+    "impl": "fast",
+    "mode": "async",
+    "run": 2,
+    "seconds": 0.0004681000136770308,
+    "operations": 1000,
+    "ops_per_sec": 2136295.6009011306
+  },
+  {
+    "scenario": "nested_mutation",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 11.039637899986701,
+    "operations": 2000,
+    "ops_per_sec": 181.16536231703844
+  },
+  {
+    "scenario": "nested_mutation",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 11.150097599980654,
+    "operations": 2000,
+    "ops_per_sec": 179.3706272134757
+  },
+  {
+    "scenario": "nested_mutation",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 1.2286083000071812,
+    "operations": 2000,
+    "ops_per_sec": 1627.8581220624262
+  },
+  {
+    "scenario": "nested_mutation",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 1.199251500016544,
+    "operations": 2000,
+    "ops_per_sec": 1667.7068988218145
+  },
+  {
+    "scenario": "nested_mutation",
+    "impl": "fast",
+    "mode": "async",
+    "run": 1,
+    "seconds": 0.0007828999951016158,
+    "operations": 1000,
+    "ops_per_sec": 1277302.3454549976
+  },
+  {
+    "scenario": "nested_mutation",
+    "impl": "fast",
+    "mode": "async",
+    "run": 2,
+    "seconds": 0.0004771999956574291,
+    "operations": 1000,
+    "ops_per_sec": 2095557.4373430568
+  },
+  {
+    "scenario": "list_set_sync",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 10.63766300000134,
+    "operations": 2000,
+    "ops_per_sec": 188.01122013357147
+  },
+  {
+    "scenario": "list_set_sync",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 12.969716099993093,
+    "operations": 2000,
+    "ops_per_sec": 154.2053800237821
+  },
+  {
+    "scenario": "list_set_sync",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 1.3766476000018883,
+    "operations": 2000,
+    "ops_per_sec": 1452.8046247981376
+  },
+  {
+    "scenario": "list_set_sync",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 1.3684287999931257,
+    "operations": 2000,
+    "ops_per_sec": 1461.530187036437
+  },
+  {
+    "scenario": "list_set_sync",
+    "impl": "fast",
+    "mode": "async",
+    "run": 1,
+    "seconds": 0.0010033000144176185,
+    "operations": 1000,
+    "ops_per_sec": 996710.8398582711
+  },
+  {
+    "scenario": "list_set_sync",
+    "impl": "fast",
+    "mode": "async",
+    "run": 2,
+    "seconds": 0.0007328999927267432,
+    "operations": 1000,
+    "ops_per_sec": 1364442.6387282598
+  },
+  {
+    "scenario": "transaction_bulk",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 0.028248699993127957,
+    "operations": 2000,
+    "ops_per_sec": 70799.7182343449
+  },
+  {
+    "scenario": "transaction_bulk",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 0.029128899972420186,
+    "operations": 2000,
+    "ops_per_sec": 68660.33396021268
+  },
+  {
+    "scenario": "transaction_bulk",
+    "impl": "dictsqlite",
+    "mode": "async",
+    "run": 1,
+    "seconds": 2.5259613000089303,
+    "operations": 1000,
+    "ops_per_sec": 395.8888839652708
+  },
+  {
+    "scenario": "transaction_bulk",
+    "impl": "dictsqlite",
+    "mode": "async",
+    "run": 2,
+    "seconds": 2.4156940999964718,
+    "operations": 1000,
+    "ops_per_sec": 413.9596979607064
+  },
+  {
+    "scenario": "transaction_bulk",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 0.02545839999220334,
+    "operations": 2000,
+    "ops_per_sec": 78559.53243772201
+  },
+  {
+    "scenario": "transaction_bulk",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 0.026624799997080117,
+    "operations": 2000,
+    "ops_per_sec": 75117.9351664364
+  },
+  {
+    "scenario": "transaction_bulk",
+    "impl": "fast",
+    "mode": "async",
+    "run": 1,
+    "seconds": 0.0008500000112690032,
+    "operations": 1000,
+    "ops_per_sec": 1176470.572638058
+  },
+  {
+    "scenario": "transaction_bulk",
+    "impl": "fast",
+    "mode": "async",
+    "run": 2,
+    "seconds": 0.0004969000001437962,
+    "operations": 1000,
+    "ops_per_sec": 2012477.3590473202
+  },
+  {
+    "scenario": "table_switch",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 1.0438948000082746,
+    "operations": 2000,
+    "ops_per_sec": 1915.9018705564456
+  },
+  {
+    "scenario": "table_switch",
+    "impl": "dictsqlite",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 1.0085820000094827,
+    "operations": 2000,
+    "ops_per_sec": 1982.9820480448748
+  },
+  {
+    "scenario": "table_switch",
+    "impl": "dictsqlite",
+    "mode": "async",
+    "run": 1,
+    "seconds": 0.22973839999758638,
+    "operations": 1000,
+    "ops_per_sec": 4352.77689759529
+  },
+  {
+    "scenario": "table_switch",
+    "impl": "dictsqlite",
+    "mode": "async",
+    "run": 2,
+    "seconds": 0.23231970000779256,
+    "operations": 1000,
+    "ops_per_sec": 4304.413271739149
+  },
+  {
+    "scenario": "table_switch",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 1,
+    "seconds": 0.0832388999988325,
+    "operations": 2000,
+    "ops_per_sec": 24027.227654714945
+  },
+  {
+    "scenario": "table_switch",
+    "impl": "fast",
+    "mode": "sync",
+    "run": 2,
+    "seconds": 0.08244810000178404,
+    "operations": 2000,
+    "ops_per_sec": 24257.684530713545
+  },
+  {
+    "scenario": "table_switch",
+    "impl": "fast",
+    "mode": "async",
+    "run": 1,
+    "seconds": 0.0009214000019710511,
+    "operations": 1000,
+    "ops_per_sec": 1085304.9683750905
+  },
+  {
+    "scenario": "table_switch",
+    "impl": "fast",
+    "mode": "async",
+    "run": 2,
+    "seconds": 0.0005112999933771789,
+    "operations": 1000,
+    "ops_per_sec": 1955798.9692018514
+  }
+]
