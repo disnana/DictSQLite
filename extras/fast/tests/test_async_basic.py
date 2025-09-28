@@ -59,3 +59,25 @@ async def test_async_transaction_bulk(tmp_path):
     finally:
         await db.close()
 
+
+@pytest.mark.asyncio
+async def test_async_extended_api(tmp_path):
+    db = AsyncFastDictSQLite(str(tmp_path / 'ext.db'))
+    try:
+        await db.set('x', 1)
+        assert await db.has_key('x') is True
+        assert await db.contains('x') is True
+        ks = await db.keys(); assert 'x' in ks
+        its = await db.items(); assert ('x', 1) in its
+        vals = await db.values(); assert 1 in vals
+        # execute 経由で直接SQL
+        res = await db.execute(f'SELECT key FROM "{db.table_name}" WHERE key=?', ['x'])
+        assert res[0][0] == 'x'
+        # transaction エイリアス
+        await db.begin_transaction(); await db.set('y', 2); await db.commit_transaction()
+        assert await db.get('y') == 2
+        # clear_table 指定
+        await db.clear_table(db.table_name)
+        assert await db.get('x') is None and await db.get('y') is None
+    finally:
+        await db.close()

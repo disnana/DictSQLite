@@ -24,21 +24,10 @@ __all__ = ["AsyncFastDictSQLite"]
 class AsyncFastDictSQLite:
     """FastDictSQLite の単純 async ラッパー。
 
-    推奨利用パターン:
-        async with AsyncFastDictSQLite('file.db') as db:
-            await db.set('k', 1)
-            v = await db.get('k')
-
-    Methods provided:
-      - set(key, value)
-      - get(key) -> value | None
-      - contains(key) -> bool
-      - clear()
-      - switch_table(name, schema=None)
-      - transaction_bulk(iterable_of_pairs)
-      - begin / commit / rollback (仮想, FastDictSQLite の queue 経由)
-      - tables() / keys()
-      - close()
+    互換性方針:
+      - DictSQLite / FastDictSQLite の主要API名称をほぼ踏襲 (has_key / clear_table / switch_table / execute など)
+      - dict 風シンタックス (__getitem__) は Python の仕様上 await 対応できないため get/set を使用
+      - 追加で items / values は全キー列挙 -> 個別取得 (大量データ時はコスト大: 注意書き)
     """
 
     def __init__(self, *a, **kw):  # noqa: D401
@@ -63,6 +52,9 @@ class AsyncFastDictSQLite:
     async def contains(self, key) -> bool:  # noqa: D401
         return await self._run(lambda k: k in self._sync, key)
 
+    async def has_key(self, key) -> bool:  # noqa: D401  # 互換 alias
+        return await self.contains(key)
+
     async def delete(self, key):  # noqa: D401
         await self._run(self._sync.__delitem__, key)
 
@@ -70,12 +62,29 @@ class AsyncFastDictSQLite:
     async def keys(self, table_name: str | None = None):  # noqa: D401
         return await self._run(self._sync.keys, table_name)
 
+    async def items(self, table_name: str | None = None):  # noqa: D401
+        ks = await self.keys(table_name)
+        out = []
+        for k in ks:
+            v = await self.get(k)
+            out.append((k, v))
+        return out
+
+    async def values(self, table_name: str | None = None):  # noqa: D401
+        return [v for _, v in await self.items(table_name)]
+
     async def tables(self):  # noqa: D401
         return await self._run(self._sync.tables)
 
     # ---- maintenance ----
-    async def clear(self):  # noqa: D401
+    async def clear(self):  # noqa: D401  # 現在テーブル
         await self._run(self._sync.clear_table)
+
+    async def clear_table(self, table_name: str | None = None):  # noqa: D401
+        if table_name is None:
+            await self.clear()
+        else:
+            await self._run(self._sync.clear_table, table_name)
 
     async def switch_table(self, name: str, schema: str | None = None):  # noqa: D401
         await self._run(self._sync.switch_table, name, schema)
@@ -91,6 +100,14 @@ class AsyncFastDictSQLite:
     async def rollback(self):  # noqa: D401
         await self._run(self._sync.rollback)
 
+    # 互換エイリアス
+    async def begin_transaction(self):  # noqa: D401
+        await self.begin()
+    async def commit_transaction(self):  # noqa: D401
+        await self.commit()
+    async def rollback_transaction(self):  # noqa: D401
+        await self.rollback()
+
     async def transaction_bulk(self, items: Iterable[tuple]):  # noqa: D401
         await self.begin()
         try:
@@ -100,6 +117,14 @@ class AsyncFastDictSQLite:
         except Exception:  # noqa: BLE001
             await self.rollback()
             raise
+
+    # ---- exec / helpers ----
+    async def execute(self, sql: str, params: Iterable[Any] | None = None):  # noqa: D401
+        return await self._run(self._sync.execute, sql, params)
+    async def execute_custom(self, sql: str, params: Iterable[Any] | None = None):  # noqa: D401
+        return await self.execute(sql, params)
+    def expiring_dict(self, expiration_time: int):  # noqa: D401
+        return self._sync.expiring_dict(expiration_time)
 
     # ---- misc ----
     @property
@@ -113,6 +138,13 @@ class AsyncFastDictSQLite:
     @property
     def storage_mode(self):  # noqa: D401
         return self._sync.storage_mode
+
+    @property
+    def table_name(self):  # noqa: D401
+        return self._sync.table_name
+    @table_name.setter
+    def table_name(self, value):  # noqa: D401
+        self._sync.table_name = value
 
     async def flush(self):  # noqa: D401
         await self._run(self._sync.flush)
