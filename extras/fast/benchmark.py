@@ -422,6 +422,7 @@ def parse_args():
     p.add_argument('--json', dest='json_path', help='結果を JSON 出力するパス')
     p.add_argument('--csv', dest='csv_path', help='結果を CSV 出力するパス')
     p.add_argument('--quiet', action='store_true', help='表の標準出力を抑制')
+    p.add_argument('--no-default-output', action='store_true', help='--json/--csv 未指定時の benchmark.json / benchmark.csv 自動出力を抑制')
     return p.parse_args()
 
 
@@ -472,12 +473,27 @@ def main():
     if not args.quiet:
         print('\n' + format_table(results))
 
+    # 既存の明示指定が無い場合はデフォルトファイルへ出力
+    default_json = Path(__file__).resolve().parent / 'benchmark.json'
+    default_csv = Path(__file__).resolve().parent / 'benchmark.csv'
+    wrote_defaults = []
+
     if args.json_path:
         dump_json(results, Path(args.json_path))
         print(f"JSON written -> {args.json_path}")
+    elif not args.no_default_output:
+        dump_json(results, default_json)
+        wrote_defaults.append(str(default_json))
+
     if args.csv_path:
         dump_csv(results, Path(args.csv_path))
         print(f"CSV written -> {args.csv_path}")
+    elif not args.no_default_output:
+        dump_csv(results, default_csv)
+        wrote_defaults.append(str(default_csv))
+
+    if wrote_defaults and not args.quiet:
+        print("Default outputs: " + ", ".join(wrote_defaults))
 
     return 0
 
