@@ -12,6 +12,7 @@ import logging
 import base64
 import builtins
 import inspect
+import time  # 追加: BusyError リトライと待機
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from collections.abc import MutableMapping
@@ -264,8 +265,17 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
 
         if _USING_APSW:
             self._conn = apsw.Connection(db_name)  # type: ignore[arg-type]
+            try:
+                # busy timeout (ms)
+                self._conn.setbusytimeout(5000)  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001
+                pass
         else:  # sqlite3 fallback
             self._conn = _sqlite3.connect(db_name, check_same_thread=False)  # type: ignore[name-defined]
+            try:
+                self._conn.execute("PRAGMA busy_timeout=5000")  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001
+                pass
         self._apply_default_pragmas(pragmas)
         self.operation_queue: queue.Queue[Tuple[Any, Tuple, Dict, Optional[queue.Queue]]] = queue.Queue()
         if conflict_resolver:
@@ -306,7 +316,7 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
         while True:
             operation, args, kwargs, result_queue = self.operation_queue.get()
             try:
-                res = operation(*args, **kwargs)
+                res = self._call_with_retry(operation, *args, **kwargs)
                 if result_queue is not None: result_queue.put(res)
             except Exception as e:  # noqa: BLE001
                 if result_queue is not None: result_queue.put(e)
@@ -320,7 +330,8 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
             try:
                 with open(self._config.lock_file, 'w', encoding='utf-8') as f:  # noqa: PTH123
                     portalocker.lock(f, portalocker.LOCK_EX)
-                    try: res = operation(*args, **kwargs)
+                    try:
+                        res = self._call_with_retry(operation, *args, **kwargs)
                     finally:
                         try: portalocker.unlock(f)
                         except Exception:  # noqa: BLE001
@@ -331,6 +342,28 @@ class FastDictSQLite:  # pylint: disable=too-many-instance-attributes
                 logger.exception("conflict_resolver queue operation failed")
             finally:
                 self.operation_queue.task_done()
+
+    # --- retry wrapper (BusyError / locked) ---
+    def _call_with_retry(self, func, *args, **kwargs):  # noqa: D401
+        max_attempts = 8
+        delay = 0.01
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:  # noqa: BLE001
+                if self._is_lock_error(e) and attempt < max_attempts:
+                    time.sleep(delay)
+                    delay = min(delay * 1.7, 0.25)
+                    continue
+                raise
+        raise RuntimeError("unreachable retry loop")
+
+    @staticmethod
+    def _is_lock_error(exc: Exception) -> bool:  # noqa: D401
+        msg = repr(exc).lower()
+        if 'locked' in msg or 'busy' in msg:
+            return True
+        return False
 
     # ---------- encryption / serialization ----------
     def _encrypt(self, data: bytes) -> bytes:  # noqa: D401
