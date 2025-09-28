@@ -152,7 +152,8 @@ async def test_async_expiring_dict_independent(tmp_path):
         ed = db.expiring_dict(0.1)
         ed['a'] = 1
         assert ed['a'] == 1
-        time.sleep(0.25)
+        import asyncio
+        await asyncio.sleep(0.25)
         assert 'a' not in ed
         # pickle round trip
         data = pickle.dumps(ed)
@@ -161,4 +162,3 @@ async def test_async_expiring_dict_independent(tmp_path):
         assert restored['b'] == 2
     finally:
         await db.close()
-

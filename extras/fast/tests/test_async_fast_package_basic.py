@@ -1,9 +1,10 @@
 """Async variant of test_fast_package_basic.py."""
 from __future__ import annotations
 import pytest
+import pytest_asyncio
 from dictsqlite_fast import AsyncFastDictSQLite
 
-@pytest.fixture(params=["pickle", "json"])
+@pytest_asyncio.fixture(params=["pickle", "json"])  # changed to pytest_asyncio.fixture to properly handle async generator fixture
 async def adb(tmp_path, request):
     db = AsyncFastDictSQLite(str(tmp_path / f"afast_{request.param}.db"), storage_mode=request.param)
     try:
@@ -101,4 +102,3 @@ async def test_async_expiring_dict_helper(adb: AsyncFastDictSQLite):
     ed = adb.expiring_dict(1)
     ed['a'] = 1
     assert ed.get('a') == 1
-
