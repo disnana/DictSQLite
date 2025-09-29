@@ -523,6 +523,8 @@ class DictSQLiteFastest:
                 raise ValueError(f"Invalid compression algorithm: {compression_algorithm}. Must be 'zlib' or 'zstd'")
         
         # ZSTDコンプレッサーの初期化（スレッドセーフ）
+        self._zstd_compressor = None
+        self._zstd_decompressor = None
         if self.enable_compression and self.compression_algorithm == 'zstd' and ZSTD_AVAILABLE:
             # 高性能設定でZSTDコンプレッサーを初期化
             self._zstd_compressor = zstd.ZstdCompressor(level=3, threads=-1)  # レベル3で高速
@@ -741,7 +743,7 @@ class DictSQLiteFastest:
         
         value_bytes = value_str.encode('utf-8')
         
-        if self.compression_algorithm == 'zstd' and ZSTD_AVAILABLE:
+        if self.compression_algorithm == 'zstd' and ZSTD_AVAILABLE and self._zstd_compressor is not None:
             # ZSTD圧縮
             compressed = self._zstd_compressor.compress(value_bytes)
             prefix = "ZSTD:"
@@ -762,8 +764,8 @@ class DictSQLiteFastest:
     def _decompress_value(self, value_str: str) -> str:
         """圧縮された値を展開する（ZSTD/zlib対応）"""
         if value_str.startswith("ZSTD:"):
-            if not ZSTD_AVAILABLE:
-                raise RuntimeError("ZSTD decompression requested but zstandard is not available")
+            if not ZSTD_AVAILABLE or self._zstd_decompressor is None:
+                raise RuntimeError("ZSTD decompression requested but zstandard is not available or not initialized")
             # プレフィックスを除去してbase64デコード
             compressed_data = base64.b64decode(value_str[5:])
             # ZSTD展開
