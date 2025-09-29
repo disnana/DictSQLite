@@ -12,6 +12,7 @@ import memory_profiler
 import psutil
 import sys
 import os
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add dictsqlite-fastest to path
@@ -68,8 +69,10 @@ class PerformanceProfiler:
             'tracemalloc_peak': peak / 1024 / 1024  # MB
         }
     
-    def benchmark_sync_operations(self, db_path='/tmp/profile_sync.db'):
+    def benchmark_sync_operations(self, db_path=None):
         """同期操作のベンチマーク"""
+        if db_path is None:
+            db_path = os.path.join(tempfile.gettempdir(), 'profile_sync.db')
         print("🔍 同期操作プロファイリング開始")
         
         # 基本操作テスト
@@ -138,8 +141,10 @@ class PerformanceProfiler:
         
         return results
     
-    async def benchmark_async_operations(self, db_path='/tmp/profile_async.db'):
+    async def benchmark_async_operations(self, db_path=None):
         """非同期操作のベンチマーク"""
+        if db_path is None:
+            db_path = os.path.join(tempfile.gettempdir(), 'profile_async.db')
         print("🔍 非同期操作プロファイリング開始")
         
         async def async_insert_test(size):
@@ -202,8 +207,10 @@ class PerformanceProfiler:
         
         return results
     
-    def benchmark_concurrency(self, db_path='/tmp/profile_concurrent.db'):
+    def benchmark_concurrency(self, db_path=None):
         """並行性のベンチマーク"""
+        if db_path is None:
+            db_path = os.path.join(tempfile.gettempdir(), 'profile_concurrent.db')
         print("🔍 並行性プロファイリング開始")
         
         def concurrent_worker(worker_id, operations_per_worker, db_path):

@@ -6,6 +6,8 @@ Advanced Features Demonstration for DictSQLite-Fastest
 
 import asyncio
 import time
+import tempfile
+import os
 from dictsqlite_fastest.main import DictSQLiteFastest, AsyncDictSQLiteFastest
 
 def demo_basic_optimizations():
@@ -14,8 +16,9 @@ def demo_basic_optimizations():
     print("="*50)
     
     # 高性能設定でデータベースを作成
+    temp_dir = tempfile.gettempdir()
     with DictSQLiteFastest(
-        '/tmp/demo_optimized.db',
+        os.path.join(temp_dir, 'demo_optimized.db'),
         cache_size=-128000,  # 128MBキャッシュ
         mmap_size=536870912,  # 512MBメモリマップド I/O
         enable_memory_optimization=True,
@@ -39,7 +42,8 @@ def demo_bulk_operations():
     print("📦 バルク操作デモ")
     print("="*50)
     
-    with DictSQLiteFastest('/tmp/demo_bulk.db') as db:
+    temp_dir = tempfile.gettempdir()
+    with DictSQLiteFastest(os.path.join(temp_dir, 'demo_bulk.db')) as db:
         # 大量データの準備
         data = {f'bulk_key_{i}': f'bulk_value_{i}' for i in range(1000)}
         
@@ -78,8 +82,9 @@ def demo_compression():
     print("="*50)
     
     # 圧縮有効化
+    temp_dir = tempfile.gettempdir()
     with DictSQLiteFastest(
-        '/tmp/demo_compression.db',
+        os.path.join(temp_dir, 'demo_compression.db'),
         enable_compression=True,
         compression_threshold=100  # 100バイト以上を圧縮
     ) as db:
@@ -113,8 +118,9 @@ def demo_custom_settings():
         'synchronous': 'NORMAL'
     }
     
+    temp_dir = tempfile.gettempdir()
     with DictSQLiteFastest(
-        '/tmp/demo_custom.db',
+        os.path.join(temp_dir, 'demo_custom.db'),
         custom_pragma_settings=custom_pragma,
         enable_memory_optimization=True
     ) as db:
@@ -138,7 +144,8 @@ async def demo_async_operations():
     print("="*50)
     
     # 非同期データベースの作成
-    async_db = AsyncDictSQLiteFastest('/tmp/demo_async.db', max_connections=3)
+    temp_dir = tempfile.gettempdir()
+    async_db = AsyncDictSQLiteFastest(os.path.join(temp_dir, 'demo_async.db'), max_connections=3)
     
     try:
         # 非同期で基本操作

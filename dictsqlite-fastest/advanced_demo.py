@@ -8,6 +8,7 @@ import asyncio
 import time
 import sys
 import os
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add dictsqlite-fastest to path
@@ -21,7 +22,8 @@ async def demo_apsw_advanced_features():
     print("="*50)
     
     # APSW最適化バルク操作のテスト
-    db = DictSQLiteFastest('/tmp/apsw_advanced_demo.db', 
+    temp_dir = tempfile.gettempdir()
+    db = DictSQLiteFastest(os.path.join(temp_dir, 'apsw_advanced_demo.db'), 
                           enable_memory_optimization=True,
                           cache_size=-128000,  # 128MB cache
                           mmap_size=536870912)  # 512MB mmap
@@ -67,7 +69,8 @@ async def demo_asyncio_advanced_features():
     print("="*50)
     
     # 高度な非同期接続プール設定
-    async with AsyncDictSQLiteFastest('/tmp/async_advanced_demo.db', 
+    temp_dir = tempfile.gettempdir()
+    async with AsyncDictSQLiteFastest(os.path.join(temp_dir, 'async_advanced_demo.db'), 
                                       max_connections=8,
                                       enable_pipeline=True) as db:
         
@@ -132,7 +135,8 @@ async def demo_concurrent_performance():
     
     def sync_worker(worker_id, operations_count):
         """同期ワーカー"""
-        db_path = f'/tmp/sync_worker_{worker_id}.db'
+        temp_dir = tempfile.gettempdir()
+        db_path = os.path.join(temp_dir, f'sync_worker_{worker_id}.db')
         with DictSQLiteFastest(db_path) as db:
             for i in range(operations_count):
                 key = f'worker_{worker_id}_item_{i}'
@@ -167,7 +171,8 @@ async def demo_concurrent_performance():
         sync_time = time.perf_counter() - start
         
         # 非同期バージョンテスト
-        async with AsyncDictSQLiteFastest('/tmp/async_concurrent_demo.db', 
+        temp_dir = tempfile.gettempdir()
+        async with AsyncDictSQLiteFastest(os.path.join(temp_dir, 'async_concurrent_demo.db'), 
                                           max_connections=worker_count) as async_db:
             start = time.perf_counter()
             async_tasks = [async_worker(i, operations_per_worker, async_db) 
@@ -194,7 +199,8 @@ async def demo_memory_optimization():
     
     # メモリ最適化なし
     print("  📊 メモリ最適化なしでのテスト")
-    db_normal = DictSQLiteFastest('/tmp/memory_normal.db')
+    temp_dir = tempfile.gettempdir()
+    db_normal = DictSQLiteFastest(os.path.join(temp_dir, 'memory_normal.db'))
     
     large_data = {f'mem_key_{i}': 'x' * 1000 for i in range(1000)}  # 1MB of data
     
@@ -207,7 +213,7 @@ async def demo_memory_optimization():
     
     # メモリ最適化あり
     print("  🚀 メモリ最適化ありでのテスト")
-    db_optimized = DictSQLiteFastest('/tmp/memory_optimized.db',
+    db_optimized = DictSQLiteFastest(os.path.join(temp_dir, 'memory_optimized.db'),
                                    enable_memory_optimization=True,
                                    enable_compression=True,
                                    compression_threshold=500,

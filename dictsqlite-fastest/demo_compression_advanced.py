@@ -7,6 +7,7 @@ Advanced Compression Features Demonstration
 import os
 import sys
 import time
+import tempfile
 from dictsqlite_fastest.main import DictSQLiteFastest
 
 def demo_compression_algorithms():
@@ -28,7 +29,8 @@ def demo_compression_algorithms():
         print(f"\n📊 {desc}テスト")
         print("-" * 40)
         
-        db_path = f'/tmp/compression_test_{algo}.db'
+        temp_dir = tempfile.gettempdir()
+        db_path = os.path.join(temp_dir, f'compression_test_{algo}.db')
         try:
             os.unlink(db_path)
         except:
@@ -87,7 +89,8 @@ def demo_compression_performance():
     
     for data_name, base_data, count in data_sets:
         for config_name, enable_comp, algo, threshold in configs:
-            db_path = f'/tmp/perf_test_{data_name}_{config_name}.db'
+            temp_dir = tempfile.gettempdir()
+            db_path = os.path.join(temp_dir, f'perf_test_{data_name}_{config_name}.db')
             try:
                 os.unlink(db_path)
             except:
@@ -134,7 +137,8 @@ def demo_compression_settings():
     print("-" * 50)
     
     for threshold in thresholds:
-        db_path = f'/tmp/threshold_test_{threshold}.db'
+        temp_dir = tempfile.gettempdir()
+        db_path = os.path.join(temp_dir, f'threshold_test_{threshold}.db')
         try:
             os.unlink(db_path)
         except:
@@ -161,7 +165,8 @@ def demo_advanced_features():
     print("\n\n🚀 高度機能統合デモ")
     print("=" * 60)
     
-    db_path = '/tmp/advanced_demo.db'
+    temp_dir = tempfile.gettempdir()
+    db_path = os.path.join(temp_dir, 'advanced_demo.db')
     try:
         os.unlink(db_path)
     except:
