@@ -1146,6 +1146,21 @@ class DictSQLiteFastest:
     def __contains__(self, key):
         return key in DictSQLiteFastest.TableProxy(self, self.table_name)
 
+    def __len__(self):
+        """エントリ数を返す（現在の table_name の行数）。
+        version==2 で複数テーブル運用時も self.table_name を対象。
+        """
+        try:
+            cursor, conn = self._get_cursor()
+            result = cursor.execute(f"SELECT COUNT(*) FROM {self._quote_ident(self.table_name)}")
+            try:
+                return next(result)[0]
+            except StopIteration:
+                return 0
+        except Exception:
+            # 予期せぬエラー時は 0 を返し安全側に倒す
+            return 0
+
     def keys(self):
         """全キーを返す。"""
         # 再利用可能なカーソルを使用
@@ -2046,3 +2061,4 @@ class LegacyAsyncDictSQLiteFastest:
     async def adelete(self, key):
         """非同期でキーを削除。"""
         await self.__adelitem__(key)
+
