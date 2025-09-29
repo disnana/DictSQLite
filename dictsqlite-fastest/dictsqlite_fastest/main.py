@@ -791,9 +791,63 @@ class DictSQLiteFastest:
             # トランザクション開始で高速化
             cursor.execute("BEGIN IMMEDIATE")
             
-            # バルク挿入のためのデータ準備
+            # プリペアドステートメント使用でパフォーマンス向上
+            stmt = self._get_prepared_statement('insert')
+            
+            # バルク挿入のためのデータ準備と実行を組み合わせ（メモリ効率化）
+            for key, value in (items.items() if hasattr(items, 'items') else items):
+                if self.storage_mode == 'pickle':
+                    value_str = base64.b64encode(pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)).decode('ascii')
+                else:  # json - 最適化されたオプション
+                    value_str = json.dumps(value, default=self._extended_json_encoder_hook, 
+                                         separators=(',', ':'), ensure_ascii=False)
+                cursor.execute(stmt, (key, value_str))
+            
+            # トランザクションをコミット
+            cursor.execute("COMMIT")
+        except Exception:
+            cursor.execute("ROLLBACK")
+            raise
+        finally:
+            cursor.close()
+
+    def bulk_insert_optimized(self, items, auto_optimize=True):
+        """自動最適化バルク挿入 - データ量に応じて最適な手法を選択"""
+        if not items:
+            return
+        
+        # データ量に応じてストラテジーを選択
+        item_count = len(items) if hasattr(items, '__len__') else len(list(items))
+        
+        if auto_optimize:
+            if item_count < 100:
+                # 少量データは通常の個別挿入で十分
+                for key, value in (items.items() if hasattr(items, 'items') else items):
+                    self[key] = value
+            elif item_count < 1000:
+                # 中量データはexecutemanyが高速
+                self.bulk_insert_executemany(items)
+            else:
+                # 大量データはチャンク処理で安全に
+                self.bulk_insert_chunked(items, chunk_size=min(1000, item_count // 10))
+        else:
+            # 従来のメソッドを使用
+            self.bulk_insert(items)
+
+    def bulk_insert_executemany(self, items):
+        """バルク挿入 - executemanyを使用した最高速度バージョン"""
+        if not items:
+            return
+        
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            # トランザクション開始で高速化
+            cursor.execute("BEGIN IMMEDIATE")
+            
+            # データ準備
             insert_data = []
-            for key, value in items.items() if hasattr(items, 'items') else items:
+            for key, value in (items.items() if hasattr(items, 'items') else items):
                 if self.storage_mode == 'pickle':
                     value_str = base64.b64encode(pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)).decode('ascii')
                 else:  # json - 最適化されたオプション
@@ -801,9 +855,9 @@ class DictSQLiteFastest:
                                          separators=(',', ':'), ensure_ascii=False)
                 insert_data.append((key, value_str))
             
-            # バルク実行 - executemanyの代わりにループで高速化
-            for key, value_str in insert_data:
-                cursor.execute(self._insert_stmt, (key, value_str))
+            # executemanyで一括実行（通常最も高速）
+            stmt = self._get_prepared_statement('insert')
+            cursor.executemany(stmt, insert_data)
             
             # トランザクションをコミット
             cursor.execute("COMMIT")
@@ -905,6 +959,17 @@ class DictSQLiteFastest:
         self._get_cursor()
         # 統計情報を更新
         self.optimize_database()
+        # プリペアドステートメントを事前準備
+        self._warmup_prepared_statements()
+    
+    def _warmup_prepared_statements(self):
+        """プリペアドステートメントのウォームアップ"""
+        # よく使用されるステートメントを事前に準備
+        self._get_prepared_statement('insert')
+        self._get_prepared_statement('select')
+        self._get_prepared_statement('delete')
+        self._get_prepared_statement('exists')
+        self._get_prepared_statement('select_all')
 
     def optimize_database(self):
         """データベースの最適化を実行（統計情報の更新など）"""
@@ -917,6 +982,26 @@ class DictSQLiteFastest:
             # cursor.execute("VACUUM")  # コメントアウト: 必要に応じて手動実行
         finally:
             cursor.close()
+
+    def get_performance_stats(self):
+        """パフォーマンス統計情報を取得"""
+        stats = {
+            'database': self.db_name,
+            'table': self.table_name,
+            'journal_mode': self.journal_mode,
+            'storage_mode': self.storage_mode,
+            'version': self.version,
+            'cache_size': self.cache_size,
+            'mmap_size': self.mmap_size,
+        }
+        
+        # 接続数の情報を追加
+        if hasattr(self._local, 'conn') and self._local.conn:
+            stats['connection_active'] = True
+        else:
+            stats['connection_active'] = False
+            
+        return stats
 
     def __repr__(self):
         """辞書風の表現を返す。"""
@@ -939,12 +1024,18 @@ class ConnectionPool:
         self._pool = queue.Queue(maxsize=max_connections)
         self._created_connections = 0
         self._lock = threading.Lock()
+        # 統計情報
+        self._total_gets = 0
+        self._pool_hits = 0
     
     def get_connection(self):
         """Get a connection from the pool"""
+        self._total_gets += 1
         try:
             # Try to get an existing connection
-            return self._pool.get_nowait()
+            conn = self._pool.get_nowait()
+            self._pool_hits += 1
+            return conn
         except queue.Empty:
             # Create a new connection if we haven't reached the limit
             with self._lock:
@@ -972,6 +1063,17 @@ class ConnectionPool:
                 conn.close()
             except queue.Empty:
                 break
+    
+    def get_stats(self):
+        """Get pool statistics"""
+        hit_rate = (self._pool_hits / self._total_gets * 100) if self._total_gets > 0 else 0
+        return {
+            'total_gets': self._total_gets,
+            'pool_hits': self._pool_hits,
+            'hit_rate': f"{hit_rate:.1f}%",
+            'created_connections': self._created_connections,
+            'pool_size': self._pool.qsize()
+        }
 
 
 class AsyncDictSQLiteFastest:
