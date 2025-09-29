@@ -247,55 +247,77 @@ class PerformanceProfiler:
         return results
     
     def generate_report(self, sync_results, async_results, concurrent_results):
-        """包括的なパフォーマンスレポートを生成"""
+        """包括的なパフォーマンスレポートを生成（OPS重視）"""
         print("\n" + "="*80)
         print("📈 DICTSQLITE-FASTEST パフォーマンス分析レポート")
         print("="*80)
         
-        # 同期操作分析
-        print("\n🔄 同期操作分析:")
+        # OPS優先の同期操作分析
+        print("\n🔄 同期操作分析 (OPS重視):")
+        all_ops_results = []
         for size, operations in sync_results.items():
             print(f"\n  データサイズ: {size}")
             for op_name, stats in operations.items():
                 ops_per_sec = size / stats['execution_time'] if stats['execution_time'] > 0 else 0
-                print(f"    {op_name:15}: {stats['execution_time']:6.4f}s ({ops_per_sec:8.0f} ops/sec) メモリ: {stats['memory_diff']:+6.2f}MB")
+                all_ops_results.append((f"{op_name}({size})", ops_per_sec, stats['execution_time'], stats['memory_diff']))
+                print(f"    {op_name:15}: {ops_per_sec:8,.0f} ops/sec ({stats['execution_time']:6.4f}s) メモリ: {stats['memory_diff']:+6.2f}MB")
         
-        # 非同期操作分析
-        print("\n⚡ 非同期操作分析:")
+        # OPS優先の非同期操作分析
+        print("\n⚡ 非同期操作分析 (OPS重視):")
+        async_ops_results = []
         for size, operations in async_results.items():
             print(f"\n  データサイズ: {size}")
             for op_name, stats in operations.items():
                 ops_per_sec = size / stats['execution_time'] if stats['execution_time'] > 0 else 0
-                print(f"    {op_name:15}: {stats['execution_time']:6.4f}s ({ops_per_sec:8.0f} ops/sec) メモリ: {stats['memory_diff']:+6.2f}MB")
+                async_ops_results.append((f"{op_name}({size})", ops_per_sec, stats['execution_time'], stats['memory_diff']))
+                print(f"    {op_name:15}: {ops_per_sec:8,.0f} ops/sec ({stats['execution_time']:6.4f}s) メモリ: {stats['memory_diff']:+6.2f}MB")
         
-        # 並行性分析
-        print("\n🚀 並行性分析:")
+        # 並行性分析 (OPS/スループット重視)
+        print("\n🚀 並行性分析 (スループット重視):")
+        concurrent_ops_results = []
         for thread_count, stats in concurrent_results.items():
             total_ops = thread_count * 250 * 2
             throughput = total_ops / stats['execution_time']
-            print(f"  {thread_count:2d}スレッド: {stats['execution_time']:6.4f}s ({throughput:8.0f} ops/sec) メモリ: {stats['memory_diff']:+6.2f}MB")
+            concurrent_ops_results.append((f"{thread_count}スレッド", throughput, stats['execution_time'], stats['memory_diff']))
+            print(f"  {thread_count:2d}スレッド: {throughput:8,.0f} ops/sec ({stats['execution_time']:6.4f}s) メモリ: {stats['memory_diff']:+6.2f}MB")
         
-        # ボトルネック特定
-        print("\n🎯 ボトルネック分析:")
+        # 🎯 TOP PERFORMERS (最高性能) ランキング
+        print("\n🏆 TOP PERFORMERS (OPS ランキング):")
+        print("="*50)
+        
+        # 同期操作の最高性能TOP5
+        sync_sorted = sorted(all_ops_results, key=lambda x: x[1], reverse=True)[:5]
+        print("\n🥇 同期操作 TOP5:")
+        for i, (name, ops, time, mem) in enumerate(sync_sorted, 1):
+            print(f"  {i}. {name:20}: {ops:8,.0f} ops/sec")
+        
+        # 非同期操作の最高性能TOP3
+        if async_ops_results:
+            async_sorted = sorted(async_ops_results, key=lambda x: x[1], reverse=True)[:3]
+            print("\n🥈 非同期操作 TOP3:")
+            for i, (name, ops, time, mem) in enumerate(async_sorted, 1):
+                print(f"  {i}. {name:20}: {ops:8,.0f} ops/sec")
+        
+        # 並行性のベストパフォーマンス
+        if concurrent_ops_results:
+            best_concurrent = max(concurrent_ops_results, key=lambda x: x[1])
+            print(f"\n🥉 並行性ベスト: {best_concurrent[0]} ({best_concurrent[1]:,.0f} ops/sec)")
+        
+        # ボトルネック特定（OPS基準）
+        print("\n🎯 ボトルネック分析 (低OPS順):")
         
         # 最も遅い操作を特定
-        slowest_ops = []
-        for size, operations in sync_results.items():
-            for op_name, stats in operations.items():
-                ops_per_sec = size / stats['execution_time'] if stats['execution_time'] > 0 else 0
-                slowest_ops.append((f"{op_name}({size})", ops_per_sec, stats['memory_diff']))
-        
-        slowest_ops.sort(key=lambda x: x[1])  # ops/secで昇順ソート
+        slowest_ops = sorted(all_ops_results, key=lambda x: x[1])[:5]
         
         print("  最も遅い操作 (改善の余地あり):")
-        for i, (op_name, ops_per_sec, memory_diff) in enumerate(slowest_ops[:5]):
-            print(f"    {i+1}. {op_name}: {ops_per_sec:.0f} ops/sec (メモリ: {memory_diff:+.2f}MB)")
+        for i, (op_name, ops_per_sec, time, memory_diff) in enumerate(slowest_ops[:5]):
+            print(f"    {i+1}. {op_name}: {ops_per_sec:,.0f} ops/sec (メモリ: {memory_diff:+.2f}MB)")
         
         # メモリ消費が大きい操作
-        memory_hungry = sorted(slowest_ops, key=lambda x: abs(x[2]), reverse=True)
+        memory_hungry = sorted(all_ops_results, key=lambda x: abs(x[3]), reverse=True)
         print("\n  メモリ消費が大きい操作:")
-        for i, (op_name, ops_per_sec, memory_diff) in enumerate(memory_hungry[:5]):
-            print(f"    {i+1}. {op_name}: {memory_diff:+.2f}MB (速度: {ops_per_sec:.0f} ops/sec)")
+        for i, (op_name, ops_per_sec, time, memory_diff) in enumerate(memory_hungry[:5]):
+            print(f"    {i+1}. {op_name}: {memory_diff:+.2f}MB (速度: {ops_per_sec:,.0f} ops/sec)")
         
         print("\n" + "="*80)
 
