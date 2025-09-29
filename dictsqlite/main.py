@@ -3,7 +3,7 @@
 import base64
 import collections.abc
 import json
-import pickle
+import pickle  # nosec B403 - Using secure SafeUnpickler with restricted policies for data serialization
 import queue
 import random
 import secrets
@@ -401,7 +401,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                 (
                     (
                         "SELECT value FROM "
-                        f"{self.db._quote_ident(self.table_name)} "
+                        f"{self.db._quote_ident(self.table_name)} "  # nosec B608 - safely quoted
                         "WHERE key = ?"
                     ),
                     (key,),
@@ -750,7 +750,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         result_queue = queue.Queue()
         self.operation_queue.put((self._fetchone, (f'''\
             SELECT 1 FROM {self._quote_ident(self.table_name)} WHERE key = ?
-        ''', (key,)), {}, result_queue))
+        ''', (key,)), {}, result_queue))  # nosec B608 - table_name is safely quoted by _quote_ident
         result = result_queue.get()
         if isinstance(result, Exception):
             raise result
@@ -779,7 +779,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         result_queue = queue.Queue()
         self.operation_queue.put((self._fetchall, (f'''\
             SELECT key FROM {self._quote_ident(table_name)}
-        ''',), {}, result_queue))
+        ''',), {}, result_queue))  # nosec B608 - table_name is safely quoted by _quote_ident
         result = result_queue.get()
         if isinstance(result, Exception):
             raise result
@@ -867,7 +867,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             table_name = self.table_name
         self.operation_queue.put((self._execute, (f'''\
             DELETE FROM {self._quote_ident(table_name)}
-        ''',), {}, None))
+        ''',), {}, None))  # nosec B608 - table_name is safely quoted by _quote_ident
 
     def __enter__(self):
         return self
