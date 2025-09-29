@@ -638,34 +638,43 @@ class DictSQLiteFastest:
                 _db_init_states[init_key] = True
 
     def _get_connection(self):
-        """高性能コネクションプールから接続を取得、またはスレッドローカル接続"""
-        if self._connection_pool:
-            return self._connection_pool.get_connection()
-        else:
-            # フォールバック: スレッドローカル接続
-            if not hasattr(self._local, 'conn') or self._local.conn is None:
-                self._local.conn = apsw.Connection(self.db_name)
-                self._optimize_single_connection(self._local.conn)
-            return self._local.conn
+        """高性能スレッドローカル接続（最適化済み）"""
+        # スレッドローカル接続を優先（コネクションプールのオーバーヘッドを削減）
+        if not hasattr(self._local, 'conn') or self._local.conn is None:
+            self._local.conn = apsw.Connection(self.db_name)
+            self._optimize_single_connection(self._local.conn)
+            
+            # カーソルキャッシュも初期化
+            self._local.cursor_cache = self._local.conn.cursor()
+            
+        return self._local.conn
     
     def _return_connection(self, conn):
-        """コネクションをプールに返却（プールが有効な場合のみ）"""
-        if self._connection_pool:
-            self._connection_pool.return_connection(conn)
-        # スレッドローカル接続の場合は何もしない
+        """コネクション返却（スレッドローカルの場合は何もしない）"""
+        # スレッドローカル接続では返却不要（パフォーマンス向上）
+        pass
     
     def _optimize_single_connection(self, conn):
-        """単一コネクションの最適化"""
+        """単一コネクションの最適化（APSW最適化強化）"""
+        # 基本PRAGMA設定（最高性能）
         conn.pragma("busy_timeout", 30000)
-        conn.pragma("synchronous", "NORMAL")
+        conn.pragma("synchronous", "NORMAL")  # OFF -> NORMAL for async safety
         conn.pragma("cache_size", self.cache_size)
         conn.pragma("temp_store", "MEMORY")
         conn.pragma("mmap_size", self.mmap_size)
         conn.pragma("journal_mode", self.journal_mode)
         
+        # APSW高速化設定
+        conn.pragma("page_size", 65536)  # 64KBページサイズ
+        conn.pragma("auto_vacuum", "NONE")  # バキューム無効で高速化
+        conn.pragma("count_changes", "OFF")  # 変更カウント無効
+        conn.pragma("legacy_file_format", "OFF")  # 新フォーマットで高速化
+        
         if self.journal_mode == "WAL":
             conn.pragma("wal_autocheckpoint", self.wal_autocheckpoint)
+            conn.pragma("wal_checkpoint_threshold", 1000)  # WAL閾値設定
         
+        # カスタム設定適用
         for key, value in self.custom_pragma_settings.items():
             conn.pragma(key, value)
     
@@ -674,41 +683,40 @@ class DictSQLiteFastest:
         return self._statement_cache.get_prepared_cursor(conn, sql)
 
     def _get_cursor(self):
-        """再利用可能なカーソルを取得"""
+        """高速カーソル取得（キャッシュ使用）"""
         conn = self._get_connection()
-        cursor = conn.cursor()
-        return cursor, conn
-        return self._local.cursor_cache
+        
+        # カーソルキャッシュを使用（新規作成のオーバーヘッド削減）
+        if hasattr(self._local, 'cursor_cache') and self._local.cursor_cache:
+            return self._local.cursor_cache, conn
+        else:
+            cursor = conn.cursor()
+            self._local.cursor_cache = cursor
+            return cursor, conn
 
     def _execute_with_cursor(self, query, params=None):
-        """カーソルを使用してクエリを実行し、結果を返す"""
+        """高速クエリ実行（オーバーヘッド最小化）"""
         cursor, conn = self._get_cursor()
-        try:
-            if params:
-                return list(cursor.execute(query, params))
-            else:
-                return list(cursor.execute(query))
-        finally:
-            cursor.close()
-            self._return_connection(conn)
+        # カーソル閉じない＆コネクション返却しない（再利用のため）
+        if params:
+            return list(cursor.execute(query, params))
+        else:
+            return list(cursor.execute(query))
     
     def _execute_fetchone(self, query, params=None):
-        """カーソルを使用してクエリを実行し、最初の結果を返す"""
+        """高速単一結果取得（オーバーヘッド最小化）"""
         cursor, conn = self._get_cursor()
+        # カーソル閉じない＆コネクション返却しない（再利用のため）
+        if params:
+            result = cursor.execute(query, params)
+        else:
+            result = cursor.execute(query)
+        
+        # 最初の行を取得
         try:
-            if params:
-                result = cursor.execute(query, params)
-            else:
-                result = cursor.execute(query)
-            
-            # 最初の行を取得
-            try:
-                return next(iter(result))
-            except StopIteration:
-                return None
-        finally:
-            cursor.close()
-            self._return_connection(conn)
+            return next(iter(result))
+        except StopIteration:
+            return None
 
     def _get_prepared_statement(self, stmt_type):
         """プリペアドステートメントを取得"""
@@ -1093,6 +1101,14 @@ class DictSQLiteFastest:
             if hasattr(self, '_statement_cache'):
                 self._statement_cache.clear_cache()
             
+            # スレッドローカルカーソルキャッシュをクリア
+            if hasattr(self._local, 'cursor_cache') and self._local.cursor_cache:
+                try:
+                    self._local.cursor_cache.close()
+                except:
+                    pass
+                self._local.cursor_cache = None
+            
             # コネクションプールを閉じる
             if hasattr(self, '_connection_pool') and self._connection_pool:
                 self._connection_pool.close_all()
@@ -1154,31 +1170,26 @@ class DictSQLiteFastest:
         """メモリ効率的なアイテムのイテレータ（バッチ処理）"""
         # バッチ処理で大量のデータを扱う
         conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
-            try:
-                offset = 0
-                while True:
-                    query = f"SELECT key, value FROM {self._quote_ident(self.table_name)} LIMIT {batch_size} OFFSET {offset}"
-                    rows = list(cursor.execute(query))
-                    if not rows:
-                        break
+        cursor = conn.cursor()
+        
+        offset = 0
+        while True:
+            query = f"SELECT key, value FROM {self._quote_ident(self.table_name)} LIMIT {batch_size} OFFSET {offset}"
+            rows = list(cursor.execute(query))
+            if not rows:
+                break
+        
+            for key, value_str in rows:
+                # 圧縮解除
+                value_str = self._decompress_value(value_str)
                 
-                    for key, value_str in rows:
-                        # 圧縮解除
-                        value_str = self._decompress_value(value_str)
-                        
-                        if self.storage_mode == 'pickle':
-                            value = pickle.loads(base64.b64decode(value_str.encode('ascii')))
-                        else:  # json
-                            value = json.loads(value_str, object_hook=self._extended_json_decoder_hook)
-                        yield key, value
-                    
-                    offset += batch_size
-            finally:
-                cursor.close()
-        finally:
-            self._return_connection(conn)
+                if self.storage_mode == 'pickle':
+                    value = pickle.loads(base64.b64decode(value_str.encode('ascii')))
+                else:  # json
+                    value = json.loads(value_str, object_hook=self._extended_json_decoder_hook)
+                yield key, value
+            
+            offset += batch_size
 
     def has_key(self, key):
         """キーが存在するか確認。"""
@@ -1207,39 +1218,46 @@ class DictSQLiteFastest:
             value_str = self._compress_value(value_str)
             prepared_items.append((key, value_str))
         
-        # APSWネイティブバルク操作を使用
+        # APSWネイティブバルク操作を使用（最高性能）
         conn = self._get_connection()
-        if hasattr(self._local, 'bulk_operator'):
-            self._local.bulk_operator.bulk_insert_optimized(prepared_items)
-        else:
-            # フォールバック
-            self.bulk_insert_executemany(items)
+        cursor = conn.cursor()
+        
+        # トランザクション開始（バルク操作用）
+        cursor.execute("BEGIN IMMEDIATE")
+        try:
+            # 超高速バルク挿入（APSW最適化）
+            insert_sql = f"INSERT OR REPLACE INTO {self._quote_ident(self.table_name)} (key, value) VALUES (?, ?)"
+            cursor.executemany(insert_sql, prepared_items)
+            cursor.execute("COMMIT")
+        except Exception:
+            cursor.execute("ROLLBACK")
+            raise
 
     def bulk_get_apsw_optimized(self, keys):
-        """APSWネイティブ最適化バルク取得"""
+        """APSWネイティブ最適化バルク取得 - 最高パフォーマンス"""
         if not keys:
             return {}
         
         conn = self._get_connection()
-        if hasattr(self._local, 'bulk_operator'):
-            raw_results = self._local.bulk_operator.bulk_select_optimized(keys)
+        cursor = conn.cursor()
+        
+        # IN句を使用した高速バルク取得
+        placeholders = ','.join(['?' for _ in keys])
+        query = f"SELECT key, value FROM {self._quote_ident(self.table_name)} WHERE key IN ({placeholders})"
+        
+        results = {}
+        for row in cursor.execute(query, list(keys)):
+            key, value_str = row
+            # 圧縮解除
+            value_str = self._decompress_value(value_str)
             
-            # 値のデコードと展開
-            results = {}
-            for key, value_str in raw_results.items():
-                # 圧縮解除
-                value_str = self._decompress_value(value_str)
-                
-                if self.storage_mode == 'pickle':
-                    value = pickle.loads(base64.b64decode(value_str.encode('ascii')))
-                else:  # json
-                    value = json.loads(value_str, object_hook=self._extended_json_decoder_hook)
-                results[key] = value
-            
-            return results
-        else:
-            # フォールバック
-            return self.bulk_get(keys)
+            if self.storage_mode == 'pickle':
+                value = pickle.loads(base64.b64decode(value_str.encode('ascii')))
+            else:  # json
+                value = json.loads(value_str, object_hook=self._extended_json_decoder_hook)
+            results[key] = value
+        
+        return results
 
     def bulk_delete_apsw_optimized(self, keys):
         """APSWネイティブ最適化バルク削除"""
