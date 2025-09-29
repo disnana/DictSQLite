@@ -171,22 +171,31 @@ class PerformanceProfiler:
             results[size] = {}
             
             # 非同期挿入テスト
+            async def run_async_insert():
+                return await async_insert_test(size)
+            
             result, memory_stats = self.profile_memory(
-                lambda: asyncio.run(async_insert_test(size))
+                lambda: asyncio.create_task(run_async_insert())
             )
             results[size]['async_insert'] = memory_stats
             print(f"    非同期挿入: {memory_stats['execution_time']:.4f}s, メモリ増加: {memory_stats['memory_diff']:.2f}MB")
             
             # 非同期読み取りテスト
+            async def run_async_read():
+                return await async_read_test(size)
+                
             result, memory_stats = self.profile_memory(
-                lambda: asyncio.run(async_read_test(size))
+                lambda: asyncio.create_task(run_async_read())
             )
             results[size]['async_read'] = memory_stats
             print(f"    非同期読み取り: {memory_stats['execution_time']:.4f}s, メモリ増加: {memory_stats['memory_diff']:.2f}MB")
             
             # 非同期バルクテスト
+            async def run_async_bulk():
+                return await async_bulk_test(size)
+                
             result, memory_stats = self.profile_memory(
-                lambda: asyncio.run(async_bulk_test(size))
+                lambda: asyncio.create_task(run_async_bulk())
             )
             results[size]['async_bulk'] = memory_stats
             print(f"    非同期バルク: {memory_stats['execution_time']:.4f}s, メモリ増加: {memory_stats['memory_diff']:.2f}MB")
