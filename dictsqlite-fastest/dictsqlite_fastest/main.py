@@ -13,7 +13,7 @@ import queue
 import zlib  # 圧縮サポートのため追加
 import weakref  # 弱参照によるメモリ最適化
 import time
-from typing import Optional, Dict, List, Tuple, Generator, Set, Callable
+from typing import Optional, Dict, List, Tuple
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
@@ -687,23 +687,23 @@ class DictSQLiteFastest:
         # カーソルキャッシュを使用（新規作成のオーバーヘッド削減）
         if hasattr(self._local, 'cursor_cache') and self._local.cursor_cache:
             return self._local.cursor_cache, conn
-        else:
-            cursor = conn.cursor()
-            self._local.cursor_cache = cursor
-            return cursor, conn
+        
+        cursor = conn.cursor()
+        self._local.cursor_cache = cursor
+        return cursor, conn
 
     def _execute_with_cursor(self, query, params=None):
         """高速クエリ実行（オーバーヘッド最小化）"""
-        cursor, conn = self._get_cursor()
+        cursor, _ = self._get_cursor()
         # カーソル閉じない＆コネクション返却しない（再利用のため）
         if params:
             return list(cursor.execute(query, params))
-        else:
-            return list(cursor.execute(query))
+        
+        return list(cursor.execute(query))
 
     def _execute_fetchone(self, query, params=None):
         """高速単一結果取得（オーバーヘッド最小化）"""
-        cursor, conn = self._get_cursor()
+        cursor, _ = self._get_cursor()
         # カーソル閉じない＆コネクション返却しない（再利用のため）
         if params:
             result = cursor.execute(query, params)
@@ -739,11 +739,14 @@ class DictSQLiteFastest:
     def _prepare_statements(self):
         """パフォーマンス向上のためのprepared statements"""
         # よく使用されるクエリのprepared statementを作成
-        self._insert_stmt = f"INSERT OR REPLACE INTO {self._quote_ident(self.table_name)} (key, value) VALUES (?, ?)"  # nosec B608
-        self._select_stmt = f"SELECT value FROM {self._quote_ident(self.table_name)} WHERE key = ?"  # nosec B608
-        self._delete_stmt = f"DELETE FROM {self._quote_ident(self.table_name)} WHERE key = ?"  # nosec B608
-        self._exists_stmt = f"SELECT 1 FROM {self._quote_ident(self.table_name)} WHERE key = ?"  # nosec B608
-        self._select_all_stmt = f"SELECT key, value FROM {self._quote_ident(self.table_name)}"  # nosec B608
+        table_name = self._quote_ident(self.table_name)
+        self._insert_stmt = (
+            f"INSERT OR REPLACE INTO {table_name} (key, value) VALUES (?, ?)"  # nosec B608
+        )
+        self._select_stmt = f"SELECT value FROM {table_name} WHERE key = ?"  # nosec B608
+        self._delete_stmt = f"DELETE FROM {table_name} WHERE key = ?"  # nosec B608
+        self._exists_stmt = f"SELECT 1 FROM {table_name} WHERE key = ?"  # nosec B608
+        self._select_all_stmt = f"SELECT key, value FROM {table_name}"  # nosec B608
 
     def _compress_value(self, value_str: str) -> str:
         """大きな値を圧縮する（ZSTD/zlib対応）"""
