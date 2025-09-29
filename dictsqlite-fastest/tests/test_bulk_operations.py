@@ -218,8 +218,7 @@ class TestBenchmarkIntegration:
         result = benchmark(bulk_get_func)
         assert len(result) == len(keys_to_get)
 
-    @pytest.mark.asyncio
-    async def test_benchmark_async_bulk_operations(self, benchmark, db_path):
+    def test_benchmark_async_bulk_operations(self, benchmark, db_path):
         """Benchmark async bulk operations."""
         test_data = {f'async_bench_{i}': {'id': i, 'data': f'item_{i}'} for i in range(500)}
         
@@ -237,8 +236,12 @@ class TestBenchmarkIntegration:
             finally:
                 await db.aclose()
         
+        # Wrap async function for benchmark
+        def sync_wrapper():
+            return asyncio.run(async_bulk_operations())
+        
         # Benchmark async operations
-        result = await benchmark(async_bulk_operations)
+        result = benchmark(sync_wrapper)
         assert result == 100  # Should get 100 items (every 5th from 500)
 
 
