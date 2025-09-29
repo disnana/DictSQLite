@@ -49,7 +49,7 @@ __all__ = [
 # ロガーの設定
 logger = logging.getLogger(__name__)
 
-class ConnectionPool:
+class AdvancedConnectionPool:
     """スレッドプール対応の高性能APSWコネクションプール"""
     
     def __init__(self, db_name: str, max_connections: int = 20, **db_args):
@@ -549,14 +549,17 @@ class DictSQLiteFastest:
         
         # 高度なコネクションプール初期化
         try:
-            self._connection_pool = ConnectionPool(
+            pool_config = {
+                'cache_size': self.cache_size,
+                'mmap_size': self.mmap_size,
+                'wal_autocheckpoint': self.wal_autocheckpoint,
+                'journal_mode': self.journal_mode,
+                'custom_pragma_settings': self.custom_pragma_settings
+            }
+            self._connection_pool = AdvancedConnectionPool(
                 self.db_name,
                 max_connections=20,
-                cache_size=self.cache_size,
-                mmap_size=self.mmap_size,
-                wal_autocheckpoint=self.wal_autocheckpoint,
-                journal_mode=self.journal_mode,
-                custom_pragma_settings=self.custom_pragma_settings
+                **pool_config
             )
         except Exception as e:
             logger.warning(f"Could not initialize connection pool: {e}, falling back to single connection")
