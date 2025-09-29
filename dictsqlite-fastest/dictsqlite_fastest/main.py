@@ -11,6 +11,7 @@ import threading
 import logging
 import asyncio
 import queue
+import zlib  # 圧縮サポートのため追加
 from typing import Optional, Any
 from concurrent.futures import ThreadPoolExecutor
 
@@ -232,6 +233,12 @@ class DictSQLiteFastest:
         cache_size: int = -64000,  # 64MB cache (negative = KB)
         mmap_size: int = 268435456,  # 256MB mmap
         wal_autocheckpoint: int = 1000,  # WAL checkpoint interval
+        # 新しい最適化オプション
+        optimize_on_init: bool = True,  # 初期化時に最適化を実行
+        enable_memory_optimization: bool = True,  # メモリ最適化を有効化
+        custom_pragma_settings: dict = None,  # カスタムPRAGMA設定
+        enable_compression: bool = False,  # 大きな値の圧縮を有効化
+        compression_threshold: int = 1024,  # 圧縮閾値（バイト）
     ):
         # 基本属性設定
         self.version = version
@@ -248,6 +255,11 @@ class DictSQLiteFastest:
         self.cache_size = cache_size
         self.mmap_size = mmap_size
         self.wal_autocheckpoint = wal_autocheckpoint
+        self.optimize_on_init = optimize_on_init
+        self.enable_memory_optimization = enable_memory_optimization
+        self.custom_pragma_settings = custom_pragma_settings or {}
+        self.enable_compression = enable_compression
+        self.compression_threshold = compression_threshold
 
         # journal_mode検証
         validated_journal_mode = "WAL"  # Default to WAL
@@ -271,6 +283,10 @@ class DictSQLiteFastest:
 
         # データベースの初期化を一度だけ実行
         self._initialize_database(schema)
+        
+        # 初期化時に最適化を実行
+        if self.optimize_on_init:
+            self.optimize_database()
 
         # 安全pickle設定
         self.safe_pickle_policy = safe_pickle_policy
@@ -346,6 +362,16 @@ class DictSQLiteFastest:
             self._local.conn.pragma("locking_mode", "NORMAL")  # 同期処理モード
             self._local.conn.pragma("query_only", 0)  # 読み書き両方許可
             
+            # メモリ最適化設定
+            if self.enable_memory_optimization:
+                self._local.conn.pragma("page_size", 65536)  # より大きなページサイズ
+                self._local.conn.pragma("auto_vacuum", "INCREMENTAL")  # 自動バキューム
+                self._local.conn.pragma("freelist_count", 0)  # フリーリストの最適化
+            
+            # カスタムPRAGMA設定の適用
+            for pragma_name, pragma_value in self.custom_pragma_settings.items():
+                self._local.conn.pragma(pragma_name, pragma_value)
+            
             # WALモードの場合はさらに最適化
             if self.journal_mode == "WAL":
                 self._local.conn.pragma("synchronous", "NORMAL")
@@ -405,6 +431,32 @@ class DictSQLiteFastest:
         self._delete_stmt = f"DELETE FROM {self._quote_ident(self.table_name)} WHERE key = ?"
         self._exists_stmt = f"SELECT 1 FROM {self._quote_ident(self.table_name)} WHERE key = ?"
         self._select_all_stmt = f"SELECT key, value FROM {self._quote_ident(self.table_name)}"
+
+    def _compress_value(self, value_str: str) -> str:
+        """大きな値を圧縮する"""
+        if not self.enable_compression or len(value_str.encode('utf-8')) < self.compression_threshold:
+            return value_str
+        
+        # 圧縮
+        compressed = zlib.compress(value_str.encode('utf-8'), level=6)  # バランスの取れた圧縮レベル
+        # 圧縮されたデータをbase64エンコード + プレフィックス
+        compressed_str = "ZLIB:" + base64.b64encode(compressed).decode('ascii')
+        
+        # 圧縮率が十分でない場合は元の値を返す
+        if len(compressed_str) >= len(value_str):
+            return value_str
+        
+        return compressed_str
+    
+    def _decompress_value(self, value_str: str) -> str:
+        """圧縮された値を展開する"""
+        if not value_str.startswith("ZLIB:"):
+            return value_str
+        
+        # プレフィックスを除去してbase64デコード
+        compressed_data = base64.b64decode(value_str[5:])
+        # 展開
+        return zlib.decompress(compressed_data).decode('utf-8')
 
     def _quote_ident(self, identifier: str) -> str:
         """SQLインジェクション対策でテーブル名をクォート。"""
@@ -534,6 +586,10 @@ class DictSQLiteFastest:
                 raise KeyError(f"Key {key} not found in table {self.table_name}.")
 
             value_str = result[0]
+            
+            # 圧縮解除（暗号化解除の前に実行）
+            value_str = self.db._decompress_value(value_str)
+            
             if self.db.password is not None:
                 value_str = self.db._decrypt(value_str)
 
@@ -595,6 +651,9 @@ class DictSQLiteFastest:
 
             if self.db.password is not None:
                 value_str = self.db._encrypt(value_str)
+
+            # 圧縮サポート（暗号化の後に実行）
+            value_str = self.db._compress_value(value_str)
 
             # 再利用可能なカーソルを使用（プリペアドステートメント）
             stmt = self.db._get_prepared_statement('insert')
@@ -971,15 +1030,29 @@ class DictSQLiteFastest:
         self._get_prepared_statement('exists')
         self._get_prepared_statement('select_all')
 
-    def optimize_database(self):
+    def optimize_database(self, full_optimization=False):
         """データベースの最適化を実行（統計情報の更新など）"""
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
             # 統計情報を更新してクエリプランナーを最適化
             cursor.execute("ANALYZE")
-            # VACUUMは大きなファイルでは時間がかかるため、条件付きで実行
-            # cursor.execute("VACUUM")  # コメントアウト: 必要に応じて手動実行
+            
+            # 完全最適化モード（時間がかかる場合があるため オプション）
+            if full_optimization:
+                # VACUUMは大きなファイルでは時間がかかるため、条件付きで実行
+                cursor.execute("VACUUM")
+                # WALチェックポイントを強制実行
+                if self.journal_mode == "WAL":
+                    cursor.execute("PRAGMA wal_checkpoint(FULL)")
+            
+            # メモリ最適化が有効な場合のチューニング
+            if self.enable_memory_optimization:
+                # 自動バキュームのトリガー
+                cursor.execute("PRAGMA auto_vacuum = INCREMENTAL")
+                # インクリメンタルバキューム実行
+                cursor.execute("PRAGMA incremental_vacuum(100)")  # 100ページまで
+                
         finally:
             cursor.close()
 
