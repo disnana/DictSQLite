@@ -12,8 +12,11 @@ import logging
 import asyncio
 import queue
 import zlib  # 圧縮サポートのため追加
-from typing import Optional, Any
+import weakref  # 弱参照によるメモリ最適化
+import time
+from typing import Optional, Any, Dict, List, Tuple, Iterator, Union
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 
 import apsw
 import portalocker
@@ -37,6 +40,132 @@ __all__ = [
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
+
+class APSWStatementCache:
+    """高度なAPSWプリペアドステートメントキャッシュ"""
+    
+    def __init__(self, connection: apsw.Connection, max_cache_size: int = 50):
+        self.connection = connection
+        self.max_cache_size = max_cache_size
+        self._cache: Dict[str, apsw.Cursor] = {}
+        self._access_times: Dict[str, float] = {}
+        self._lock = threading.Lock()
+    
+    def get_prepared_cursor(self, sql: str) -> apsw.Cursor:
+        """プリペアドステートメント用のカーソルを取得（LRUキャッシュ付き）"""
+        with self._lock:
+            if sql in self._cache:
+                self._access_times[sql] = time.time()
+                return self._cache[sql]
+            
+            # キャッシュサイズ制限チェック
+            if len(self._cache) >= self.max_cache_size:
+                # 最も古いエントリを削除
+                oldest_sql = min(self._access_times.keys(), key=lambda k: self._access_times[k])
+                old_cursor = self._cache.pop(oldest_sql)
+                old_cursor.close()
+                del self._access_times[oldest_sql]
+            
+            # 新しいカーソルを作成してキャッシュ
+            cursor = self.connection.cursor()
+            cursor.execute(sql)  # プリペア
+            self._cache[sql] = cursor
+            self._access_times[sql] = time.time()
+            return cursor
+    
+    def clear_cache(self):
+        """キャッシュをクリア"""
+        with self._lock:
+            for cursor in self._cache.values():
+                try:
+                    cursor.close()
+                except:
+                    pass
+            self._cache.clear()
+            self._access_times.clear()
+
+
+class APSWBulkOperator:
+    """APSW最適化バルク操作クラス"""
+    
+    def __init__(self, connection: apsw.Connection, table_name: str):
+        self.connection = connection
+        self.table_name = table_name
+        self._insert_sql = f"INSERT OR REPLACE INTO {table_name} (key, value) VALUES (?, ?)"
+        self._select_sql = f"SELECT value FROM {table_name} WHERE key = ?"
+        self._delete_sql = f"DELETE FROM {table_name} WHERE key = ?"
+        self._bulk_select_template = f"SELECT key, value FROM {table_name} WHERE key IN ({{}})"
+        self._bulk_delete_template = f"DELETE FROM {table_name} WHERE key IN ({{}})"
+        
+    def bulk_insert_optimized(self, items: List[Tuple[str, str]]) -> None:
+        """APSW最適化バルク挿入"""
+        cursor = self.connection.cursor()
+        try:
+            # トランザクション開始
+            cursor.execute("BEGIN IMMEDIATE")
+            
+            # APSWの高速バインド実行
+            cursor.executemany(self._insert_sql, items)
+            
+            cursor.execute("COMMIT")
+        except Exception:
+            cursor.execute("ROLLBACK")
+            raise
+        finally:
+            cursor.close()
+    
+    def bulk_select_optimized(self, keys: List[str]) -> Dict[str, str]:
+        """APSW最適化バルク取得（IN句の最適化）"""
+        if not keys:
+            return {}
+        
+        # 大量のキーの場合は分割処理
+        chunk_size = 500  # SQLiteのIN句制限対策
+        results = {}
+        
+        cursor = self.connection.cursor()
+        try:
+            for i in range(0, len(keys), chunk_size):
+                chunk_keys = keys[i:i + chunk_size]
+                placeholders = ','.join('?' * len(chunk_keys))
+                sql = self._bulk_select_template.format(placeholders)
+                
+                for key, value in cursor.execute(sql, chunk_keys):
+                    results[key] = value
+        finally:
+            cursor.close()
+        
+        return results
+    
+    def bulk_delete_optimized(self, keys: List[str]) -> int:
+        """APSW最適化バルク削除"""
+        if not keys:
+            return 0
+        
+        cursor = self.connection.cursor()
+        deleted_count = 0
+        try:
+            cursor.execute("BEGIN IMMEDIATE")
+            
+            # 分割削除で制限回避
+            chunk_size = 500
+            for i in range(0, len(keys), chunk_size):
+                chunk_keys = keys[i:i + chunk_size]
+                placeholders = ','.join('?' * len(chunk_keys))
+                sql = self._bulk_delete_template.format(placeholders)
+                
+                cursor.execute(sql, chunk_keys)
+                deleted_count += self.connection.changes()  # Use connection.changes() instead of cursor.changes()
+            
+            cursor.execute("COMMIT")
+        except Exception:
+            cursor.execute("ROLLBACK")
+            raise
+        finally:
+            cursor.close()
+        
+        return deleted_count
+
 
 # グローバルデータベース初期化管理
 _db_init_locks = {}
@@ -304,6 +433,10 @@ class DictSQLiteFastest:
 
         # Prepared statements for performance
         self._prepare_statements()
+        
+        # Initialize advanced APSW components (will be created per connection)
+        self._stmt_cache = None
+        self._bulk_operator = None
 
     def _initialize_database(self, schema=None):
         """データベースの初期化を一度だけ実行（グローバル同期）"""
@@ -344,7 +477,7 @@ class DictSQLiteFastest:
                 _db_init_states[init_key] = True
 
     def _get_connection(self):
-        """スレッドローカルなAPSW接続を取得"""
+        """スレッドローカルなAPSW接続を取得（高度な最適化付き）"""
         if not hasattr(self._local, 'conn') or self._local.conn is None:
             # 新しい接続を作成
             self._local.conn = apsw.Connection(self.db_name)
@@ -357,10 +490,6 @@ class DictSQLiteFastest:
             self._local.conn.pragma("cache_size", self.cache_size)
             self._local.conn.pragma("temp_store", "MEMORY")   # temp tables in memory
             self._local.conn.pragma("mmap_size", self.mmap_size)
-            
-            # さらなる最適化設定
-            self._local.conn.pragma("locking_mode", "NORMAL")  # 同期処理モード
-            self._local.conn.pragma("query_only", 0)  # 読み書き両方許可
             
             # メモリ最適化設定
             if self.enable_memory_optimization:
@@ -376,9 +505,26 @@ class DictSQLiteFastest:
             if self.journal_mode == "WAL":
                 self._local.conn.pragma("synchronous", "NORMAL")
                 self._local.conn.pragma("wal_autocheckpoint", self.wal_autocheckpoint)
+                
+                # WAL最適化コールバック設定
+                def wal_callback(dbname, pages):
+                    """WALファイルサイズが大きくなったときの最適化"""
+                    if pages > self.wal_autocheckpoint * 2:
+                        return apsw.SQLITE_OK
+                    return apsw.SQLITE_OK
+                
+                # WAL hook設定（APSW固有機能）
+                try:
+                    self._local.conn.setwalautocheckpointhook(wal_callback)
+                except AttributeError:
+                    pass  # 古いAPSWバージョンでは無視
             
-            # Prepared statement cache for this connection
-            self._local.stmt_cache = {}
+            # 高度なAPSWキャッシュとバルク操作を初期化
+            self._local.stmt_cache = APSWStatementCache(self._local.conn)
+            self._local.bulk_operator = APSWBulkOperator(self._local.conn, self._quote_ident(self.table_name))
+            
+            # Prepared statement cache for this connection (legacy support)
+            self._local.legacy_stmt_cache = {}
             # Cursor cache for reuse
             self._local.cursor_cache = None
                     
@@ -400,23 +546,37 @@ class DictSQLiteFastest:
             return cursor.execute(query)
 
     def _get_prepared_statement(self, stmt_type):
-        """プリペアドステートメントをキャッシュから取得"""
-        if not hasattr(self._local, 'stmt_cache'):
-            self._local.stmt_cache = {}
-        
-        if stmt_type not in self._local.stmt_cache:
+        """プリペアドステートメントをキャッシュから取得（APSW最適化対応）"""
+        # 新しいAPSWキャッシュを使用
+        if hasattr(self._local, 'stmt_cache') and isinstance(self._local.stmt_cache, APSWStatementCache):
             if stmt_type == 'insert':
-                self._local.stmt_cache[stmt_type] = self._insert_stmt
+                return self._insert_stmt
             elif stmt_type == 'select':
-                self._local.stmt_cache[stmt_type] = self._select_stmt
+                return self._select_stmt
             elif stmt_type == 'delete':
-                self._local.stmt_cache[stmt_type] = self._delete_stmt
+                return self._delete_stmt
             elif stmt_type == 'exists':
-                self._local.stmt_cache[stmt_type] = self._exists_stmt
+                return self._exists_stmt
             elif stmt_type == 'select_all':
-                self._local.stmt_cache[stmt_type] = self._select_all_stmt
+                return self._select_all_stmt
         
-        return self._local.stmt_cache[stmt_type]
+        # レガシーキャッシュを使用
+        if not hasattr(self._local, 'legacy_stmt_cache'):
+            self._local.legacy_stmt_cache = {}
+        
+        if stmt_type not in self._local.legacy_stmt_cache:
+            if stmt_type == 'insert':
+                self._local.legacy_stmt_cache[stmt_type] = self._insert_stmt
+            elif stmt_type == 'select':
+                self._local.legacy_stmt_cache[stmt_type] = self._select_stmt
+            elif stmt_type == 'delete':
+                self._local.legacy_stmt_cache[stmt_type] = self._delete_stmt
+            elif stmt_type == 'exists':
+                self._local.legacy_stmt_cache[stmt_type] = self._exists_stmt
+            elif stmt_type == 'select_all':
+                self._local.legacy_stmt_cache[stmt_type] = self._select_all_stmt
+        
+        return self._local.legacy_stmt_cache[stmt_type]
 
     def _ensure_table_exists(self, schema=None):
         """テーブルが存在することを確認 (初期化時に既に作成済み)"""
@@ -839,6 +999,71 @@ class DictSQLiteFastest:
         # 再利用可能なカーソルを使用
         self._execute_with_cursor(f"DELETE FROM {self._quote_ident(self.table_name)}")
 
+    def bulk_insert_apsw_optimized(self, items):
+        """APSWネイティブ最適化バルク挿入 - 最高パフォーマンス"""
+        if not items:
+            return
+        
+        # データを準備
+        prepared_items = []
+        for key, value in (items.items() if hasattr(items, 'items') else items):
+            if self.storage_mode == 'pickle':
+                value_str = base64.b64encode(pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)).decode('ascii')
+            else:  # json
+                value_str = json.dumps(value, default=self._extended_json_encoder_hook, 
+                                     separators=(',', ':'), ensure_ascii=False)
+            
+            # 圧縮サポート
+            value_str = self._compress_value(value_str)
+            prepared_items.append((key, value_str))
+        
+        # APSWネイティブバルク操作を使用
+        conn = self._get_connection()
+        if hasattr(self._local, 'bulk_operator'):
+            self._local.bulk_operator.bulk_insert_optimized(prepared_items)
+        else:
+            # フォールバック
+            self.bulk_insert_executemany(items)
+
+    def bulk_get_apsw_optimized(self, keys):
+        """APSWネイティブ最適化バルク取得"""
+        if not keys:
+            return {}
+        
+        conn = self._get_connection()
+        if hasattr(self._local, 'bulk_operator'):
+            raw_results = self._local.bulk_operator.bulk_select_optimized(keys)
+            
+            # 値のデコードと展開
+            results = {}
+            for key, value_str in raw_results.items():
+                # 圧縮解除
+                value_str = self._decompress_value(value_str)
+                
+                if self.storage_mode == 'pickle':
+                    value = pickle.loads(base64.b64decode(value_str.encode('ascii')))
+                else:  # json
+                    value = json.loads(value_str, object_hook=self._extended_json_decoder_hook)
+                results[key] = value
+            
+            return results
+        else:
+            # フォールバック
+            return self.bulk_get(keys)
+
+    def bulk_delete_apsw_optimized(self, keys):
+        """APSWネイティブ最適化バルク削除"""
+        if not keys:
+            return 0
+        
+        conn = self._get_connection()
+        if hasattr(self._local, 'bulk_operator'):
+            return self._local.bulk_operator.bulk_delete_optimized(keys)
+        else:
+            # フォールバック
+            self.bulk_delete(keys)
+            return len(keys)  # 概算
+
     def bulk_insert(self, items):
         """バルク挿入 - 大量のキー/値ペアを効率的に挿入（トランザクション最適化）"""
         if not items:
@@ -1149,7 +1374,345 @@ class ConnectionPool:
         }
 
 
+class AsyncConnectionPool:
+    """高度な非同期接続プール（asyncio native）"""
+    
+    def __init__(self, db_factory_func, max_connections: int = 10):
+        self.db_factory_func = db_factory_func
+        self.max_connections = max_connections
+        self._pool = asyncio.Queue(maxsize=max_connections)
+        self._created_connections = 0
+        self._lock = asyncio.Lock()
+        self._stats = {
+            'total_gets': 0,
+            'pool_hits': 0,
+            'active_connections': 0,
+            'peak_connections': 0
+        }
+        
+        # 接続の弱参照リスト（ガベージコレクション対応）
+        self._connections = weakref.WeakSet()
+    
+    async def get_connection(self):
+        """非同期で接続を取得"""
+        self._stats['total_gets'] += 1
+        
+        try:
+            # プールから既存接続を取得
+            conn = self._pool.get_nowait()
+            self._stats['pool_hits'] += 1
+            return conn
+        except asyncio.QueueEmpty:
+            # 新しい接続を作成
+            async with self._lock:
+                if self._created_connections < self.max_connections:
+                    self._created_connections += 1
+                    self._stats['active_connections'] += 1
+                    self._stats['peak_connections'] = max(
+                        self._stats['peak_connections'], 
+                        self._stats['active_connections']
+                    )
+                    
+                    # スレッドプールで同期的な接続作成を実行
+                    loop = asyncio.get_event_loop()
+                    with ThreadPoolExecutor(max_workers=1) as executor:
+                        conn = await loop.run_in_executor(executor, self.db_factory_func)
+                        self._connections.add(conn)
+                        return conn
+                else:
+                    # プールが満杯の場合は待機
+                    return await self._pool.get()
+    
+    async def return_connection(self, conn):
+        """非同期で接続を返却"""
+        if conn is not None:
+            try:
+                self._pool.put_nowait(conn)
+            except asyncio.QueueFull:
+                # プールが満杯の場合は接続を閉じる
+                try:
+                    conn.close()
+                    self._stats['active_connections'] -= 1
+                except:
+                    pass
+    
+    async def close_all(self):
+        """全接続を閉じる"""
+        # プールから全接続を取得して閉じる
+        while not self._pool.empty():
+            try:
+                conn = self._pool.get_nowait()
+                conn.close()
+                self._stats['active_connections'] -= 1
+            except asyncio.QueueEmpty:
+                break
+        
+        # 弱参照セットからも接続をクリーンアップ
+        for conn in list(self._connections):
+            try:
+                conn.close()
+            except:
+                pass
+        
+        self._connections.clear()
+        self._stats['active_connections'] = 0
+    
+    def get_stats(self):
+        """プール統計を取得"""
+        hit_rate = (self._stats['pool_hits'] / self._stats['total_gets'] * 100) if self._stats['total_gets'] > 0 else 0
+        return {
+            **self._stats,
+            'hit_rate': f"{hit_rate:.1f}%",
+            'pool_size': self._pool.qsize()
+        }
+
+
 class AsyncDictSQLiteFastest:
+    """完全に再設計された高性能非同期DictSQLite（asyncio native）"""
+    
+    def __init__(self, *args, max_connections: int = 10, enable_pipeline: bool = True, **kwargs):
+        self._args = args
+        self._kwargs = kwargs
+        self.max_connections = max_connections
+        self.enable_pipeline = enable_pipeline
+        
+        # 非同期接続プール
+        self._connection_pool = AsyncConnectionPool(
+            lambda: DictSQLiteFastest(*self._args, **self._kwargs),
+            max_connections=max_connections
+        )
+        
+        # パイプライン操作用のセマフォ
+        self._pipeline_semaphore = asyncio.Semaphore(max_connections * 2)
+        
+        # 統計情報
+        self._operation_stats = {
+            'total_operations': 0,
+            'pipeline_operations': 0,
+            'bulk_operations': 0,
+            'cache_hits': 0
+        }
+        
+        # 操作キャッシュ（頻繁なアクセスキーの高速化）
+        self._operation_cache = {}
+        self._cache_lock = asyncio.Lock()
+        
+        # 同期初期化
+        self._ensure_initialized()
+    
+    def _ensure_initialized(self):
+        """同期的に初期化"""
+        init_db = DictSQLiteFastest(*self._args, **self._kwargs)
+        init_db.close()
+    
+    async def __aenter__(self):
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.aclose()
+    
+    async def aclose(self):
+        """非同期クリーンアップ"""
+        await self._connection_pool.close_all()
+    
+    @asynccontextmanager
+    async def _get_connection(self):
+        """非同期コンテキストマネージャーで接続を取得"""
+        conn = await self._connection_pool.get_connection()
+        try:
+            yield conn
+        finally:
+            await self._connection_pool.return_connection(conn)
+    
+    async def _run_in_thread(self, func, *args, **kwargs):
+        """スレッドプールで同期操作を実行"""
+        async with self._pipeline_semaphore:
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                async with self._get_connection() as db:
+                    result = await loop.run_in_executor(executor, func, db, *args, **kwargs)
+                    self._operation_stats['total_operations'] += 1
+                    return result
+    
+    # 基本非同期操作
+    async def aget(self, key):
+        """非同期でキーを取得"""
+        # キャッシュチェック
+        async with self._cache_lock:
+            if key in self._operation_cache:
+                self._operation_stats['cache_hits'] += 1
+                return self._operation_cache[key]
+        
+        def sync_get(db, k):
+            return db[k]
+        
+        result = await self._run_in_thread(sync_get, key)
+        
+        # 結果をキャッシュ（小さなキャッシュサイズを維持）
+        async with self._cache_lock:
+            if len(self._operation_cache) < 100:
+                self._operation_cache[key] = result
+        
+        return result
+    
+    async def aset(self, key, value):
+        """非同期でキーを設定"""
+        def sync_set(db, k, v):
+            db[k] = v
+        
+        # キャッシュ更新
+        async with self._cache_lock:
+            self._operation_cache[key] = value
+        
+        return await self._run_in_thread(sync_set, key, value)
+    
+    async def adelete(self, key):
+        """非同期でキーを削除"""
+        def sync_delete(db, k):
+            del db[k]
+        
+        # キャッシュから削除
+        async with self._cache_lock:
+            self._operation_cache.pop(key, None)
+        
+        return await self._run_in_thread(sync_delete, key)
+    
+    async def acontains(self, key):
+        """非同期でキー存在チェック"""
+        def sync_contains(db, k):
+            return k in db
+        
+        return await self._run_in_thread(sync_contains, key)
+    
+    async def ahas_key(self, key):
+        """非同期でキー存在チェック（has_keyエイリアス）"""
+        return await self.acontains(key)
+    
+    async def __acontains__(self, key):
+        """非同期でキー存在チェック（マジックメソッド）"""
+        return await self.acontains(key)
+    
+    async def akeys(self):
+        """非同期でキー一覧を取得"""
+        def sync_keys(db):
+            return db.keys()
+        
+        return await self._run_in_thread(sync_keys)
+    
+    async def avalues(self):
+        """非同期で値一覧を取得"""
+        def sync_values(db):
+            proxy = db[db.table_name] if hasattr(db, 'table_name') else db
+            return list(proxy.values())
+        
+        return await self._run_in_thread(sync_values)
+    
+    async def aitems(self):
+        """非同期でアイテム一覧を取得"""
+        def sync_items(db):
+            proxy = db[db.table_name] if hasattr(db, 'table_name') else db
+            return list(proxy.items())
+        
+        return await self._run_in_thread(sync_items)
+    
+    # 高度な非同期バルク操作
+    async def abulk_insert(self, items):
+        """非同期バルク挿入（最適化済み）"""
+        if not items:
+            return
+        
+        def sync_bulk_insert(db, item_data):
+            # 新しいAPSW最適化バルク挿入を使用
+            if hasattr(db, 'bulk_insert_apsw_optimized'):
+                db.bulk_insert_apsw_optimized(item_data)
+            else:
+                db.bulk_insert_optimized(item_data)
+        
+        self._operation_stats['bulk_operations'] += 1
+        return await self._run_in_thread(sync_bulk_insert, items)
+    
+    async def abulk_get(self, keys):
+        """非同期バルク取得（最適化済み）"""
+        if not keys:
+            return {}
+        
+        def sync_bulk_get(db, key_list):
+            # 新しいAPSW最適化バルク取得を使用
+            if hasattr(db, 'bulk_get_apsw_optimized'):
+                return db.bulk_get_apsw_optimized(key_list)
+            else:
+                return db.bulk_get(key_list)
+        
+        self._operation_stats['bulk_operations'] += 1
+        return await self._run_in_thread(sync_bulk_get, keys)
+    
+    async def abulk_delete(self, keys):
+        """非同期バルク削除（最適化済み）"""
+        if not keys:
+            return 0
+        
+        def sync_bulk_delete(db, key_list):
+            # 新しいAPSW最適化バルク削除を使用
+            if hasattr(db, 'bulk_delete_apsw_optimized'):
+                return db.bulk_delete_apsw_optimized(key_list)
+            else:
+                db.bulk_delete(key_list)
+                return len(key_list)
+        
+        # キャッシュからも削除
+        async with self._cache_lock:
+            for key in keys:
+                self._operation_cache.pop(key, None)
+        
+        self._operation_stats['bulk_operations'] += 1
+        return await self._run_in_thread(sync_bulk_delete, keys)
+    
+    # パイプライン操作（複数操作の効率的な実行）
+    async def apipeline_operations(self, operations):
+        """複数操作をパイプラインで効率的に実行
+        
+        Args:
+            operations: List of ('get'|'set'|'delete', key, [value]) tuples
+        """
+        if not self.enable_pipeline or not operations:
+            return []
+        
+        def sync_pipeline(db, ops):
+            results = []
+            for op in ops:
+                if op[0] == 'get':
+                    results.append(db[op[1]])
+                elif op[0] == 'set':
+                    db[op[1]] = op[2]
+                    results.append(None)
+                elif op[0] == 'delete':
+                    del db[op[1]]
+                    results.append(None)
+            return results
+        
+        self._operation_stats['pipeline_operations'] += len(operations)
+        return await self._run_in_thread(sync_pipeline, operations)
+    
+    # 統計情報とモニタリング
+    def get_stats(self):
+        """非同期操作統計を取得"""
+        pool_stats = self._connection_pool.get_stats()
+        return {
+            'async_operations': self._operation_stats,
+            'connection_pool': pool_stats,
+            'cache_size': len(self._operation_cache)
+        }
+    
+    async def aoptimize(self):
+        """非同期でデータベース最適化"""
+        def sync_optimize(db):
+            db.optimize_database(full_optimization=True)
+        
+        return await self._run_in_thread(sync_optimize)
+
+
+# Legacy AsyncDictSQLiteFastest for backward compatibility
+class LegacyAsyncDictSQLiteFastest:
     """非同期版のDictSQLiteFastest with connection pooling"""
     
     def __init__(self, *args, max_connections: int = 5, **kwargs):
