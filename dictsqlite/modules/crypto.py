@@ -123,11 +123,14 @@ def load_public_key(pem_file_path: str, password: str) -> rsa.RSAPublicKey:
 
 
 def key_create(
-    password: str = "test",
+    password: str | None = None,
     pubkey_path: str = "./pubkey.pem",
     private_key_path: str = "./key.pem",
 ) -> None:
     """RSA鍵ペアを生成し、AESで暗号化してPEMファイルとして保存する。"""
+    if password is None:
+        raise ValueError("Password is required for key generation. Do not use default passwords.")
+    
     # 4096ビットのRSA鍵ペアの生成
     private_key = rsa.generate_private_key(
         public_exponent=65537,
