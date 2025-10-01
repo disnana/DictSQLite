@@ -599,7 +599,7 @@ class DictSQLiteFastest:
 
     def _initialize_database(self, schema=None):
         """データベースの初期化を一度だけ実行（グローバル同期）"""
-        global _db_init_locks, _db_init_states, _db_init_lock
+        global _db_init_locks, _db_init_states, _db_init_lock # noqa:F824
 
         # データベースファイル+テーブル名をキーとして使用
         init_key = f"{self.db_name}:{self.table_name}"
