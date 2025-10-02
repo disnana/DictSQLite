@@ -15,7 +15,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from dictsqlite_fastest_beta import (
     DictSQLiteFastestBeta,
     LRUCache,
-    WriteBuffer
+    WriteBuffer,
+    AsyncDictSQLiteFastestBeta
 )
 
 
@@ -443,11 +444,110 @@ class TestDictSQLiteFastestBeta:
             assert db['key1'] == 'value1'
 
 
+class TestAsyncDictSQLiteFastestBeta:
+    """AsyncDictSQLiteFastestBetaのテスト."""
+    
+    def setup_method(self):
+        """各テストの前に実行."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.temp_dir, 'test_async.db')
+    
+    def teardown_method(self):
+        """各テストの後に実行."""
+        # クリーンアップ
+        if os.path.exists(self.db_path):
+            os.remove(self.db_path)
+        os.rmdir(self.temp_dir)
+    
+    def test_async_basic_operations(self):
+        """非同期基本操作のテスト."""
+        import asyncio
+        
+        async def async_test():
+            async with AsyncDictSQLiteFastestBeta(self.db_path) as db:
+                # 書き込み
+                await db.aset('key1', 'value1')
+                await db.aset('key2', {'nested': 'value2'})
+                
+                # 読み込み
+                value1 = await db.aget('key1')
+                value2 = await db.aget('key2')
+                
+                assert value1 == 'value1'
+                assert value2 == {'nested': 'value2'}
+                
+                # デフォルト値
+                value3 = await db.aget('key3', 'default')
+                assert value3 == 'default'
+        
+        asyncio.run(async_test())
+    
+    def test_async_bulk_operations(self):
+        """非同期バルク操作のテスト."""
+        import asyncio
+        
+        async def async_test():
+            async with AsyncDictSQLiteFastestBeta(self.db_path) as db:
+                # バルク挿入
+                data = {f'key_{i}': f'value_{i}' for i in range(100)}
+                await db.abulk_insert(data)
+                
+                # バルク取得
+                keys = [f'key_{i}' for i in range(0, 100, 10)]
+                results = await db.abulk_get(keys)
+                
+                assert len(results) == 10
+                assert results['key_0'] == 'value_0'
+        
+        asyncio.run(async_test())
+    
+    def test_async_with_memory_budget(self):
+        """非同期版でメモリ予算を使用したテスト."""
+        import asyncio
+        
+        async def async_test():
+            async with AsyncDictSQLiteFastestBeta(
+                self.db_path,
+                memory_budget_mb=10
+            ) as db:
+                # データ操作
+                await db.aset('key1', 'value1')
+                value = await db.aget('key1')
+                assert value == 'value1'
+                
+                # 統計確認
+                stats = db.get_beta_stats()
+                assert stats['config']['memory_budget_mb'] == 10
+        
+        asyncio.run(async_test())
+    
+    def test_async_prefetch(self):
+        """非同期版の先読みテスト."""
+        import asyncio
+        
+        async def async_test():
+            async with AsyncDictSQLiteFastestBeta(self.db_path) as db:
+                # データを準備
+                data = {f'user_{i}': f'data_{i}' for i in range(50)}
+                await db.abulk_insert(data)
+                await db.aflush()
+                
+                # 先読み
+                keys = [f'user_{i}' for i in range(10)]
+                await db.aprefetch_keys(keys)
+                
+                # 先読みされたデータに高速アクセス
+                value = await db.aget('user_5')
+                assert value == 'data_5'
+        
+        asyncio.run(async_test())
+
+
 def run_tests():
     """テストを実行（pytestがない場合の代替）."""
     import traceback
     
-    test_classes = [TestLRUCache, TestWriteBuffer, TestDictSQLiteFastestBeta]
+    test_classes = [TestLRUCache, TestWriteBuffer, TestDictSQLiteFastestBeta, TestAsyncDictSQLiteFastestBeta]
     
     total_tests = 0
     passed_tests = 0

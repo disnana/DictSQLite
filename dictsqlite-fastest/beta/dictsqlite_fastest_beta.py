@@ -976,3 +976,250 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             self.bulk_prefetch(prefix, limit=100)
         except Exception:
             pass  # エラーは無視
+
+
+# 非同期版のインポート
+try:
+    import asyncio
+    from dictsqlite_fastest.main import AsyncDictSQLiteFastest
+    
+    class AsyncDictSQLiteFastestBeta:
+        """非同期版DictSQLite-Fastest Beta - 非同期操作の高速化.
+        
+        同期版の全機能に加えて、非同期操作に最適化されています:
+        - 非同期バルク操作の最適化
+        - 共有キャッシュによる高速化
+        - 非同期バックグラウンドフラッシュ
+        
+        使用例:
+            >>> async def main():
+            ...     db = AsyncDictSQLiteFastestBeta('data.db', memory_budget_mb=256)
+            ...     await db.aset('key1', 'value1')
+            ...     value = await db.aget('key1')
+            ...     await db.aclose()
+        """
+        
+        def __init__(
+            self,
+            db_name: str,
+            table_name: str = 'main',
+            # Beta版のパラメータ
+            cache_capacity: int = 10000,
+            write_buffer_size: int = 1000,
+            write_buffer_interval: float = 5.0,
+            memory_only: bool = False,
+            aggressive_memory: bool = True,
+            memory_budget_mb: Optional[int] = None,
+            auto_load_threshold_mb: float = 10.0,
+            enable_background_flush: bool = True,
+            enable_hot_data_detection: bool = True,
+            # 非同期専用パラメータ
+            max_connections: int = 10,
+            enable_pipeline: bool = True,
+            **kwargs
+        ):
+            """
+            Args:
+                max_connections: 非同期接続プールのサイズ
+                enable_pipeline: パイプライン操作を有効化
+                その他のパラメータは同期版と同じ
+            """
+            # 同期版のベータインスタンスを内部で使用
+            self._sync_db = DictSQLiteFastestBeta(
+                db_name=db_name,
+                table_name=table_name,
+                cache_capacity=cache_capacity,
+                write_buffer_size=write_buffer_size,
+                write_buffer_interval=write_buffer_interval,
+                memory_only=memory_only,
+                aggressive_memory=aggressive_memory,
+                memory_budget_mb=memory_budget_mb,
+                auto_load_threshold_mb=auto_load_threshold_mb,
+                enable_background_flush=enable_background_flush,
+                enable_hot_data_detection=enable_hot_data_detection,
+                **kwargs
+            )
+            
+            # 非同期操作用のエグゼキュータ
+            self._executor = None
+            self._loop = None
+            
+            # 非同期ロック（キャッシュアクセス用）
+            self._async_cache_lock = asyncio.Lock()
+            
+            # 設定を保存
+            self.max_connections = max_connections
+            self.enable_pipeline = enable_pipeline
+        
+        async def aget(self, key: str, default: Any = None) -> Any:
+            """非同期でキーから値を取得.
+            
+            Args:
+                key: 取得するキー
+                default: キーが存在しない場合のデフォルト値
+                
+            Returns:
+                キーに対応する値、または存在しない場合はdefault
+            """
+            # キャッシュを先にチェック（同期的に高速）
+            cached_value = self._sync_db._cache.get(key)
+            if cached_value is not None:
+                with self._sync_db._stats_lock:
+                    self._sync_db._stats['cache_hits'] += 1
+                self._sync_db._track_access_frequency(key)
+                return cached_value
+            
+            # キャッシュミスの場合は非同期で読み込み
+            loop = asyncio.get_event_loop()
+            try:
+                value = await loop.run_in_executor(
+                    self._executor,
+                    self._sync_db.__getitem__,
+                    key
+                )
+                return value
+            except KeyError:
+                return default
+        
+        async def aset(self, key: str, value: Any) -> None:
+            """非同期でキーに値を設定.
+            
+            Args:
+                key: キー
+                value: 値
+            """
+            # キャッシュは即座に更新（同期的に高速）
+            self._sync_db._cache.put(key, value)
+            
+            # 書き込みバッファに追加（非同期）
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                self._executor,
+                self._sync_db.__setitem__,
+                key,
+                value
+            )
+        
+        async def adelete(self, key: str) -> None:
+            """非同期でキーを削除.
+            
+            Args:
+                key: 削除するキー
+            """
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                self._executor,
+                self._sync_db.__delitem__,
+                key
+            )
+        
+        async def abulk_get(self, keys: List[str]) -> dict:
+            """非同期でバルク取得.
+            
+            Args:
+                keys: 取得するキーのリスト
+                
+            Returns:
+                キーと値の辞書
+            """
+            # まずキャッシュから取得
+            result = {}
+            missing_keys = []
+            
+            for key in keys:
+                cached_value = self._sync_db._cache.get(key)
+                if cached_value is not None:
+                    result[key] = cached_value
+                else:
+                    missing_keys.append(key)
+            
+            # キャッシュミスは非同期で読み込み
+            if missing_keys:
+                loop = asyncio.get_event_loop()
+                disk_values = await loop.run_in_executor(
+                    self._executor,
+                    self._sync_db.bulk_get,
+                    missing_keys
+                )
+                result.update(disk_values)
+            
+            return result
+        
+        async def abulk_insert(self, items: dict) -> None:
+            """非同期でバルク挿入.
+            
+            Args:
+                items: 挿入するアイテムの辞書
+            """
+            # キャッシュは即座に更新
+            self._sync_db._cache.bulk_put(items)
+            
+            # ディスクへの書き込みは非同期で実行
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                self._executor,
+                self._sync_db.bulk_insert,
+                items
+            )
+        
+        async def aflush(self) -> None:
+            """非同期でバッファをフラッシュ."""
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                self._executor,
+                self._sync_db.flush
+            )
+        
+        async def aclose(self) -> None:
+            """非同期でデータベースを閉じる."""
+            await self.aflush()
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                self._executor,
+                self._sync_db.close
+            )
+        
+        def get_beta_stats(self) -> Dict[str, Any]:
+            """ベータ版の統計情報を取得（同期メソッド）."""
+            return self._sync_db.get_beta_stats()
+        
+        async def aprefetch_keys(self, keys: List[str]) -> None:
+            """非同期で指定したキーを先読み.
+            
+            Args:
+                keys: プリフェッチするキーのリスト
+            """
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                self._executor,
+                self._sync_db.prefetch_keys,
+                keys
+            )
+        
+        async def abulk_prefetch(self, key_pattern: str = None, limit: int = 1000) -> None:
+            """非同期でパターンマッチング先読み.
+            
+            Args:
+                key_pattern: SQLのLIKEパターン
+                limit: プリフェッチする最大キー数
+            """
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                self._executor,
+                self._sync_db.bulk_prefetch,
+                key_pattern,
+                limit
+            )
+        
+        async def __aenter__(self):
+            """非同期コンテキストマネージャのenter."""
+            return self
+        
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            """非同期コンテキストマネージャのexit."""
+            await self.aclose()
+            return False
+
+except ImportError:
+    # asyncioが利用できない場合はスキップ
+    AsyncDictSQLiteFastestBeta = None
