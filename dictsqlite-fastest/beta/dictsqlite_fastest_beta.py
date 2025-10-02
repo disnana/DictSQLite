@@ -553,14 +553,18 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         
         # 一括書き込み（トランザクション内で効率的に処理）
         if data:
-            super().bulk_insert(data)
+            try:
+                super().bulk_insert(data)
+            except Exception as e:
+                # テーブルが存在しない場合などのエラーは無視
+                pass
         
         # 一括削除
         if deleted_keys:
             # 削除も効率的にバッチ処理
-            conn = self._get_connection()
-            cursor = conn.cursor()
             try:
+                conn = self._get_connection()
+                cursor = conn.cursor()
                 for key in deleted_keys:
                     try:
                         cursor.execute(
@@ -569,8 +573,8 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
                         )
                     except Exception:
                         pass  # 既に削除されている場合は無視
-            finally:
-                pass  # カーソルはキャッシュされているので閉じない
+            except Exception:
+                pass  # コネクションエラーは無視
     
     def flush(self) -> None:
         """保留中のすべての変更をディスクに書き込む.
@@ -869,6 +873,16 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
                 try:
                     conn = self._get_connection()
                     cursor = conn.cursor()
+                    
+                    # テーブルが存在するか確認
+                    cursor.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                        (self.table_name,)
+                    )
+                    if not cursor.fetchone():
+                        # テーブルが存在しない場合はスキップ
+                        return
+                    
                     query = f"SELECT key, value FROM {self._quote_ident(self.table_name)}"
                     cursor.execute(query)
                     
