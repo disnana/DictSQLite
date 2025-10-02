@@ -35,6 +35,23 @@ class TestLRUCache:
         assert cache.get('key2') == 'value2'
         assert cache.get('key3') == 'value3'
     
+    def test_bulk_put(self):
+        """バルク追加のテスト."""
+        cache = LRUCache(capacity=10)
+        
+        # バルク追加
+        items = {f'key{i}': f'value{i}' for i in range(5)}
+        cache.bulk_put(items)
+        
+        # 取得
+        for i in range(5):
+            assert cache.get(f'key{i}') == f'value{i}'
+        
+        # 統計確認
+        stats = cache.get_stats()
+        assert stats['size'] == 5
+        assert stats['hits'] == 5
+    
     def test_capacity_limit(self):
         """容量制限のテスト."""
         cache = LRUCache(capacity=2)
@@ -248,9 +265,15 @@ class TestDictSQLiteFastestBeta:
             assert 'operations' in stats
             assert 'buffer' in stats
             assert 'config' in stats
+            assert 'performance' in stats  # 新機能
             
             assert stats['cache']['capacity'] == 100
             assert stats['config']['cache_capacity'] == 100
+            
+            # パフォーマンス指標の確認
+            assert 'cache_effectiveness' in stats['performance']
+            assert 'disk_savings_rate' in stats['performance']
+            assert 'total_operations' in stats['performance']
     
     def test_context_manager(self):
         """コンテキストマネージャのテスト."""
@@ -283,6 +306,30 @@ class TestDictSQLiteFastestBeta:
             # データ操作が正常に動作することを確認
             db['key1'] = 'value1'
             assert db['key1'] == 'value1'
+    
+    def test_bulk_prefetch(self):
+        """バルクプリフェッチのテスト."""
+        with DictSQLiteFastestBeta(self.db_path) as db:
+            # テストデータを準備
+            for i in range(20):
+                db[f'user_{i}'] = f'data_{i}'
+            for i in range(10):
+                db[f'product_{i}'] = f'item_{i}'
+            
+            db.flush()  # ディスクに書き込み
+            db.clear_cache()  # キャッシュをクリア
+            
+            # パターンマッチングでプリフェッチ
+            db.bulk_prefetch('user_%', limit=10)
+            
+            # キャッシュにロードされているか確認
+            stats = db.get_beta_stats()
+            cache_size = stats['cache']['size']
+            assert cache_size > 0  # 何かがキャッシュされている
+            
+            # プリフェッチされたデータに高速アクセス
+            value = db['user_5']
+            assert value == 'data_5'
 
 
 def run_tests():
