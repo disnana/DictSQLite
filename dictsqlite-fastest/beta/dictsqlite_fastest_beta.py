@@ -78,6 +78,24 @@ class LRUCache:
             if len(self.cache) > self.capacity:
                 self.cache.popitem(last=False)
     
+    def bulk_put(self, items: dict) -> None:
+        """複数のアイテムを一括でキャッシュに追加（高速化版）.
+        
+        Args:
+            items: 追加するアイテムの辞書
+        """
+        with self.lock:
+            for key, value in items.items():
+                if key in self.cache:
+                    self.cache.move_to_end(key)
+                self.cache[key] = value
+            
+            # 容量超過時は古いアイテムを一括削除
+            overflow = len(self.cache) - self.capacity
+            if overflow > 0:
+                for _ in range(overflow):
+                    self.cache.popitem(last=False)
+    
     def remove(self, key: str) -> None:
         """キャッシュからキーを削除.
         
@@ -262,6 +280,8 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             custom_pragma.update({
                 'temp_store': 'MEMORY',  # 一時ファイルをメモリに
                 'locking_mode': 'EXCLUSIVE',  # 排他ロックモード（高速化）
+                'synchronous': 'NORMAL',  # WALモードでは安全かつ高速
+                'wal_autocheckpoint': 10000,  # WAL自動チェックポイント（10000ページ）
             })
             kwargs['custom_pragma_settings'] = custom_pragma
         elif memory_only:
@@ -456,17 +476,26 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             self._stats['buffer_flushes'] += 1
             self._stats['disk_writes'] += len(data) + len(deleted_keys)
         
-        # 一括書き込み
+        # 一括書き込み（トランザクション内で効率的に処理）
         if data:
             super().bulk_insert(data)
         
         # 一括削除
         if deleted_keys:
-            for key in deleted_keys:
-                try:
-                    super().__delitem__(key)
-                except KeyError:
-                    pass  # 既に削除されている場合は無視
+            # 削除も効率的にバッチ処理
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            try:
+                for key in deleted_keys:
+                    try:
+                        cursor.execute(
+                            f"DELETE FROM {self._quote_ident(self.table_name)} WHERE key = ?",
+                            (key,)
+                        )
+                    except Exception:
+                        pass  # 既に削除されている場合は無視
+            finally:
+                pass  # カーソルはキャッシュされているので閉じない
     
     def flush(self) -> None:
         """保留中のすべての変更をディスクに書き込む.
@@ -475,6 +504,22 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         """
         if not self.memory_only:
             self._flush_write_buffer()
+            # WALチェックポイントを実行してメモリを最適化
+            if self.aggressive_memory:
+                self._optimize_wal_checkpoint()
+    
+    def _optimize_wal_checkpoint(self) -> None:
+        """WALチェックポイントを最適化してメモリ使用を改善.
+        
+        WALファイルが大きくなりすぎないように定期的にチェックポイントを実行します。
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            # TRUNCATEモードでチェックポイントを実行（メモリ効率が良い）
+            cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except Exception:
+            pass  # エラーは無視（チェックポイントは必須ではない）
     
     def close(self) -> None:
         """データベースを閉じる.
@@ -563,27 +608,81 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
                 except KeyError:
                     pass  # 存在しないキーは無視
     
+    def bulk_prefetch(self, key_pattern: str = None, limit: int = 1000) -> None:
+        """パターンマッチングで複数キーを先読み.
+        
+        アクセスパターンに基づいて関連するキーを一括でプリフェッチします。
+        
+        Args:
+            key_pattern: SQLのLIKEパターン（例: 'user_%'）
+            limit: プリフェッチする最大キー数
+        """
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            if key_pattern:
+                # パターンマッチングでキーを取得
+                query = f"SELECT key FROM {self._quote_ident(self.table_name)} WHERE key LIKE ? LIMIT ?"
+                cursor.execute(query, (key_pattern, limit))
+            else:
+                # すべてのキーを取得（上限付き）
+                query = f"SELECT key FROM {self._quote_ident(self.table_name)} LIMIT ?"
+                cursor.execute(query, (limit,))
+            
+            keys = [row[0] for row in cursor.fetchall()]
+            
+            # 取得したキーをプリフェッチ
+            if keys:
+                self.prefetch_keys(keys)
+                
+        except Exception:
+            pass  # エラーは無視
+    
     def bulk_insert(self, items: dict) -> None:
         """バルク挿入（最適化版）.
+        
+        大きなバルク操作では直接ディスクに書き込み、小さな操作はバッファリングします。
         
         Args:
             items: 挿入するアイテムの辞書
         """
-        # すべてキャッシュに追加
-        for key, value in items.items():
-            self._cache.put(key, value)
-        
-        if self.memory_only:
-            # メモリオンリーモードでは直接書き込み
-            super().bulk_insert(items)
-        else:
-            # バッファに追加
-            for key, value in items.items():
-                self._write_buffer.add(key, value)
+        if not items:
+            return
             
-            # 必要に応じてフラッシュ
-            if self._write_buffer._should_flush():
-                self._flush_write_buffer()
+        if self.memory_only:
+            # メモリオンリーモードでは直接書き込み（バッファなし）
+            super().bulk_insert(items)
+            # 書き込み後にキャッシュを一括更新（高速化）
+            self._cache.bulk_put(items)
+        else:
+            # 大きなバルク操作（100件以上）の場合は直接書き込み
+            # これによりバルク処理の速度を維持
+            if len(items) >= 100:
+                # 既存のバッファが空でない場合のみフラッシュ（高速化）
+                with self._write_buffer.lock:
+                    has_pending = len(self._write_buffer.buffer) > 0 or len(self._write_buffer.deleted_keys) > 0
+                
+                if has_pending:
+                    self._flush_write_buffer()
+                
+                # 大きなバルクは親クラスに委譲（最適化されたトランザクション処理）
+                # 統計は軽量に更新
+                super().bulk_insert(items)
+                with self._stats_lock:
+                    self._stats['disk_writes'] += len(items)
+                
+                # 書き込み後にキャッシュを一括更新（高速化）
+                self._cache.bulk_put(items)
+            else:
+                # 小さいバルク操作（<100件）はバッファに追加して遅延書き込み
+                self._cache.bulk_put(items)
+                for key, value in items.items():
+                    self._write_buffer.add(key, value)
+                
+                # バッファが閾値に達したらフラッシュ
+                if self._write_buffer._should_flush():
+                    self._flush_write_buffer()
     
     def bulk_get(self, keys: List[str]) -> dict:
         """バルク取得（キャッシュ優先）.
