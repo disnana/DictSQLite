@@ -326,9 +326,19 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             'cache_misses': 0,
             'disk_reads': 0,
             'disk_writes': 0,
-            'buffer_flushes': 0
+            'buffer_flushes': 0,
+            'operation_times': {
+                'read': [],
+                'write': [],
+                'bulk_read': [],
+                'bulk_write': []
+            }
         }
         self._stats_lock = Lock()
+        
+        # パフォーマンス最適化のための追加設定
+        self._operation_count = 0
+        self._auto_tune_interval = 10000  # 10000操作ごとに自動チューニング
     
     def _ensure_table_exists(self):
         """メモリデータベースでテーブルが存在することを確認（親クラスのバグ回避）."""
@@ -381,6 +391,11 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         
         # キャッシュに追加
         self._cache.put(key, value)
+        
+        # 定期的に自動チューニング
+        self._operation_count += 1
+        if self._operation_count % self._auto_tune_interval == 0:
+            self._auto_tune_parameters()
         
         return value
     
@@ -521,6 +536,24 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         except Exception:
             pass  # エラーは無視（チェックポイントは必須ではない）
     
+    def _auto_tune_parameters(self) -> None:
+        """アクセスパターンに基づいて自動的にパラメータを調整.
+        
+        キャッシュヒット率や操作パターンに基づいて、キャッシュサイズや
+        バッファサイズを動的に調整します。
+        """
+        cache_stats = self._cache.get_stats()
+        
+        # キャッシュヒット率が低い（<50%）場合、キャッシュを拡大
+        if cache_stats['hit_rate'] < 50 and cache_stats['size'] < 50000:
+            new_capacity = min(int(self._cache.capacity * 1.5), 50000)
+            self._cache.capacity = new_capacity
+        
+        # キャッシュヒット率が非常に高い（>95%）かつキャッシュが大きい場合、縮小
+        elif cache_stats['hit_rate'] > 95 and self._cache.capacity > 5000:
+            new_capacity = max(int(self._cache.capacity * 0.8), 5000)
+            self._cache.capacity = new_capacity
+    
     def close(self) -> None:
         """データベースを閉じる.
         
@@ -554,6 +587,8 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             - cache: キャッシュ統計
             - operations: 操作統計（読み書き、フラッシュ回数など）
             - buffer: バッファの状態（メモリオンリーモードでは None）
+            - config: 設定情報
+            - performance: パフォーマンス指標
         """
         cache_stats = self._cache.get_stats()
         
@@ -569,6 +604,13 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         
         with self._stats_lock:
             operation_stats = self._stats.copy()
+            
+            # パフォーマンス指標を計算
+            total_reads = cache_stats['hits'] + cache_stats['misses']
+            cache_effectiveness = (cache_stats['hit_rate'] / 100.0) if total_reads > 0 else 0
+            
+            # ディスクアクセス削減率
+            disk_savings = 1.0 - (operation_stats['disk_reads'] / total_reads) if total_reads > 0 else 0
         
         return {
             'cache': cache_stats,
@@ -577,7 +619,14 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             'config': {
                 'memory_only': self.memory_only,
                 'aggressive_memory': self.aggressive_memory,
-                'cache_capacity': self.cache_capacity
+                'cache_capacity': self.cache_capacity,
+                'write_buffer_size': self.write_buffer_size,
+                'auto_tune_interval': self._auto_tune_interval
+            },
+            'performance': {
+                'cache_effectiveness': cache_effectiveness,
+                'disk_savings_rate': disk_savings,
+                'total_operations': self._operation_count
             }
         }
     

@@ -11,27 +11,42 @@ DictSQLite-Fastest Betaは、ディスクアクセスを最小限に抑え、メ
 - デフォルトで10,000アイテムをキャッシュ
 - スレッドセーフな実装
 - キャッシュヒット率の統計情報を提供
+- **新機能**: `bulk_put()`メソッドで高速なバッチキャッシュ更新
 
 ### 2. 書き込みバッファリング（遅延書き込み）
 - 小さな書き込みをメモリに蓄積
 - 一定量または一定時間経過後に一括でディスクに書き込み
 - ディスクI/Oの回数を大幅に削減
+- **新機能**: 大きなバルク操作（100件以上）は直接書き込みでパフォーマンス維持
 
 ### 3. アグレッシブなメモリPRAGMA設定
 - `cache_size`: 256MB（デフォルト）
 - `mmap_size`: 1GB（デフォルト）
-- `journal_mode`: MEMORY
+- `journal_mode`: WAL（Write-Ahead Logging）
 - `temp_store`: MEMORY
 - `locking_mode`: EXCLUSIVE
+- **新機能**: `synchronous`: NORMAL（WALモードでの最適化）
+- **新機能**: `wal_autocheckpoint`: 10000ページ（メモリ効率の改善）
 
 ### 4. 先読みキャッシング
 - `prefetch_keys()`メソッドで関連データを事前にキャッシュ
 - バルク操作を使用した効率的な読み込み
+- **新機能**: `bulk_prefetch(key_pattern, limit)`でパターンマッチング先読み
 
 ### 5. メモリオンリーモード（オプション）
 - 完全にメモリ内で動作（ディスク書き込みなし）
 - 最高速度を実現
 - 一時的なデータ処理に最適
+
+### 6. 自動チューニング（新機能）
+- アクセスパターンに基づいてキャッシュサイズを自動調整
+- キャッシュヒット率が50%未満の場合、キャッシュを拡大
+- キャッシュヒット率が95%以上の場合、メモリを節約するためキャッシュを縮小
+- 10,000操作ごとに自動的に実行
+
+### 7. WALチェックポイント最適化（新機能）
+- `_optimize_wal_checkpoint()`メソッドで明示的にWALチェックポイントを実行
+- メモリ使用量を最適化し、WALファイルの肥大化を防止
 
 ## インストール
 
@@ -115,22 +130,51 @@ with DictSQLiteFastestBeta('data.db') as db:
     for key in related_keys:
         user = db[key]
         process_user(user)
+    
+    # 新機能: パターンマッチングで一括プリフェッチ
+    db.bulk_prefetch('user_%', limit=100)  # user_で始まるキーを100件プリフェッチ
 ```
 
 ### バルク操作の活用
 
 ```python
 with DictSQLiteFastestBeta('bulk.db') as db:
-    # バルク挿入（キャッシュに追加 + バッファに蓄積）
+    # バルク挿入（大きなバルク操作は自動的に直接書き込みで高速化）
     data = {f'item_{i}': {'value': i} for i in range(10000)}
-    db.bulk_insert(data)
+    db.bulk_insert(data)  # 100件以上は直接ディスクに書き込み
     
     # バルク取得（キャッシュ優先）
     keys = [f'item_{i}' for i in range(0, 1000, 10)]
     results = db.bulk_get(keys)
     
-    # 最後にフラッシュ
+    # 最後にフラッシュ（WALチェックポイントも実行）
     db.flush()
+```
+
+### パフォーマンス統計の活用（新機能）
+
+```python
+with DictSQLiteFastestBeta('stats.db') as db:
+    # データ操作
+    for i in range(1000):
+        db[f'key_{i}'] = f'value_{i}'
+    
+    # 詳細な統計情報を取得
+    stats = db.get_beta_stats()
+    
+    # キャッシュ統計
+    print(f"キャッシュヒット率: {stats['cache']['hit_rate']:.2f}%")
+    print(f"キャッシュサイズ: {stats['cache']['size']}/{stats['cache']['capacity']}")
+    
+    # 操作統計
+    print(f"ディスク読み込み: {stats['operations']['disk_reads']}")
+    print(f"ディスク書き込み: {stats['operations']['disk_writes']}")
+    print(f"バッファフラッシュ: {stats['operations']['buffer_flushes']}")
+    
+    # パフォーマンス指標（新機能）
+    print(f"キャッシュ効率: {stats['performance']['cache_effectiveness']:.2%}")
+    print(f"ディスク削減率: {stats['performance']['disk_savings_rate']:.2%}")
+    print(f"総操作数: {stats['performance']['total_operations']}")
 ```
 
 ## 統計情報の活用
