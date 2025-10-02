@@ -251,11 +251,11 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             db_name = ':memory:'
         
         # アグレッシブなメモリ設定を適用
-        if aggressive_memory:
-            # デフォルト値を上書き
+        if aggressive_memory and not memory_only:
+            # デフォルト値を上書き（メモリオンリーモードでない場合のみ）
             kwargs.setdefault('cache_size', -256000)  # 256MB cache
             kwargs.setdefault('mmap_size', 1073741824)  # 1GB mmap
-            kwargs.setdefault('journal_mode', 'MEMORY')  # メモリジャーナル
+            kwargs.setdefault('journal_mode', 'WAL')  # WALモード
             
             # カスタムPRAGMA設定
             custom_pragma = kwargs.get('custom_pragma_settings', {})
@@ -264,9 +264,22 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
                 'locking_mode': 'EXCLUSIVE',  # 排他ロックモード（高速化）
             })
             kwargs['custom_pragma_settings'] = custom_pragma
+        elif memory_only:
+            # メモリオンリーモードでは軽量な設定（WALをOFFに）
+            kwargs.setdefault('cache_size', -64000)  # 64MB cache
+            kwargs.setdefault('journal_mode', 'OFF')  # ジャーナルなし（メモリのみなので不要）
+            custom_pragma = kwargs.get('custom_pragma_settings', {})
+            custom_pragma.update({
+                'temp_store': 'MEMORY',
+            })
+            kwargs['custom_pragma_settings'] = custom_pragma
         
         # 親クラスの初期化
         super().__init__(db_name, table_name=table_name, **kwargs)
+        
+        # メモリオンリーモードの場合、テーブルが作成されていない可能性があるので確認
+        if memory_only or db_name == ':memory:':
+            self._ensure_table_exists()
         
         # ベータ版専用の属性
         self.cache_capacity = cache_capacity
@@ -296,6 +309,20 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             'buffer_flushes': 0
         }
         self._stats_lock = Lock()
+    
+    def _ensure_table_exists(self):
+        """メモリデータベースでテーブルが存在することを確認（親クラスのバグ回避）."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            # テーブルが存在するか確認
+            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name=?", (self.table_name,))
+            if not cursor.fetchone():
+                # テーブルが存在しない場合は作成
+                schema = f'CREATE TABLE IF NOT EXISTS {self._quote_ident(self.table_name)} (key TEXT PRIMARY KEY, value TEXT)'
+                cursor.execute(schema)
+        finally:
+            pass  # カーソルは閉じない（キャッシュされている）
     
     def __getitem__(self, key: str) -> Any:
         """キーから値を取得（キャッシュ優先）.

@@ -202,7 +202,7 @@ class TestDictSQLiteFastestBeta:
     
     def test_memory_only_mode(self):
         """メモリオンリーモードのテスト."""
-        with DictSQLiteFastestBeta(':memory:', memory_only=True) as db:
+        with DictSQLiteFastestBeta(':memory:', table_name='test_table', memory_only=True) as db:
             db['key1'] = 'value1'
             db['key2'] = 'value2'
             
