@@ -119,6 +119,16 @@ class AdvancedConnectionPool:
 
         if db_args.get('journal_mode') == 'WAL':
             conn.pragma("wal_autocheckpoint", db_args.get('wal_autocheckpoint', 1000))
+            # WAL最適化: メモリ優先設定
+            if db_args.get('enable_memory_optimization', True):
+                conn.pragma("locking_mode", "EXCLUSIVE")  # 排他ロックでWAL性能向上
+                conn.pragma("journal_size_limit", 67108864)  # 64MB WALサイズ上限
+
+        # メモリ最適化設定
+        if db_args.get('enable_memory_optimization', True):
+            conn.pragma("secure_delete", "OFF")  # セキュア削除無効で高速化
+            conn.pragma("read_uncommitted", "ON")  # 未コミット読み取りで性能向上
+            conn.pragma("cell_size_check", "OFF")  # セルサイズチェック無効
 
         # カスタムPRAGMA設定
         custom_settings = db_args.get('custom_pragma_settings', {})
@@ -239,8 +249,8 @@ class APSWBulkOperator:
         if not keys:
             return {}
 
-        # 大量のキーの場合は分割処理
-        chunk_size = 500  # SQLiteのIN句制限対策
+        # 大量のキーの場合は分割処理（メモリ効率とパフォーマンスのバランス）
+        chunk_size = 999  # SQLiteのIN句制限対策（最大999パラメータ）
         results = {}
 
         cursor = self.connection.cursor()
@@ -267,8 +277,8 @@ class APSWBulkOperator:
         try:
             cursor.execute("BEGIN IMMEDIATE")
 
-            # 分割削除で制限回避
-            chunk_size = 500
+            # 分割削除で制限回避（メモリ効率とパフォーマンスのバランス）
+            chunk_size = 999  # SQLiteのIN句制限対策（最大999パラメータ）
             for i in range(0, len(keys), chunk_size):
                 chunk_keys = keys[i:i + chunk_size]
                 placeholders = ','.join('?' * len(chunk_keys))
@@ -671,6 +681,18 @@ class DictSQLiteFastest:
         if self.journal_mode == "WAL":
             conn.pragma("wal_autocheckpoint", self.wal_autocheckpoint)
             conn.pragma("wal_checkpoint_threshold", 1000)  # WAL閾値設定
+            # WAL最適化: より積極的なメモリ利用
+            if self.enable_memory_optimization:
+                conn.pragma("locking_mode", "EXCLUSIVE")  # 排他ロックでWAL性能向上
+                conn.pragma("journal_size_limit", 67108864)  # 64MB WALサイズ上限
+
+        # メモリ最適化設定（追加の高速化）
+        if self.enable_memory_optimization:
+            conn.pragma("secure_delete", "OFF")  # セキュア削除無効で高速化
+            conn.pragma("read_uncommitted", "ON")  # 未コミット読み取りで性能向上
+            conn.pragma("cell_size_check", "OFF")  # セルサイズチェック無効
+            # クエリプランナー最適化
+            conn.pragma("optimize", 0x10002)  # クエリプランナーの統計を更新
 
         # カスタム設定適用
         for key, value in self.custom_pragma_settings.items():
@@ -1328,16 +1350,18 @@ class DictSQLiteFastest:
         item_count = len(items) if hasattr(items, '__len__') else len(list(items))
 
         if auto_optimize:
-            if item_count < 100:
+            if item_count < 50:
                 # 少量データは通常の個別挿入で十分
                 for key, value in (items.items() if hasattr(items, 'items') else items):
                     self[key] = value
-            elif item_count < 1000:
+            elif item_count < 500:
                 # 中量データはexecutemanyが高速
                 self.bulk_insert_executemany(items)
             else:
-                # 大量データはチャンク処理で安全に
-                self.bulk_insert_chunked(items, chunk_size=min(1000, item_count // 10))
+                # 大量データはチャンク処理で安全に（メモリ効率重視）
+                # より大きなチャンクサイズでメモリを活用
+                optimal_chunk_size = min(2000, max(500, item_count // 20))
+                self.bulk_insert_chunked(items, chunk_size=optimal_chunk_size)
         else:
             # 従来のメソッドを使用
             self.bulk_insert(items)
@@ -1398,15 +1422,13 @@ class DictSQLiteFastest:
                 chunk.append((key, value_str))
 
                 if len(chunk) >= chunk_size:
-                    # チャンクを挿入
-                    for k, v in chunk:
-                        cursor.execute(self._insert_stmt, (k, v))
+                    # executemanyでチャンクを一括挿入（パフォーマンス向上）
+                    cursor.executemany(self._insert_stmt, chunk)
                     chunk = []
 
             # 残りのチャンクを処理
             if chunk:
-                for k, v in chunk:
-                    cursor.execute(self._insert_stmt, (k, v))
+                cursor.executemany(self._insert_stmt, chunk)
 
             cursor.execute("COMMIT")
         except Exception:
@@ -1420,18 +1442,24 @@ class DictSQLiteFastest:
         if not keys:
             return {}
 
-        # 再利用可能なカーソルを使用
-        # IN句を使用した効率的な一括検索
-        placeholders = ','.join('?' * len(keys))
-        query = f"SELECT key, value FROM {self._quote_ident(self.table_name)} WHERE key IN ({placeholders})"
-
+        # 大量のキーの場合はチャンク処理で安全に
+        keys_list = list(keys) if not isinstance(keys, list) else keys
+        chunk_size = 999  # SQLiteのIN句制限対策（最大999パラメータ）
+        
         results = {}
-        for key, value_str in self._execute_with_cursor(query, list(keys)):
-            if self.storage_mode == 'pickle':
-                value = pickle.loads(base64.b64decode(value_str.encode('ascii')))
-            else:  # json
-                value = json.loads(value_str, object_hook=self._extended_json_decoder_hook)
-            results[key] = value
+        
+        # チャンク単位で処理
+        for i in range(0, len(keys_list), chunk_size):
+            chunk_keys = keys_list[i:i + chunk_size]
+            placeholders = ','.join('?' * len(chunk_keys))
+            query = f"SELECT key, value FROM {self._quote_ident(self.table_name)} WHERE key IN ({placeholders})"
+            
+            for key, value_str in self._execute_with_cursor(query, chunk_keys):
+                if self.storage_mode == 'pickle':
+                    value = pickle.loads(base64.b64decode(value_str.encode('ascii')))
+                else:  # json
+                    value = json.loads(value_str, object_hook=self._extended_json_decoder_hook)
+                results[key] = value
 
         return results
 
@@ -1446,10 +1474,15 @@ class DictSQLiteFastest:
             # トランザクション開始で高速化
             cursor.execute("BEGIN IMMEDIATE")
 
-            # IN句を使用した効率的な一括削除
-            placeholders = ','.join('?' * len(keys))
-            query = f"DELETE FROM {self._quote_ident(self.table_name)} WHERE key IN ({placeholders})"
-            cursor.execute(query, list(keys))
+            # 大量のキーの場合はチャンク処理で安全に
+            keys_list = list(keys) if not isinstance(keys, list) else keys
+            chunk_size = 999  # SQLiteのIN句制限対策（最大999パラメータ）
+            
+            for i in range(0, len(keys_list), chunk_size):
+                chunk_keys = keys_list[i:i + chunk_size]
+                placeholders = ','.join('?' * len(chunk_keys))
+                query = f"DELETE FROM {self._quote_ident(self.table_name)} WHERE key IN ({placeholders})"
+                cursor.execute(query, chunk_keys)
 
             # トランザクションをコミット
             cursor.execute("COMMIT")
