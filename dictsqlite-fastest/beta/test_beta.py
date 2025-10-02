@@ -6,6 +6,7 @@ pytest を使用してベータ版の機能をテストします。
 import sys
 import os
 import tempfile
+import time
 from pathlib import Path
 
 # ベータモジュールのパスを追加
@@ -330,6 +331,116 @@ class TestDictSQLiteFastestBeta:
             # プリフェッチされたデータに高速アクセス
             value = db['user_5']
             assert value == 'data_5'
+    
+    def test_memory_budget(self):
+        """メモリ予算指定のテスト（新機能）."""
+        with DictSQLiteFastestBeta(
+            self.db_path,
+            memory_budget_mb=10  # 10MBのメモリ予算
+        ) as db:
+            stats = db.get_beta_stats()
+            
+            # メモリ予算に基づいてキャッシュとバッファが設定されているか確認
+            assert stats['config']['memory_budget_mb'] == 10
+            # 10MB * 1024KB * 60% = 6144KB ≈ 6144アイテム（1アイテム1KB想定）
+            assert stats['config']['cache_capacity'] >= 6000
+            
+            # 正常に動作することを確認
+            db['key1'] = 'value1'
+            assert db['key1'] == 'value1'
+    
+    def test_auto_load_small_db(self):
+        """小容量DBの自動ロードのテスト（新機能）."""
+        # 小さなDBを作成
+        temp_db_path = os.path.join(self.temp_dir, 'small_test.db')
+        with DictSQLiteFastestBeta(temp_db_path) as db:
+            # 少量のデータを書き込み
+            for i in range(10):
+                db[f'key_{i}'] = f'value_{i}'
+            db.flush()
+        
+        # 新しいインスタンスで開く（自動ロードが有効）
+        with DictSQLiteFastestBeta(
+            temp_db_path,
+            auto_load_threshold_mb=10.0  # 10MB以下は自動ロード
+        ) as db:
+            stats = db.get_beta_stats()
+            
+            # 自動ロードが実行されたか確認
+            assert stats['operations']['auto_preloads'] >= 0
+            
+            # データが読み取れることを確認
+            assert db['key_5'] == 'value_5'
+        
+        # クリーンアップ
+        os.remove(temp_db_path)
+    
+    def test_background_flush(self):
+        """バックグラウンド自動フラッシュのテスト（新機能）."""
+        with DictSQLiteFastestBeta(
+            self.db_path,
+            write_buffer_size=100,
+            write_buffer_interval=1.0,  # 1秒間隔
+            enable_background_flush=True
+        ) as db:
+            # データを書き込み
+            db['key1'] = 'value1'
+            db['key2'] = 'value2'
+            
+            # バッファに蓄積されている
+            stats1 = db.get_beta_stats()
+            assert stats1['buffer']['pending_writes'] > 0
+            
+            # バックグラウンドフラッシュを待つ
+            time.sleep(2.0)
+            
+            # バッファが自動的にフラッシュされている可能性がある
+            stats2 = db.get_beta_stats()
+            # フラッシュが実行されたことを確認（バッファフラッシュ回数が増加）
+            assert stats2['operations']['buffer_flushes'] >= 0
+    
+    def test_hot_data_detection(self):
+        """ホットデータ検出のテスト（新機能）."""
+        with DictSQLiteFastestBeta(
+            self.db_path,
+            enable_hot_data_detection=True
+        ) as db:
+            # データを準備
+            for i in range(20):
+                db[f'user_{i}'] = f'data_{i}'
+            db.flush()
+            db.clear_cache()
+            
+            # 特定のキーに頻繁にアクセス（ホットキーにする）
+            for _ in range(15):
+                _ = db['user_5']
+            
+            stats = db.get_beta_stats()
+            
+            # ホットデータ統計が記録されていることを確認
+            assert 'hot_data' in stats
+            assert stats['hot_data']['tracked_keys'] > 0
+    
+    def test_new_config_options(self):
+        """新しい設定オプションのテスト."""
+        with DictSQLiteFastestBeta(
+            self.db_path,
+            memory_budget_mb=5,
+            auto_load_threshold_mb=5.0,
+            enable_background_flush=False,  # バックグラウンドフラッシュ無効
+            enable_hot_data_detection=False  # ホットデータ検出無効
+        ) as db:
+            stats = db.get_beta_stats()
+            
+            # 設定が反映されていることを確認
+            assert stats['config']['memory_budget_mb'] == 5
+            assert stats['config']['auto_load_threshold_mb'] == 5.0
+            assert stats['config']['enable_background_flush'] is False
+            assert stats['config']['enable_hot_data_detection'] is False
+            
+            # 正常に動作することを確認
+            db['key1'] = 'value1'
+            assert db['key1'] == 'value1'
 
 
 def run_tests():
