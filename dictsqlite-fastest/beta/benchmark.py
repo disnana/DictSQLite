@@ -70,7 +70,10 @@ def benchmark_mixed_operations(db, num_items):
     
     # 読み込み
     for i in range(num_items // 4):
-        _ = db.get(f'mixed_key_{i}', None)
+        try:
+            _ = db[f'mixed_key_{i}']
+        except KeyError:
+            pass
     
     # 削除
     for i in range(num_items // 4):
@@ -101,6 +104,14 @@ def run_benchmark_suite(name, db_factory, num_items=1000):
     # 個別読み込み（最初の読み込み - キャッシュコールド）
     print(f"\n2. 個別読み込み - 初回 ({num_items}件)...")
     with db_factory() as db:
+        # データを準備
+        for i in range(num_items):
+            db[f'key_{i}'] = {'id': i, 'value': f'value_{i}', 'data': 'x' * 100}
+        if hasattr(db, 'flush'):
+            db.flush()
+        if hasattr(db, 'clear_cache'):
+            db.clear_cache()
+        
         time_taken = benchmark_read(db, num_items)
         results['individual_read_cold'] = time_taken
         print(f"   完了: {time_taken:.4f}秒 ({num_items/time_taken:.0f}件/秒)")
@@ -108,6 +119,12 @@ def run_benchmark_suite(name, db_factory, num_items=1000):
     # 個別読み込み（2回目 - キャッシュホット）
     print(f"\n3. 個別読み込み - 2回目 ({num_items}件)...")
     with db_factory() as db:
+        # データを準備
+        for i in range(num_items):
+            db[f'key_{i}'] = {'id': i, 'value': f'value_{i}', 'data': 'x' * 100}
+        if hasattr(db, 'flush'):
+            db.flush()
+        
         # 最初に読み込んでキャッシュをウォームアップ
         for i in range(num_items):
             _ = db[f'key_{i}']
@@ -129,6 +146,12 @@ def run_benchmark_suite(name, db_factory, num_items=1000):
     # バルク読み込み
     print(f"\n5. バルク読み込み ({num_items}件)...")
     with db_factory() as db:
+        # データを準備
+        data = {f'bulk_key_{i}': {'id': i, 'value': f'value_{i}'} for i in range(num_items)}
+        db.bulk_insert(data)
+        if hasattr(db, 'flush'):
+            db.flush()
+        
         time_taken = benchmark_bulk_read(db, num_items)
         results['bulk_read'] = time_taken
         print(f"   完了: {time_taken:.4f}秒 ({num_items/time_taken:.0f}件/秒)")
