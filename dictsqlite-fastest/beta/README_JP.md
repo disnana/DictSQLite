@@ -4,6 +4,39 @@
 
 DictSQLite-Fastest Betaは、ディスクアクセスを最小限に抑え、メモリからのアクセスを最大化することで最高のパフォーマンスを実現するベータ版です。
 
+## 🎉 2024年12月の新機能
+
+### 1. メモリ予算ベースの自動最適化
+```python
+db = DictSQLiteFastestBeta('data.db', memory_budget_mb=512)
+# 自動的にキャッシュとバッファサイズを最適化
+```
+
+### 2. 小容量データベースの完全メモリロード
+```python
+db = DictSQLiteFastestBeta('small.db', auto_load_threshold_mb=10.0)
+# 10MB以下のDBは起動時に全データをメモリにロード → 超高速アクセス
+```
+
+### 3. バックグラウンド自動フラッシュ
+```python
+db = DictSQLiteFastestBeta('data.db', enable_background_flush=True)
+# メインスレッドをブロックせずに自動的にバッファをフラッシュ
+```
+
+### 4. ホットデータ検出と自動プリフェッチ
+```python
+db = DictSQLiteFastestBeta('data.db', enable_hot_data_detection=True)
+# 頻繁にアクセスされるデータを自動検出し、関連データを先読み
+```
+
+### 5. 非同期操作の最適化
+```python
+async with AsyncDictSQLiteFastestBeta('data.db', memory_budget_mb=256) as db:
+    await db.aset('key1', 'value1')
+    value = await db.aget('key1')
+```
+
 ## 主な最適化戦略
 
 ### 1. LRUキャッシュ
@@ -327,5 +360,37 @@ if stats['cache']['hit_rate'] < 50:
 ## まとめ
 
 DictSQLite-Fastest Betaは、メモリ最優先のアーキテクチャにより、通常版よりもさらに高速なパフォーマンスを実現します。適切な設定により、特定のワークロードで劇的な性能向上が期待できます。
+
+## 📚 関連ドキュメント
+
+- **IMPROVEMENTS_2024_JP.md** - 2024年12月の新機能詳細ドキュメント
+- **COMPLETION_REPORT_JP.md** - プロジェクト完成報告書
+- **demo_new_features_2024.py** - 新機能のデモプログラム
+- **test_beta.py** - 包括的なテストスイート
+
+## 🚀 クイックスタート（新機能）
+
+```python
+from dictsqlite_fastest_beta import DictSQLiteFastestBeta
+
+# すべての新機能を有効化した最適設定
+db = DictSQLiteFastestBeta(
+    'data.db',
+    memory_budget_mb=512,          # メモリ予算: 512MB
+    auto_load_threshold_mb=10.0,   # 10MB以下は自動ロード
+    enable_background_flush=True,  # バックグラウンド自動フラッシュ
+    enable_hot_data_detection=True # ホットデータ検出
+)
+
+with db:
+    # 通常通り使用 - 自動的に最適化されます
+    db['key'] = 'value'
+    value = db['key']
+    
+    # 統計確認
+    stats = db.get_beta_stats()
+    print(f"キャッシュヒット率: {stats['cache']['hit_rate']:.2f}%")
+    print(f"ホットキー数: {stats['hot_data']['hot_keys_count']}")
+```
 
 ベータ版のため、本番環境での使用前に十分なテストを行ってください。
