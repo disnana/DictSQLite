@@ -130,7 +130,7 @@ def key_create(
     """RSA鍵ペアを生成し、AESで暗号化してPEMファイルとして保存する。"""
     if password is None:
         raise ValueError("Password is required for key generation. Do not use default passwords.")
-    
+
     # 4096ビットのRSA鍵ペアの生成
     private_key = rsa.generate_private_key(
         public_exponent=65537,

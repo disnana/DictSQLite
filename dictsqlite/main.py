@@ -3,7 +3,7 @@
 import base64
 import collections.abc
 import json
-import pickle  # nosec B403 - Using secure SafeUnpickler with restricted policies for data serialization
+import pickle  # nosec B403 - safe unpickler
 import queue
 import random
 import secrets
