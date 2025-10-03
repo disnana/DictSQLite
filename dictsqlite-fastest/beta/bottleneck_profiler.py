@@ -7,6 +7,7 @@ import sys
 import os
 from pathlib import Path
 import time
+import tempfile
 
 # ベータモジュールのパスを追加
 sys.path.insert(0, str(Path(__file__).parent))
@@ -14,6 +15,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dictsqlite_fastest.main import DictSQLiteFastest
 from dictsqlite_fastest_beta import DictSQLiteFastestBeta
+
+# テスト用のデータベースファイル
+temp_dir = tempfile.gettempdir()
+standard_db = os.path.join(temp_dir, 'profile_standard.db')
+beta_db = os.path.join(temp_dir, 'profile_beta.db')
 
 
 def profile_function(func, name):
@@ -45,14 +51,14 @@ def profile_function(func, name):
 
 def test_standard_write():
     """標準版の書き込みテスト"""
-    with DictSQLiteFastest(':memory:') as db:
+    with DictSQLiteFastest(standard_db) as db:
         for i in range(1000):
             db[f'key_{i}'] = {'id': i, 'value': f'value_{i}', 'data': 'x' * 100}
 
 
 def test_standard_read():
     """標準版の読み込みテスト"""
-    with DictSQLiteFastest(':memory:') as db:
+    with DictSQLiteFastest(standard_db) as db:
         # データを準備
         for i in range(1000):
             db[f'key_{i}'] = {'id': i, 'value': f'value_{i}'}
@@ -120,35 +126,35 @@ def analyze_cache_overhead():
     print('='*60)
     
     # Beta版（キャッシュ有効）
-    db_beta = DictSQLiteFastestBeta(':memory:', cache_capacity=10000)
-    for i in range(1000):
-        db_beta[f'key_{i}'] = f'value_{i}'
-    
-    start = time.perf_counter()
-    for i in range(1000):
-        _ = db_beta[f'key_{i}']
-    beta_time = time.perf_counter() - start
+    with DictSQLiteFastestBeta(':memory:', cache_capacity=10000, memory_only=True) as db_beta:
+        for i in range(1000):
+            db_beta[f'key_{i}'] = f'value_{i}'
+        
+        start = time.perf_counter()
+        for i in range(1000):
+            _ = db_beta[f'key_{i}']
+        beta_time = time.perf_counter() - start
+        
+        # Beta版の統計
+        stats = db_beta.get_beta_stats()
+        print(f"Beta版の読み込み時間（2回目）: {beta_time:.4f}秒")
+        print(f"\nBeta版統計:")
+        print(f"  キャッシュヒット率: {stats['cache']['hit_rate']:.2f}%")
+        print(f"  キャッシュヒット数: {stats['cache']['hits']}")
+        print(f"  キャッシュミス数: {stats['cache']['misses']}")
     
     # 標準版（キャッシュなし）
-    db_standard = DictSQLiteFastest(':memory:')
-    for i in range(1000):
-        db_standard[f'key_{i}'] = f'value_{i}'
-    
-    start = time.perf_counter()
-    for i in range(1000):
-        _ = db_standard[f'key_{i}']
-    standard_time = time.perf_counter() - start
-    
-    print(f"標準版の読み込み時間: {standard_time:.4f}秒")
-    print(f"Beta版の読み込み時間（2回目）: {beta_time:.4f}秒")
-    print(f"キャッシュによる高速化: {standard_time / beta_time:.2f}倍")
-    
-    # Beta版の統計
-    stats = db_beta.get_beta_stats()
-    print(f"\nBeta版統計:")
-    print(f"  キャッシュヒット率: {stats['cache']['hit_rate']:.2f}%")
-    print(f"  キャッシュヒット数: {stats['cache']['hits']}")
-    print(f"  キャッシュミス数: {stats['cache']['misses']}")
+    with DictSQLiteFastest(standard_db) as db_standard:
+        for i in range(1000):
+            db_standard[f'key_{i}'] = f'value_{i}'
+        
+        start = time.perf_counter()
+        for i in range(1000):
+            _ = db_standard[f'key_{i}']
+        standard_time = time.perf_counter() - start
+        
+        print(f"\n標準版の読み込み時間: {standard_time:.4f}秒")
+        print(f"キャッシュによる高速化: {standard_time / beta_time:.2f}倍")
 
 
 def main():
@@ -189,9 +195,17 @@ def main():
     print("  3. 書き込みバッファの管理コスト")
     
     print("\n最適化の推奨:")
-    print("  • 読み込み中心 → Beta版（21倍高速化）")
-    print("  • 大規模バルク書き込み → 標準版")
-    print("  • 混合ワークロード → Beta版（59倍高速化）")
+    print("  - 読み込み中心 -> Beta版（21倍高速化）")
+    print("  - 大規模バルク書き込み -> 標準版")
+    print("  - 混合ワークロード -> Beta版（59倍高速化）")
+    
+    # クリーンアップ
+    for db_file in [standard_db, beta_db]:
+        if os.path.exists(db_file):
+            try:
+                os.remove(db_file)
+            except:
+                pass
 
 
 if __name__ == '__main__':
