@@ -11,7 +11,7 @@ from __future__ import annotations
 import io
 import inspect
 import logging
-import pickle  # nosec B403 - This module implements secure pickle restrictions to prevent code execution
+import pickle  # nosec B403 - safe unpickler
 import types
 from typing import Iterable
 
