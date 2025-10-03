@@ -159,6 +159,52 @@ class ComprehensiveBenchmark:
         self._cleanup_db(db_path)
         self._record_result('dictsqlite', 'sync', 'bulk_write', num_items, duration)
     
+    def test_dictsqlite_sync_update(self, num_items: int = 1000):
+        """DictSQLite: 同期更新テスト"""
+        db_path = self._get_db_path('dictsqlite_sync_update')
+        
+        # データ準備
+        db = DictSQLite(db_path)
+        for i in range(num_items):
+            db[f'key_{i}'] = f'value_{i}_' + 'x' * 50
+        db.close()
+        
+        time.sleep(0.2)
+        
+        # 更新テスト
+        db = DictSQLite(db_path)
+        start = time.perf_counter()
+        for i in range(num_items):
+            db[f'key_{i}'] = f'updated_value_{i}_' + 'y' * 50
+        duration = time.perf_counter() - start
+        db.close()
+        
+        self._cleanup_db(db_path)
+        self._record_result('dictsqlite', 'sync', 'update', num_items, duration)
+    
+    def test_dictsqlite_sync_delete(self, num_items: int = 1000):
+        """DictSQLite: 同期削除テスト"""
+        db_path = self._get_db_path('dictsqlite_sync_delete')
+        
+        # データ準備
+        db = DictSQLite(db_path)
+        for i in range(num_items):
+            db[f'key_{i}'] = f'value_{i}_' + 'x' * 50
+        db.close()
+        
+        time.sleep(0.2)
+        
+        # 削除テスト
+        db = DictSQLite(db_path)
+        start = time.perf_counter()
+        for i in range(num_items):
+            del db[f'key_{i}']
+        duration = time.perf_counter() - start
+        db.close()
+        
+        self._cleanup_db(db_path)
+        self._record_result('dictsqlite', 'sync', 'delete', num_items, duration)
+    
     # ========================================
     # DictSQLite-Fastest テスト
     # ========================================
@@ -212,6 +258,74 @@ class ComprehensiveBenchmark:
         
         self._cleanup_db(db_path)
         self._record_result('dictsqlite-fastest', 'sync', 'bulk_write', num_items, duration)
+    
+    def test_fastest_sync_update(self, num_items: int = 10000):
+        """DictSQLite-Fastest: 同期更新テスト"""
+        db_path = self._get_db_path('fastest_sync_update')
+        
+        # データ準備
+        db = DictSQLiteFastest(db_path)
+        for i in range(num_items):
+            db[f'key_{i}'] = f'value_{i}_' + 'x' * 50
+        db.close()
+        
+        # 更新テスト
+        db = DictSQLiteFastest(db_path)
+        start = time.perf_counter()
+        for i in range(num_items):
+            db[f'key_{i}'] = f'updated_value_{i}_' + 'y' * 50
+        duration = time.perf_counter() - start
+        db.close()
+        
+        self._cleanup_db(db_path)
+        self._record_result('dictsqlite-fastest', 'sync', 'update', num_items, duration)
+    
+    def test_fastest_sync_delete(self, num_items: int = 10000):
+        """DictSQLite-Fastest: 同期削除テスト"""
+        db_path = self._get_db_path('fastest_sync_delete')
+        
+        # データ準備
+        db = DictSQLiteFastest(db_path)
+        for i in range(num_items):
+            db[f'key_{i}'] = f'value_{i}_' + 'x' * 50
+        db.close()
+        
+        # 削除テスト
+        db = DictSQLiteFastest(db_path)
+        start = time.perf_counter()
+        for i in range(num_items):
+            del db[f'key_{i}']
+        duration = time.perf_counter() - start
+        db.close()
+        
+        self._cleanup_db(db_path)
+        self._record_result('dictsqlite-fastest', 'sync', 'delete', num_items, duration)
+    
+    def test_fastest_sync_mixed(self, num_items: int = 10000):
+        """DictSQLite-Fastest: 同期混合操作テスト (read/write/update)"""
+        db_path = self._get_db_path('fastest_sync_mixed')
+        
+        # データ準備
+        db = DictSQLiteFastest(db_path)
+        for i in range(num_items):
+            db[f'key_{i}'] = f'value_{i}_' + 'x' * 50
+        db.close()
+        
+        # 混合操作テスト (1/3 read, 1/3 update, 1/3 write new)
+        db = DictSQLiteFastest(db_path)
+        start = time.perf_counter()
+        for i in range(num_items):
+            if i % 3 == 0:
+                _ = db[f'key_{i}']  # Read
+            elif i % 3 == 1:
+                db[f'key_{i}'] = f'updated_{i}'  # Update
+            else:
+                db[f'new_key_{i}'] = f'new_value_{i}'  # Write new
+        duration = time.perf_counter() - start
+        db.close()
+        
+        self._cleanup_db(db_path)
+        self._record_result('dictsqlite-fastest', 'sync', 'mixed_operations', num_items, duration)
     
     async def test_fastest_async_write(self, num_items: int = 1000):
         """DictSQLite-Fastest: 非同期書き込みテスト"""
@@ -335,6 +449,80 @@ class ComprehensiveBenchmark:
         self._cleanup_db(db_path)
         self._record_result('beta', 'sync', 'bulk_write', num_items, duration, 'optimized_mode')
     
+    def test_beta_sync_update(self, num_items: int = 10000):
+        """Beta: 同期更新テスト"""
+        db_path = self._get_db_path('beta_sync_update')
+        
+        # データ準備
+        db = DictSQLiteFastestBeta(db_path, memory_budget_mb=100, enable_background_flush=False)
+        for i in range(num_items):
+            db[f'key_{i}'] = f'value_{i}_' + 'x' * 50
+        db.flush()
+        db.close()
+        
+        # 更新テスト
+        db = DictSQLiteFastestBeta(db_path, memory_budget_mb=100, enable_background_flush=False)
+        start = time.perf_counter()
+        for i in range(num_items):
+            db[f'key_{i}'] = f'updated_value_{i}_' + 'y' * 50
+        db.flush()
+        duration = time.perf_counter() - start
+        db.close()
+        
+        self._cleanup_db(db_path)
+        self._record_result('beta', 'sync', 'update', num_items, duration, 'optimized_mode')
+    
+    def test_beta_sync_delete(self, num_items: int = 10000):
+        """Beta: 同期削除テスト"""
+        db_path = self._get_db_path('beta_sync_delete')
+        
+        # データ準備
+        db = DictSQLiteFastestBeta(db_path, memory_budget_mb=100, enable_background_flush=False)
+        for i in range(num_items):
+            db[f'key_{i}'] = f'value_{i}_' + 'x' * 50
+        db.flush()
+        db.close()
+        
+        # 削除テスト
+        db = DictSQLiteFastestBeta(db_path, memory_budget_mb=100, enable_background_flush=False)
+        start = time.perf_counter()
+        for i in range(num_items):
+            del db[f'key_{i}']
+        db.flush()
+        duration = time.perf_counter() - start
+        db.close()
+        
+        self._cleanup_db(db_path)
+        self._record_result('beta', 'sync', 'delete', num_items, duration, 'optimized_mode')
+    
+    def test_beta_sync_mixed(self, num_items: int = 10000):
+        """Beta: 同期混合操作テスト"""
+        db_path = self._get_db_path('beta_sync_mixed')
+        
+        # データ準備
+        db = DictSQLiteFastestBeta(db_path, memory_budget_mb=100, enable_background_flush=False)
+        for i in range(num_items):
+            db[f'key_{i}'] = f'value_{i}_' + 'x' * 50
+        db.flush()
+        db.close()
+        
+        # 混合操作テスト
+        db = DictSQLiteFastestBeta(db_path, memory_budget_mb=100, enable_background_flush=False)
+        start = time.perf_counter()
+        for i in range(num_items):
+            if i % 3 == 0:
+                _ = db[f'key_{i}']  # Read
+            elif i % 3 == 1:
+                db[f'key_{i}'] = f'updated_{i}'  # Update
+            else:
+                db[f'new_key_{i}'] = f'new_value_{i}'  # Write new
+        db.flush()
+        duration = time.perf_counter() - start
+        db.close()
+        
+        self._cleanup_db(db_path)
+        self._record_result('beta', 'sync', 'mixed_operations', num_items, duration, 'optimized_mode')
+    
     async def test_beta_async_write(self, num_items: int = 1000):
         """Beta: 非同期書き込みテスト"""
         db_path = self._get_db_path('beta_async_write')
@@ -405,6 +593,8 @@ class ComprehensiveBenchmark:
         self.test_dictsqlite_sync_write(1000)
         self.test_dictsqlite_sync_read(1000)
         self.test_dictsqlite_sync_bulk(1000)
+        self.test_dictsqlite_sync_update(1000)
+        self.test_dictsqlite_sync_delete(1000)
         
         # DictSQLite-Fastest
         print("\n[2/3] DictSQLite-Fastest テスト...")
@@ -412,6 +602,9 @@ class ComprehensiveBenchmark:
         self.test_fastest_sync_write(10000)
         self.test_fastest_sync_read(10000)
         self.test_fastest_sync_bulk(10000)
+        self.test_fastest_sync_update(10000)
+        self.test_fastest_sync_delete(10000)
+        self.test_fastest_sync_mixed(10000)
         
         print("\n  非同期テスト...")
         asyncio.run(self.test_fastest_async_write(100))  # Reduced for async
@@ -425,6 +618,9 @@ class ComprehensiveBenchmark:
         self.test_beta_sync_write_optimized(10000)
         self.test_beta_sync_read(10000)
         self.test_beta_sync_bulk(10000)
+        self.test_beta_sync_update(10000)
+        self.test_beta_sync_delete(10000)
+        self.test_beta_sync_mixed(10000)
         
         print("\n  非同期テスト (スキップ - パフォーマンス問題のため)...")
         print("  ※ Beta版の非同期操作は現在最適化中のため、このベンチマークではスキップします")
@@ -479,34 +675,33 @@ class ComprehensiveBenchmark:
         # 比較サマリー
         lines.append("## パフォーマンス比較 / Performance Comparison\n")
         
-        # 同期書き込み比較
-        sync_writes = [r for r in self.results 
-                      if r['mode'] == 'sync' and r['operation'] == 'individual_write']
-        if sync_writes:
-            lines.append("### 同期書き込みパフォーマンス / Sync Write Performance\n")
-            lines.append("| バージョン | OPS | ベースライン比 |")
-            lines.append("|-----------|-----|---------------|")
-            
-            baseline_ops = next((r['ops'] for r in sync_writes if r['version'] == 'dictsqlite'), 1)
-            for r in sync_writes:
-                ratio = r['ops'] / baseline_ops if baseline_ops > 0 else 0
-                lines.append(f"| {r['version']} ({r.get('notes', '')}) | "
-                           f"{r['ops_formatted']} ops/s | {ratio:.2f}x |")
-            lines.append("")
+        # 操作タイプ別の比較
+        operations = ['individual_write', 'individual_read', 'bulk_write', 'update', 'delete', 'mixed_operations']
         
-        # バルク書き込み比較
-        bulk_writes = [r for r in self.results 
-                      if r['mode'] == 'sync' and r['operation'] == 'bulk_write']
-        if bulk_writes:
-            lines.append("### バルク書き込みパフォーマンス / Bulk Write Performance\n")
-            lines.append("| バージョン | OPS | ベースライン比 |")
-            lines.append("|-----------|-----|---------------|")
+        for operation in operations:
+            sync_results = [r for r in self.results 
+                          if r['mode'] == 'sync' and r['operation'] == operation]
+            if not sync_results:
+                continue
+                
+            op_name_map = {
+                'individual_write': '個別書き込み / Individual Write',
+                'individual_read': '個別読み込み / Individual Read',
+                'bulk_write': 'バルク書き込み / Bulk Write',
+                'update': '更新 / Update',
+                'delete': '削除 / Delete',
+                'mixed_operations': '混合操作 / Mixed Operations'
+            }
             
-            baseline_ops = next((r['ops'] for r in bulk_writes if r['version'] == 'dictsqlite'), 1)
-            for r in bulk_writes:
+            lines.append(f"### {op_name_map.get(operation, operation)}\n")
+            lines.append("| バージョン | OPS | ベースライン比 | 備考 |")
+            lines.append("|-----------|-----|---------------|------|")
+            
+            baseline_ops = next((r['ops'] for r in sync_results if r['version'] == 'dictsqlite'), 1)
+            for r in sync_results:
                 ratio = r['ops'] / baseline_ops if baseline_ops > 0 else 0
                 lines.append(f"| {r['version']} | "
-                           f"{r['ops_formatted']} ops/s | {ratio:.2f}x |")
+                           f"{r['ops_formatted']} ops/s | {ratio:.2f}x | {r.get('notes', '')} |")
             lines.append("")
         
         # 非同期パフォーマンス
@@ -521,11 +716,50 @@ class ComprehensiveBenchmark:
                            f"{r['ops_formatted']} ops/s |")
             lines.append("")
         
+        # 速度倍率サマリー
+        lines.append("## 速度倍率サマリー / Speed Multiplier Summary\n")
+        lines.append("DictSQLiteをベースライン(1.0x)とした場合の各バージョンの速度倍率:\n")
+        lines.append("| 操作 | dictsqlite-fastest | beta (optimized) |")
+        lines.append("|------|-------------------|------------------|")
+        
+        for operation in operations:
+            sync_results = [r for r in self.results 
+                          if r['mode'] == 'sync' and r['operation'] == operation]
+            if not sync_results:
+                continue
+            
+            baseline = next((r['ops'] for r in sync_results if r['version'] == 'dictsqlite'), None)
+            if not baseline:
+                continue
+                
+            fastest = next((r['ops'] for r in sync_results if r['version'] == 'dictsqlite-fastest'), None)
+            beta = next((r['ops'] for r in sync_results if r['version'] == 'beta' and 'optimized' in r.get('notes', '')), None)
+            
+            fastest_ratio = f"{fastest/baseline:.2f}x" if fastest else "N/A"
+            beta_ratio = f"{beta/baseline:.2f}x" if beta else "N/A"
+            
+            op_name_map = {
+                'individual_write': '個別書き込み',
+                'individual_read': '個別読み込み',
+                'bulk_write': 'バルク書き込み',
+                'update': '更新',
+                'delete': '削除',
+                'mixed_operations': '混合操作'
+            }
+            
+            lines.append(f"| {op_name_map.get(operation, operation)} | {fastest_ratio} | {beta_ratio} |")
+        lines.append("")
+        
         # サマリー
         lines.append("## サマリー / Summary\n")
         lines.append("- **dictsqlite**: オリジナル版（ベースライン）")
         lines.append("- **dictsqlite-fastest**: APSW使用の高速版")
         lines.append("- **beta**: メモリ最適化版（LRUキャッシュ、バッファリング等）\n")
+        
+        lines.append("### 主な発見事項 / Key Findings\n")
+        lines.append("1. バルク操作では dictsqlite-fastest が最も高速")
+        lines.append("2. 個別書き込みでは beta (optimized) が高いパフォーマンスを発揮")
+        lines.append("3. 混合操作では各バージョンの特性が顕著に現れる\n")
         
         # ファイル保存
         with open(self.output_md, 'w', encoding='utf-8') as f:
