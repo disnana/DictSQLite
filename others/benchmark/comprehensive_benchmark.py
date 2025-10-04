@@ -1367,6 +1367,19 @@ def main():
         except Exception as e:
             print(f"\n⚠ 非同期テスト実行中にエラー: {e}")
             # 続行可能な場合は続ける
+        finally:
+            # asyncioのイベントループをクリーンアップ
+            # 残っているタスクをキャンセル
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.stop()
+            except RuntimeError:
+                # イベントループが既に閉じている場合は無視
+                pass
+            
+            # ガベージコレクション実行
+            gc.collect()
         
         async_elapsed = time.perf_counter() - async_start
         print(f"\n✓ 非同期操作テスト完了 (所要時間: {format_time(async_elapsed)})")
@@ -1510,13 +1523,21 @@ def main():
         
     except KeyboardInterrupt:
         print("\n\nベンチマーク中断されました。")
+        sys.exit(1)
     except Exception as e:
         print(f"\nエラーが発生しました: {e}")
         traceback.print_exc()
+        sys.exit(1)
     finally:
         # クリーンアップ
         scenarios.cleanup()
         print("\nクリーンアップ完了。")
+        
+        # 明示的にガベージコレクション実行
+        gc.collect()
+        
+        # 正常終了
+        sys.exit(0)
 
 
 if __name__ == '__main__':
