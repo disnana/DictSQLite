@@ -471,8 +471,10 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         # バックグラウンドフラッシュを停止
         if self._background_flush_enabled and self._background_flush_stop_event:
             self._background_flush_stop_event.set()
-            if self._background_flush_thread:
-                self._background_flush_thread.join(timeout=5.0)
+            if self._background_flush_thread and self._background_flush_thread.is_alive():
+                # タイムアウトを短縮: 5秒 → 1秒
+                # wait()を使用しているので、実際は即座に終了するはず
+                self._background_flush_thread.join(timeout=1.0)
         
         # 残りをフラッシュ
         self._flush_write_buffer()
