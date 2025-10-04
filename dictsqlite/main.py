@@ -516,6 +516,23 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                 raise result
             return result is not None
 
+        def get(self, key, default=None):
+            """辞書のget()メソッド実装
+            
+            キーが存在する場合は対応する値を返し、存在しない場合はdefaultを返します。
+            
+            Args:
+                key: 取得するキー
+                default: キーが存在しない場合のデフォルト値（デフォルト: None）
+                
+            Returns:
+                キーに対応する値、または存在しない場合はdefault
+            """
+            try:
+                return self[key]
+            except KeyError:
+                return default
+
         def __repr__(self):
             return f"{dict(self)}"
 
