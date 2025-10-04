@@ -40,6 +40,8 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install matplotlib seaborn pandas numpy plotly kaleido
+        # dictsqlite-fastest の依存関係（apsw, zstandard等）
+        pip install apsw zstandard
         pip install -e .
         # dictsqlite-fastest の依存関係をインストール（パッケージとしてではなく）
         if [ -f "dictsqlite-fastest/requirements.txt" ]; then
