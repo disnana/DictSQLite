@@ -1256,17 +1256,33 @@ def main():
         print("グラフ生成中...")
         print("="*80)
         
+        graph_generation_success = False
         try:
+            print(f"CSVファイル: {benchmark.csv_file}")
+            print(f"CSVファイル存在確認: {benchmark.csv_file.exists()}")
+            if benchmark.csv_file.exists():
+                print(f"CSVファイルサイズ: {benchmark.csv_file.stat().st_size} bytes")
+            
             from visualize_benchmark import BenchmarkGraphGenerator
+            print("✓ BenchmarkGraphGeneratorインポート成功")
+            
             generator = BenchmarkGraphGenerator(str(benchmark.csv_file))
+            print(f"✓ ジェネレーター初期化完了")
+            print(f"  出力ディレクトリ: {generator.output_dir}")
+            
             generator.generate_all_graphs()
             print(f"✓ グラフ生成完了: {generator.output_dir}")
+            graph_generation_success = True
+            
         except ImportError as e:
-            print(f"⚠ グラフ生成をスキップ: {e}")
-            print("  matplotlib, seaborn, plotlyをインストールしてください:")
-            print("  pip install matplotlib seaborn plotly")
+            print(f"⚠ グラフ生成をスキップ (ImportError): {e}")
+            print("  必要なパッケージをインストールしてください:")
+            print("  pip install matplotlib seaborn pandas numpy")
+        except FileNotFoundError as e:
+            print(f"⚠ グラフ生成をスキップ (FileNotFoundError): {e}")
+            print(f"  CSVファイルが見つかりません: {benchmark.csv_file}")
         except Exception as e:
-            print(f"⚠ グラフ生成中にエラーが発生: {e}")
+            print(f"⚠ グラフ生成中にエラーが発生: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
         
@@ -1279,14 +1295,22 @@ def main():
         print(f"  - JSON: {benchmark.json_file.name}")
         print(f"  - サマリー: {benchmark.summary_file.name}")
         
-        # グラフディレクトリの情報も表示
+        # グラフディレクトリの情報を詳細表示
         graph_dir = benchmark.output_dir / "graphs"
-        if graph_dir.exists():
-            graph_files = list(graph_dir.glob('*.png'))
-            if graph_files:
-                print(f"  - グラフ: {len(graph_files)}個 ({graph_dir.name}/)")
+        if graph_generation_success:
+            if graph_dir.exists():
+                graph_files = list(graph_dir.glob('*.png'))
+                if graph_files:
+                    print(f"  - グラフ: {len(graph_files)}個 ({graph_dir.name}/)")
+                    for gf in sorted(graph_files):
+                        size_kb = gf.stat().st_size / 1024
+                        print(f"      * {gf.name} ({size_kb:.1f} KB)")
+                else:
+                    print(f"  - グラフ: ディレクトリは存在するがファイルなし")
             else:
-                print(f"  - グラフ: なし")
+                print(f"  - グラフ: ディレクトリが作成されませんでした ({graph_dir})")
+        else:
+            print(f"  - グラフ: 生成スキップまたは失敗 (上記エラー参照)")
         
     except KeyboardInterrupt:
         print("\n\nベンチマーク中断されました。")

@@ -136,8 +136,54 @@ class BenchmarkGraphGenerator:
         print(f"データ読み込み完了: {len(self.df)}行")
         print(f"カラム: {list(self.df.columns)}")
         
+        # CSV形式を検出して変換（Wide形式 → Long形式）
+        if 'Test Name' in self.df.columns:
+            print("Wide形式のCSVを検出、Long形式に変換中...")
+            self._convert_wide_to_long()
+        
         # タイムスタンプ
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    def _convert_wide_to_long(self):
+        """Wide形式（comprehensive_benchmark.py）をLong形式（fast版互換）に変換"""
+        records = []
+        
+        for _, row in self.df.iterrows():
+            test_name = row['Test Name']
+            
+            # Original
+            if pd.notna(row.get('Original Time (s)')):
+                records.append({
+                    'Version': 'original',
+                    'Test': test_name,
+                    'Duration(s)': row['Original Time (s)'],
+                    'OPS': row['Original OPS'],
+                    'Result': '成功'
+                })
+            
+            # Fastest
+            if pd.notna(row.get('Fastest Time (s)')):
+                records.append({
+                    'Version': 'fastest',
+                    'Test': test_name,
+                    'Duration(s)': row['Fastest Time (s)'],
+                    'OPS': row['Fastest OPS'],
+                    'Result': '成功'
+                })
+            
+            # Beta
+            if pd.notna(row.get('Beta Time (s)')):
+                records.append({
+                    'Version': 'beta',
+                    'Test': test_name,
+                    'Duration(s)': row['Beta Time (s)'],
+                    'OPS': row['Beta OPS'],
+                    'Result': '成功'
+                })
+        
+        # DataFrameを置き換え
+        self.df = pd.DataFrame(records)
+        print(f"✓ 変換完了: {len(self.df)}行 (Long形式)")
     
     def clean_test_name(self, name: str) -> str:
         """テスト名から件数を抽出"""
@@ -272,7 +318,7 @@ class BenchmarkGraphGenerator:
             for test in tests:
                 test_data = plot_df[(plot_df['Test'] == test) & (plot_df['Version'] == version)]
                 if len(test_data) > 0:
-                    version_data.append(test_data['Time (s)'].values[0])
+                    version_data.append(test_data['Duration(s)'].values[0])
                 else:
                     version_data.append(0)
             
@@ -307,9 +353,9 @@ class BenchmarkGraphGenerator:
         for test in tests:
             test_df = self.df[self.df['Test'] == test]
             
-            original_time = test_df[test_df['Version'] == 'original']['Time (s)']
-            fastest_time = test_df[test_df['Version'] == 'fastest']['Time (s)']
-            beta_time = test_df[test_df['Version'] == 'beta']['Time (s)']
+            original_time = test_df[test_df['Version'] == 'original']['Duration(s)']
+            fastest_time = test_df[test_df['Version'] == 'fastest']['Duration(s)']
+            beta_time = test_df[test_df['Version'] == 'beta']['Duration(s)']
             
             if len(original_time) > 0:
                 base_time = original_time.values[0]
@@ -465,7 +511,7 @@ class BenchmarkGraphGenerator:
             version_df = scalability_df[scalability_df['Version'] == version]
             version_df = version_df.sort_values('Data_Count')
             
-            ax2.plot(version_df['Data_Count'], version_df['Time (s)'], 
+            ax2.plot(version_df['Data_Count'], version_df['Duration(s)'], 
                     marker='s', label=version.upper(), linewidth=2, markersize=8)
         
         ax2.set_xlabel('データ件数', fontsize=11, fontweight='bold')
@@ -504,7 +550,7 @@ class BenchmarkGraphGenerator:
         
         # 2. バージョン別平均実行時間
         ax2 = fig.add_subplot(gs[0, 1])
-        avg_time = self.df.groupby('Version')['Time (s)'].mean()
+        avg_time = self.df.groupby('Version')['Duration(s)'].mean()
         bars = ax2.bar(avg_time.index, avg_time.values, color=['#FF6B6B', '#4ECDC4', '#45B7D1'])
         for bar in bars:
             height = bar.get_height()
@@ -521,8 +567,8 @@ class BenchmarkGraphGenerator:
         tests = self.df['Test'].unique()
         for test in tests:
             test_df = self.df[self.df['Test'] == test]
-            original_time = test_df[test_df['Version'] == 'original']['Time (s)']
-            beta_time = test_df[test_df['Version'] == 'beta']['Time (s)']
+            original_time = test_df[test_df['Version'] == 'original']['Duration(s)']
+            beta_time = test_df[test_df['Version'] == 'beta']['Duration(s)']
             
             if len(original_time) > 0 and len(beta_time) > 0:
                 speedup = original_time.values[0] / beta_time.values[0]
@@ -547,7 +593,7 @@ class BenchmarkGraphGenerator:
         ax5 = fig.add_subplot(gs[2, 0])
         for version in self.df['Version'].unique():
             version_df = self.df[self.df['Version'] == version]
-            ax5.hist(version_df['Time (s)'], alpha=0.6, label=version.upper(), bins=10)
+            ax5.hist(version_df['Duration(s)'], alpha=0.6, label=version.upper(), bins=10)
         ax5.set_title('実行時間分布', fontsize=11, fontweight='bold')
         ax5.set_xlabel('時間 (秒)', fontsize=10)
         ax5.set_ylabel('頻度', fontsize=10)
@@ -572,7 +618,7 @@ class BenchmarkGraphGenerator:
         for test in self.df['Test'].unique():
             test_df = self.df[self.df['Test'] == test]
             if len(test_df) > 0:
-                fastest_version = test_df.loc[test_df['Time (s)'].idxmin(), 'Version']
+                fastest_version = test_df.loc[test_df['Duration(s)'].idxmin(), 'Version']
                 wins[fastest_version] += 1
         
         labels = [f'{k.upper()}\n{v}勝' for k, v in wins.items() if v > 0]
@@ -616,17 +662,17 @@ class BenchmarkGraphGenerator:
                 f.write(f"  平均OPS:        {version_df['OPS'].mean():,.2f}\n")
                 f.write(f"  最大OPS:        {version_df['OPS'].max():,.2f}\n")
                 f.write(f"  最小OPS:        {version_df['OPS'].min():,.2f}\n")
-                f.write(f"  平均実行時間:  {version_df['Time (s)'].mean():.4f}秒\n")
-                f.write(f"  最短実行時間:  {version_df['Time (s)'].min():.4f}秒\n")
-                f.write(f"  最長実行時間:  {version_df['Time (s)'].max():.4f}秒\n")
+                f.write(f"  平均実行時間:  {version_df['Duration(s)'].mean():.4f}秒\n")
+                f.write(f"  最短実行時間:  {version_df['Duration(s)'].min():.4f}秒\n")
+                f.write(f"  最長実行時間:  {version_df['Duration(s)'].max():.4f}秒\n")
             
             # スピードアップ統計
             f.write("\n【スピードアップ統計（vs Original）】\n")
             speedups = []
             for test in self.df['Test'].unique():
                 test_df = self.df[self.df['Test'] == test]
-                original = test_df[test_df['Version'] == 'original']['Time (s)']
-                beta = test_df[test_df['Version'] == 'beta']['Time (s)']
+                original = test_df[test_df['Version'] == 'original']['Duration(s)']
+                beta = test_df[test_df['Version'] == 'beta']['Duration(s)']
                 
                 if len(original) > 0 and len(beta) > 0:
                     speedup = original.values[0] / beta.values[0]
@@ -644,7 +690,7 @@ class BenchmarkGraphGenerator:
             for test in self.df['Test'].unique():
                 test_df = self.df[self.df['Test'] == test]
                 if len(test_df) > 0:
-                    fastest_version = test_df.loc[test_df['Time (s)'].idxmin(), 'Version']
+                    fastest_version = test_df.loc[test_df['Duration(s)'].idxmin(), 'Version']
                     wins[fastest_version] += 1
             
             total = sum(wins.values())
@@ -720,3 +766,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
