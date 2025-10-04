@@ -5,18 +5,22 @@ permissions:
   pull-requests: write
 
 on:
-  push:
-    branches: [ "main", "dev" ]
-  pull_request:
-    branches: [ "main", "dev" ]
-  workflow_dispatch:  # 手動実行を許可
-  schedule:
-    # 毎週月曜日の午前9時(UTC)に実行
-    - cron: '0 9 * * 1'
+  workflow_dispatch:  # 手動実行のみ許可（負荷が大きいため）
+    inputs:
+      run_full_benchmark:
+        description: 'フル機能ベンチマークを実行（時間がかかります）'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
+    # パフォーマンステストは負荷が大きいため、手動実行のみ許可
+    # GitHub Actionsの「Actions」タブから「Performance Benchmark」を選択して実行してください
     strategy:
       matrix:
         python-version: ["3.11"]
