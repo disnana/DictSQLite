@@ -23,6 +23,15 @@ on:
         options:
           - 'true'
           - 'false'
+      beta_version:
+        description: 'Beta版のバージョン選択'
+        required: true
+        default: 'v1'
+        type: choice
+        options:
+          - 'v1'
+          - 'v2'
+          - 'both'
 
 jobs:
   benchmark:
@@ -54,6 +63,8 @@ jobs:
         pip install matplotlib seaborn pandas numpy plotly kaleido
         # dictsqlite-fastest の依存関係（apsw, zstandard等）
         pip install apsw zstandard
+        # v2用の依存関係（aiosqlite）
+        pip install aiosqlite
         pip install -e .
         # dictsqlite-fastest の依存関係をインストール（パッケージとしてではなく）
         if [ -f "dictsqlite-fastest/requirements.txt" ]; then
@@ -67,6 +78,20 @@ jobs:
     - name: Run fast comprehensive benchmark
       run: |
         cd others/benchmark
+        
+        # Beta版のバージョンに応じてインポートを変更
+        BETA_VERSION="${{ github.event.inputs.beta_version }}"
+        echo "📦 選択されたBeta版: $BETA_VERSION"
+        
+        if [ "$BETA_VERSION" == "v2" ]; then
+          echo "🔄 ベンチマークスクリプトをv2用に変更..."
+          # v1のインポートをv2に置換
+          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v2 import/g' comprehensive_benchmark.py
+          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v2 import/g' fast_comprehensive_benchmark.py
+        elif [ "$BETA_VERSION" == "both" ]; then
+          echo "⚠️  両バージョンテストは未実装（v1のみ実行）"
+        fi
+        
         if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
           echo "🔬 フル機能ベンチマーク（comprehensive_benchmark.py）を実行中..."
           python comprehensive_benchmark.py
@@ -96,7 +121,7 @@ jobs:
 
     - name: List benchmark results
       run: |
-        echo "=== Benchmark Results ==="
+        echo "=== Benchmark Results (Beta Version: ${{ github.event.inputs.beta_version }}) ==="
         ls -lh others/benchmark/results/
         echo ""
         echo "=== Graphs ==="
