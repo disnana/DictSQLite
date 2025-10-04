@@ -817,7 +817,14 @@ class BenchmarkScenarios:
                 for i in range(count):
                     db[f'key_{i}'] = f'value_{i}'
                     if i % 2 == 0:
-                        _ = db.get(f'key_{i//2}', None)
+                        # オリジナル版用：get()メソッドがあれば使用、なければtry/except
+                        if hasattr(db, 'get'):
+                            _ = db.get(f'key_{i//2}', None)
+                        else:
+                            try:
+                                _ = db[f'key_{i//2}']
+                            except KeyError:
+                                pass
                     if i % 3 == 0 and i > 0:
                         db[f'key_{i//3}'] = f'updated_{i}'
         
