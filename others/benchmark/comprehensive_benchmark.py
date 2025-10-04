@@ -642,6 +642,8 @@ class BenchmarkScenarios:
                 db.close()
                 del db
                 db.close()
+
+                del db
         
         self.benchmark.compare_sync_versions(
             test_name, original, fastest, beta, count
@@ -738,6 +740,8 @@ class BenchmarkScenarios:
                 _ = db.bulk_get(keys)
             finally:
                 db.close()
+
+                del db
                 db = None
         
         def beta():
@@ -746,8 +750,12 @@ class BenchmarkScenarios:
                 _ = db.bulk_get(keys)
             finally:
                 db.close()
+
+                del db
                 db = None
                 db.close()
+
+                del db
         
         self.benchmark.compare_sync_versions(
             test_name, original, fastest, beta, count
@@ -804,6 +812,8 @@ class BenchmarkScenarios:
                 db.bulk_insert(complex_data)
             finally:
                 db.close()
+
+                del db
         
         def beta():
             db_path = self.temp_dir / f"beta_complex_{count}.db"
@@ -814,6 +824,8 @@ class BenchmarkScenarios:
                 db.bulk_insert(complex_data)
             finally:
                 db.close()
+
+                del db
         
         self.benchmark.compare_sync_versions(
             test_name, original, fastest, beta, count
@@ -851,6 +863,8 @@ class BenchmarkScenarios:
                 db.bulk_insert(update_data)
             finally:
                 db.close()
+
+                del db
         
         def beta():
             db_path = self.temp_dir / f"beta_update_{count}.db"
@@ -862,6 +876,8 @@ class BenchmarkScenarios:
                 db.bulk_insert(update_data)
             finally:
                 db.close()
+
+                del db
         
         self.benchmark.compare_sync_versions(
             test_name, original, fastest, beta, count
@@ -894,6 +910,8 @@ class BenchmarkScenarios:
                     del db[f'key_{i}']
             finally:
                 db.close()
+
+                del db
         
         def beta():
             db_path = self.temp_dir / f"beta_delete_{count}.db"
@@ -906,6 +924,8 @@ class BenchmarkScenarios:
                     del db[f'key_{i}']
             finally:
                 db.close()
+
+                del db
         
         self.benchmark.compare_sync_versions(
             test_name, original, fastest, beta, count
@@ -956,6 +976,8 @@ class BenchmarkScenarios:
                         db[f'key_{i//3}'] = f'updated_{i}'
             finally:
                 db.close()
+
+                del db
         
         def beta():
             db_path = self.temp_dir / f"beta_mixed_{count}.db"
@@ -975,6 +997,8 @@ class BenchmarkScenarios:
                         db[f'key_{i//3}'] = f'updated_{i}'
             finally:
                 db.close()
+
+                del db
         
         self.benchmark.compare_sync_versions(
             test_name, original, fastest, beta, count
