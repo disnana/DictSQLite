@@ -416,13 +416,11 @@ class FastComprehensiveBenchmark:
                 db = db_class_async(db_path)
                 try:
                     for i in range(count):
-                        await db.set(f'key_{i}', f'value_{i}')
+                        # 非同期版は aset() を使用
+                        await db.aset(f'key_{i}', f'value_{i}')
                 finally:
                     # 非同期版は aclose() を使用
-                    if hasattr(db, 'aclose'):
-                        await db.aclose()
-                    elif hasattr(db, 'close'):
-                        await db.close()
+                    await db.aclose()
                 duration = time.perf_counter() - start
                 result.add_success(duration)
             except Exception as e:
