@@ -1,0 +1,83 @@
+================================================================================
+総合パフォーマンステスト開始 / Starting Comprehensive Performance Tests
+================================================================================
+すべての最適化機能を使用: WAL mode, cache, mmap, memory budget
+
+
+[1/3] DictSQLite (オリジナル版) テスト...
+--------------------------------------------------------------------------------
+  dictsqlite           sync    individual_write       1000 items in   0.004s =    278.99K ops/s
+  dictsqlite           sync    individual_read        1000 items in   0.066s =     15.10K ops/s
+  dictsqlite           sync    bulk_write             1000 items in   0.003s =    334.36K ops/s
+  dictsqlite           sync    update                 1000 items in   0.003s =    301.35K ops/s
+  dictsqlite           sync    delete                 1000 items in   0.002s =    516.26K ops/s
+
+[2/3] DictSQLite-Fastest テスト（最適化設定）...
+--------------------------------------------------------------------------------
+  WAL mode, 128MB cache, 512MB mmap 使用
+  dictsqlite-fastest   sync    individual_write      10000 items in   0.231s =     43.34K ops/s
+  dictsqlite-fastest   sync    individual_read       10000 items in   0.163s =     61.16K ops/s
+  dictsqlite-fastest   sync    bulk_write            10000 items in   0.023s =    436.45K ops/s
+  dictsqlite-fastest   sync    update                10000 items in   0.301s =     33.17K ops/s
+  dictsqlite-fastest   sync    delete                10000 items in   0.203s =     49.15K ops/s
+  dictsqlite-fastest   sync    mixed_operations      10000 items in   0.267s =     37.40K ops/s
+
+  非同期テスト（最適化設定、大量データ）...
+  ※ 10,000件で徹底テスト
+  dictsqlite-fastest   async   individual_write      10000 items in  19.129s =     522.77 ops/s
+  dictsqlite-fastest   async   individual_read       10000 items in   6.656s =      1.50K ops/s
+  dictsqlite-fastest   async   bulk_write            10000 items in   0.032s =    314.75K ops/s
+  dictsqlite-fastest   async   update                10000 items in  19.712s =     507.30 ops/s
+  dictsqlite-fastest   async   delete                10000 items in  19.285s =     518.54 ops/s
+  dictsqlite-fastest   async   mixed_operations      10000 items in  14.985s =     667.32 ops/s
+
+[3/3] Beta版 テスト（最適化設定）...
+--------------------------------------------------------------------------------
+  memory_budget_mb=100, LRUキャッシュ使用
+  beta                 sync    individual_write      10000 items in   0.043s =    235.20K ops/s
+  beta                 sync    individual_write      10000 items in   0.041s =    241.77K ops/s
+  beta                 sync    individual_read       10000 items in   0.165s =     60.74K ops/s
+  beta                 sync    bulk_write            10000 items in   0.028s =    361.39K ops/s
+  beta                 sync    update                10000 items in   0.045s =    222.07K ops/s
+  beta                 sync    delete                10000 items in   0.162s =     61.77K ops/s
+  beta                 sync    mixed_operations      10000 items in   0.085s =    117.54K ops/s
+
+  非同期テスト（最適化設定、大量データ）...
+  ※ 10,000件で徹底テスト
+  beta                 async   individual_write      10000 items in  60.845s =     164.35 ops/s
+Traceback (most recent call last):
+  File "/home/runner/work/DictSQLite/DictSQLite/comprehensive_performance_benchmark.py", line 1063, in <module>
+    main()
+  File "/home/runner/work/DictSQLite/DictSQLite/comprehensive_performance_benchmark.py", line 1044, in main
+    benchmark.run_all_tests()
+  File "/home/runner/work/DictSQLite/DictSQLite/comprehensive_performance_benchmark.py", line 889, in run_all_tests
+    asyncio.run(self.test_beta_async_read(10000))
+  File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/runner/work/DictSQLite/DictSQLite/comprehensive_performance_benchmark.py", line 733, in test_beta_async_read
+    db = AsyncDictSQLiteFastestBeta(db_path, memory_budget_mb=100)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/DictSQLite/DictSQLite/dictsqlite-fastest/beta/dictsqlite_fastest_beta.py", line 1042, in __init__
+    self._sync_db = DictSQLiteFastestBeta(
+                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/DictSQLite/DictSQLite/dictsqlite-fastest/beta/dictsqlite_fastest_beta.py", line 327, in __init__
+    super().__init__(db_name, table_name=table_name, **kwargs)
+  File "/home/runner/work/DictSQLite/DictSQLite/dictsqlite-fastest/dictsqlite_fastest/main.py", line 577, in __init__
+    self.optimize_database()
+  File "/home/runner/work/DictSQLite/DictSQLite/dictsqlite-fastest/dictsqlite_fastest/main.py", line 1484, in optimize_database
+    conn = self._get_connection()
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/DictSQLite/DictSQLite/dictsqlite-fastest/dictsqlite_fastest/main.py", line 643, in _get_connection
+    self._optimize_single_connection(self._local.conn)
+  File "/home/runner/work/DictSQLite/DictSQLite/dictsqlite-fastest/dictsqlite_fastest/main.py", line 659, in _optimize_single_connection
+    conn.pragma("synchronous", "NORMAL")  # OFF -> NORMAL for async safety
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "src/cursor.c", line 1062, in APSWCursor_execute.sqlite3_prepare_v3
+apsw.BusyError: database is locked
