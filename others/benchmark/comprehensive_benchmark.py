@@ -1244,6 +1244,25 @@ def main():
         reporter.generate_json()
         reporter.generate_markdown_summary()
         
+        # ===== グラフ生成 =====
+        print("\n" + "="*80)
+        print("グラフ生成中...")
+        print("="*80)
+        
+        try:
+            from visualize_benchmark import BenchmarkGraphGenerator
+            generator = BenchmarkGraphGenerator(str(benchmark.csv_file))
+            generator.generate_all_graphs()
+            print(f"✓ グラフ生成完了: {generator.output_dir}")
+        except ImportError as e:
+            print(f"⚠ グラフ生成をスキップ: {e}")
+            print("  matplotlib, seaborn, plotlyをインストールしてください:")
+            print("  pip install matplotlib seaborn plotly")
+        except Exception as e:
+            print(f"⚠ グラフ生成中にエラーが発生: {e}")
+            import traceback
+            traceback.print_exc()
+        
         print("\n" + "="*80)
         print("ベンチマーク完了!")
         print("="*80)
@@ -1252,6 +1271,15 @@ def main():
         print(f"  - CSV: {benchmark.csv_file.name}")
         print(f"  - JSON: {benchmark.json_file.name}")
         print(f"  - サマリー: {benchmark.summary_file.name}")
+        
+        # グラフディレクトリの情報も表示
+        graph_dir = benchmark.output_dir / "graphs"
+        if graph_dir.exists():
+            graph_files = list(graph_dir.glob('*.png'))
+            if graph_files:
+                print(f"  - グラフ: {len(graph_files)}個 ({graph_dir.name}/)")
+            else:
+                print(f"  - グラフ: なし")
         
     except KeyboardInterrupt:
         print("\n\nベンチマーク中断されました。")
