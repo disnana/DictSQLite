@@ -1150,7 +1150,13 @@ class ReportGenerator:
         with open(self.benchmark.summary_file, 'w', encoding='utf-8') as f:
             f.write('\n'.join(lines))
         
+        # BENCHMARK_SUMMARY.mdとしても保存（GitHub Actions用）
+        benchmark_summary = self.benchmark.output_dir / "BENCHMARK_SUMMARY.md"
+        with open(benchmark_summary, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(lines))
+        
         print(f"✓ Markdown サマリー生成完了: {self.benchmark.summary_file}")
+        print(f"✓ BENCHMARK_SUMMARY.md 生成完了: {benchmark_summary}")
         
         # コンソールにも出力
         print("\n" + "="*80)
