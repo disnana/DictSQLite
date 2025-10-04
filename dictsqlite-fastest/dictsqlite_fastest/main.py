@@ -581,6 +581,25 @@ class DictSQLiteFastest:
 
         # データベースの初期化を一度だけ実行
         self._initialize_database(schema)
+        
+        # 【重要】初期化直後に現在のスレッドでもテーブルを確認
+        # GitHub Actions等のLinux環境でWAL可視性問題を回避
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            # テーブル存在を明示的に確認・作成
+            if schema is None:
+                create_sql = f'CREATE TABLE IF NOT EXISTS {self._quote_ident(self.table_name)} (key TEXT PRIMARY KEY, value TEXT)'
+            else:
+                create_sql = schema
+            cursor.execute(create_sql)
+            # 確実に反映させる
+            cursor.execute(f"SELECT COUNT(*) FROM {self._quote_ident(self.table_name)}")
+            cursor.fetchone()
+        except Exception as e:
+            logger.warning(f"Post-initialization table verification failed: {e}")
+        finally:
+            cursor.close()
 
         # 初期化時に最適化を実行
         if self.optimize_on_init:
