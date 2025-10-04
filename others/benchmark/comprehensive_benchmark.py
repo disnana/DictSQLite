@@ -641,9 +641,6 @@ class BenchmarkScenarios:
             finally:
                 db.close()
                 del db
-                db.close()
-
-                del db
         
         self.benchmark.compare_sync_versions(
             test_name, original, fastest, beta, count
@@ -740,9 +737,7 @@ class BenchmarkScenarios:
                 _ = db.bulk_get(keys)
             finally:
                 db.close()
-
                 del db
-                db = None
         
         def beta():
             db = DictSQLiteFastestBeta(str(beta_db_path), memory_budget_mb=100)
@@ -750,11 +745,6 @@ class BenchmarkScenarios:
                 _ = db.bulk_get(keys)
             finally:
                 db.close()
-
-                del db
-                db = None
-                db.close()
-
                 del db
         
         self.benchmark.compare_sync_versions(
