@@ -1401,42 +1401,54 @@ def main():
             print(f"✓ 古いログ/CSV/JSON削除: {old_logs_count}個 ({old_logs_size_kb:.1f} KB)")
         
         # ===== グラフ生成 =====
-        print("\n" + "="*80)
-        print("グラフ生成中...")
-        print("="*80)
-        graph_start = time.perf_counter()
+        # 環境変数でスキップ可能（GitHub Actionsで時間短縮）
+        skip_graphs = os.getenv('SKIP_BENCHMARK_GRAPHS', 'false').lower() == 'true'
         
-        graph_generation_success = False
-        try:
-            print(f"CSVファイル: {benchmark.csv_file}")
-            print(f"CSVファイル存在確認: {benchmark.csv_file.exists()}")
-            if benchmark.csv_file.exists():
-                print(f"CSVファイルサイズ: {benchmark.csv_file.stat().st_size} bytes")
+        if skip_graphs:
+            print("\n" + "="*80)
+            print("グラフ生成をスキップ (SKIP_BENCHMARK_GRAPHS=true)")
+            print("="*80)
+            print("⚠ グラフ生成は環境変数により無効化されています")
+            print("  有効化するには: export SKIP_BENCHMARK_GRAPHS=false")
+            graph_generation_success = False
+            graph_elapsed = 0
+        else:
+            print("\n" + "="*80)
+            print("グラフ生成中...")
+            print("="*80)
+            graph_start = time.perf_counter()
             
-            from visualize_benchmark import BenchmarkGraphGenerator
-            print("✓ BenchmarkGraphGeneratorインポート成功")
-            
-            generator = BenchmarkGraphGenerator(str(benchmark.csv_file))
-            print(f"✓ ジェネレーター初期化完了")
-            print(f"  出力ディレクトリ: {generator.output_dir}")
-            
-            generator.generate_all_graphs()
-            
-            graph_elapsed = time.perf_counter() - graph_start
-            print(f"✓ グラフ生成完了: {generator.output_dir} (所要時間: {format_time(graph_elapsed)})")
-            graph_generation_success = True
-            
-        except ImportError as e:
-            print(f"⚠ グラフ生成をスキップ (ImportError): {e}")
-            print("  必要なパッケージをインストールしてください:")
-            print("  pip install matplotlib seaborn pandas numpy")
-        except FileNotFoundError as e:
-            print(f"⚠ グラフ生成をスキップ (FileNotFoundError): {e}")
-            print(f"  CSVファイルが見つかりません: {benchmark.csv_file}")
-        except Exception as e:
-            print(f"⚠ グラフ生成中にエラーが発生: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
+            graph_generation_success = False
+            try:
+                print(f"CSVファイル: {benchmark.csv_file}")
+                print(f"CSVファイル存在確認: {benchmark.csv_file.exists()}")
+                if benchmark.csv_file.exists():
+                    print(f"CSVファイルサイズ: {benchmark.csv_file.stat().st_size} bytes")
+                
+                from visualize_benchmark import BenchmarkGraphGenerator
+                print("✓ BenchmarkGraphGeneratorインポート成功")
+                
+                generator = BenchmarkGraphGenerator(str(benchmark.csv_file))
+                print(f"✓ ジェネレーター初期化完了")
+                print(f"  出力ディレクトリ: {generator.output_dir}")
+                
+                generator.generate_all_graphs()
+                
+                graph_elapsed = time.perf_counter() - graph_start
+                print(f"✓ グラフ生成完了: {generator.output_dir} (所要時間: {format_time(graph_elapsed)})")
+                graph_generation_success = True
+                
+            except ImportError as e:
+                print(f"⚠ グラフ生成をスキップ (ImportError): {e}")
+                print("  必要なパッケージをインストールしてください:")
+                print("  pip install matplotlib seaborn pandas numpy")
+            except FileNotFoundError as e:
+                print(f"⚠ グラフ生成をスキップ (FileNotFoundError): {e}")
+                print(f"  CSVファイルが見つかりません: {benchmark.csv_file}")
+            except Exception as e:
+                print(f"⚠ グラフ生成中にエラーが発生: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
         
         # ===== 結果表示 =====
         print("\n" + "="*80)
