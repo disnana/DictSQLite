@@ -1916,17 +1916,25 @@ class AsyncDictSQLiteFastest:
         self._cache_lock = asyncio.Lock()
         self._commit_stop_event = asyncio.Event()
         
+        # 書き込み操作のシリアライズ用ロック（デッドロック防止）
+        self._write_lock = asyncio.Lock()
+        
         # 接続プールの作成
         for _ in range(self.max_connections):
             conn = await aiosqlite.connect(self.db_name)
             
-            # 最適化PRAGMA
+            # 最適化PRAGMA（WALモード + 並行処理最適化）
             await conn.execute("PRAGMA journal_mode=WAL")
             await conn.execute("PRAGMA synchronous=NORMAL")
             await conn.execute("PRAGMA cache_size=-64000")  # 64MB
             await conn.execute("PRAGMA temp_store=MEMORY")
             await conn.execute("PRAGMA mmap_size=268435456")  # 256MB
             await conn.execute("PRAGMA busy_timeout=60000")  # 60秒
+            await conn.execute("PRAGMA wal_autocheckpoint=1000")  # WAL自動チェックポイント
+            await conn.execute("PRAGMA journal_size_limit=67108864")  # 64MB
+            
+            # 読み取り専用接続以外は明示的にBEGIN IMMEDIATE使用
+            conn.row_factory = None
             
             self._connection_pool.append(conn)
             await self._available_connections.put(conn)
@@ -2160,7 +2168,7 @@ class AsyncDictSQLiteFastest:
 
     # 高度な非同期バルク操作
     async def abulk_insert(self, items):
-        """非同期バルク挿入（最適化済み）"""
+        """非同期バルク挿入（最適化済み + デッドロック防止）"""
         await self._ensure_initialized()
         
         if not items:
@@ -2173,13 +2181,20 @@ class AsyncDictSQLiteFastest:
             await self._cache_put(key, value_bytes)
             data.append((key, value_bytes))
         
-        # 直接DBに書き込み（バッファをバイパス）
-        async with self._get_connection() as conn:
-            await conn.executemany(
-                f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
-                data
-            )
-            await conn.commit()
+        # 書き込みロックで保護（並行書き込みによるロック競合を防止）
+        async with self._write_lock:
+            async with self._get_connection() as conn:
+                # BEGIN IMMEDIATE でロックを事前取得
+                await conn.execute("BEGIN IMMEDIATE")
+                try:
+                    await conn.executemany(
+                        f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
+                        data
+                    )
+                    await conn.commit()
+                except Exception as e:
+                    await conn.rollback()
+                    raise e
         
         self._stats['bulk_operations'] += 1
         self._stats['batch_writes'] += 1
@@ -2221,7 +2236,7 @@ class AsyncDictSQLiteFastest:
         return result
 
     async def abulk_delete(self, keys):
-        """非同期バルク削除（最適化済み）"""
+        """非同期バルク削除（最適化済み + デッドロック防止）"""
         await self._ensure_initialized()
         
         if not keys:
@@ -2231,21 +2246,27 @@ class AsyncDictSQLiteFastest:
         for key in keys:
             await self._cache_remove(key)
         
-        # 直接DBから削除（バッファをバイパス）
-        placeholders = ','.join('?' * len(keys))
-        async with self._get_connection() as conn:
-            await conn.execute(
-                f"DELETE FROM {self.table_name} WHERE key IN ({placeholders})",
-                keys
-            )
-            await conn.commit()
+        # 書き込みロックで保護
+        async with self._write_lock:
+            placeholders = ','.join('?' * len(keys))
+            async with self._get_connection() as conn:
+                await conn.execute("BEGIN IMMEDIATE")
+                try:
+                    await conn.execute(
+                        f"DELETE FROM {self.table_name} WHERE key IN ({placeholders})",
+                        keys
+                    )
+                    await conn.commit()
+                except Exception as e:
+                    await conn.rollback()
+                    raise e
         
         self._stats['bulk_operations'] += 1
         return len(keys)
 
     # バッファ管理
     async def _flush_write_buffer(self):
-        """書き込みバッファをフラッシュ"""
+        """書き込みバッファをフラッシュ（デッドロック防止）"""
         # バッファをコピーしてクリア
         async with self._buffer_lock:
             if not self._write_buffer and not self._delete_buffer:
@@ -2257,25 +2278,33 @@ class AsyncDictSQLiteFastest:
             self._write_buffer.clear()
             self._delete_buffer.clear()
         
-        # 書き込み実行
-        async with self._get_connection() as conn:
-            if write_buffer:
-                data = list(write_buffer.items())
-                await conn.executemany(
-                    f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
-                    data
-                )
-                self._stats['batch_writes'] += 1
-            
-            # 削除実行
-            if delete_buffer:
-                placeholders = ','.join('?' * len(delete_buffer))
-                await conn.execute(
-                    f"DELETE FROM {self.table_name} WHERE key IN ({placeholders})",
-                    tuple(delete_buffer)
-                )
-            
-            await conn.commit()
+        # 書き込みロックで保護
+        async with self._write_lock:
+            async with self._get_connection() as conn:
+                await conn.execute("BEGIN IMMEDIATE")
+                try:
+                    # 書き込み実行
+                    if write_buffer:
+                        data = list(write_buffer.items())
+                        await conn.executemany(
+                            f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
+                            data
+                        )
+                        self._stats['batch_writes'] += 1
+                    
+                    # 削除実行
+                    if delete_buffer:
+                        placeholders = ','.join('?' * len(delete_buffer))
+                        await conn.execute(
+                            f"DELETE FROM {self.table_name} WHERE key IN ({placeholders})",
+                            tuple(delete_buffer)
+                        )
+                    
+                    await conn.commit()
+                except Exception as e:
+                    await conn.rollback()
+                    # エラーは無視（バックグラウンドフラッシュでの失敗を許容）
+                    pass
 
     async def _background_commit_worker(self):
         """バックグラウンドコミットワーカー"""

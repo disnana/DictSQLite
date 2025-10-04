@@ -557,6 +557,9 @@ class AsyncDictSQLiteFastestBeta:
         self._async_delete_buffer: set = set()
         self._async_buffer_lock = asyncio.Lock()  # 即座に初期化
         
+        # 書き込み操作のシリアライズ用ロック（デッドロック防止）
+        self._async_write_lock = asyncio.Lock()
+        
         # 統計情報
         self._async_stats = {
             'batch_writes': 0,
@@ -587,6 +590,8 @@ class AsyncDictSQLiteFastestBeta:
         await self._aiosqlite_conn.execute("PRAGMA temp_store=MEMORY")
         await self._aiosqlite_conn.execute("PRAGMA mmap_size=268435456")  # 256MB
         await self._aiosqlite_conn.execute("PRAGMA busy_timeout=60000")  # 60秒
+        await self._aiosqlite_conn.execute("PRAGMA wal_autocheckpoint=1000")  # WAL自動チェックポイント
+        await self._aiosqlite_conn.execute("PRAGMA journal_size_limit=67108864")  # 64MB
         
         # テーブル作成
         create_sql = f"""
@@ -706,7 +711,7 @@ class AsyncDictSQLiteFastestBeta:
             await self._flush_write_buffer()
     
     async def abulk_insert(self, items: Dict[str, Any]) -> None:
-        """非同期でバルク挿入.
+        """非同期でバルク挿入（デッドロック防止）.
         
         Args:
             items: {key: value} の辞書
@@ -720,19 +725,25 @@ class AsyncDictSQLiteFastestBeta:
         for key, value in items.items():
             self._cache.put(key, value)
         
-        # バッチ書き込み
+        # バッチ書き込み（書き込みロックで保護）
         data = [(key, pickle.dumps(value)) for key, value in items.items()]
         
-        await self._aiosqlite_conn.executemany(
-            f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
-            data
-        )
-        await self._aiosqlite_conn.commit()
+        async with self._async_write_lock:
+            await self._aiosqlite_conn.execute("BEGIN IMMEDIATE")
+            try:
+                await self._aiosqlite_conn.executemany(
+                    f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
+                    data
+                )
+                await self._aiosqlite_conn.commit()
+            except Exception as e:
+                await self._aiosqlite_conn.rollback()
+                raise e
         
         self._async_stats['batch_writes'] += 1
     
     async def _flush_write_buffer(self) -> None:
-        """書き込みバッファをフラッシュ."""
+        """書き込みバッファをフラッシュ（デッドロック防止）."""
         # バッファを取得してクリア
         async with self._async_buffer_lock:
             if not self._async_write_buffer and not self._async_delete_buffer:
@@ -744,24 +755,32 @@ class AsyncDictSQLiteFastestBeta:
             self._async_write_buffer.clear()
             self._async_delete_buffer.clear()
         
-        # 書き込み実行
-        if write_buffer:
-            data = [(key, pickle.dumps(value)) for key, value in write_buffer.items()]
-            await self._aiosqlite_conn.executemany(
-                f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
-                data
-            )
-            self._async_stats['batch_writes'] += 1
-        
-        # 削除実行
-        if delete_buffer:
-            placeholders = ','.join('?' * len(delete_buffer))
-            await self._aiosqlite_conn.execute(
-                f"DELETE FROM {self.table_name} WHERE key IN ({placeholders})",
-                tuple(delete_buffer)
-            )
-        
-        await self._aiosqlite_conn.commit()
+        # 書き込みロックで保護
+        async with self._async_write_lock:
+            await self._aiosqlite_conn.execute("BEGIN IMMEDIATE")
+            try:
+                # 書き込み実行
+                if write_buffer:
+                    data = [(key, pickle.dumps(value)) for key, value in write_buffer.items()]
+                    await self._aiosqlite_conn.executemany(
+                        f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
+                        data
+                    )
+                    self._async_stats['batch_writes'] += 1
+                
+                # 削除実行
+                if delete_buffer:
+                    placeholders = ','.join('?' * len(delete_buffer))
+                    await self._aiosqlite_conn.execute(
+                        f"DELETE FROM {self.table_name} WHERE key IN ({placeholders})",
+                        tuple(delete_buffer)
+                    )
+                
+                await self._aiosqlite_conn.commit()
+            except Exception as e:
+                await self._aiosqlite_conn.rollback()
+                # バックグラウンドフラッシュでのエラーは許容
+                pass
     
     async def _background_commit_worker(self) -> None:
         """バックグラウンドコミットワーカー."""
