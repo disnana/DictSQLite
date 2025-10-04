@@ -67,7 +67,13 @@ jobs:
     - name: Run fast comprehensive benchmark
       run: |
         cd others/benchmark
-        python fast_comprehensive_benchmark.py
+        if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
+          echo "🔬 フル機能ベンチマーク（comprehensive_benchmark.py）を実行中..."
+          python comprehensive_benchmark.py
+        else
+          echo "⚡ 高速ベンチマーク（fast_comprehensive_benchmark.py）を実行中..."
+          python fast_comprehensive_benchmark.py
+        fi
       env:
         PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/dictsqlite-fastest:${{ github.workspace }}/dictsqlite-fastest/beta
       continue-on-error: false
