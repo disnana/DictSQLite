@@ -92,10 +92,10 @@ class ComprehensiveBenchmark:
     def __init__(self, output_dir: str = None):
         """
         Args:
-            output_dir: 結果を保存するディレクトリ（デフォルト: リポジトリルート/benchmark_results）
+            output_dir: 結果を保存するディレクトリ（デフォルト: /others/benchmark/results）
         """
         if output_dir is None:
-            output_dir = str(REPO_ROOT / "benchmark_results")
+            output_dir = str(BASE_DIR / "results")
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         

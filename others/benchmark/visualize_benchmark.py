@@ -663,11 +663,12 @@ def main():
     if args.csv_file:
         csv_path = args.csv_file
     else:
-        # 最新のCSVファイルを自動検索（リポジトリルートのbenchmark_results）
+        # 最新のCSVファイルを自動検索（ベンチマークスクリプトと同じディレクトリのresults）
         script_dir = Path(__file__).parent
-        results_dir = script_dir.parent.parent / 'benchmark_results'
+        results_dir = script_dir / 'results'
         if not results_dir.exists():
-            print("エラー: benchmark_resultsディレクトリが見つかりません")
+            print("エラー: resultsディレクトリが見つかりません")
+            print(f"期待されるパス: {results_dir}")
             return
         
         csv_files = list(results_dir.glob('benchmark_*.csv'))

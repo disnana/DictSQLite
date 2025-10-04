@@ -75,13 +75,13 @@ jobs:
     - name: Generate benchmark visualizations
       run: |
         cd others/benchmark
-        # 最新のベンチマーク結果CSVファイルを探す
-        LATEST_CSV=$(ls -t ../../benchmark_results/*.csv 2>/dev/null | head -n1)
+        # 最新のベンチマーク結果CSVファイルを探す（resultsディレクトリ内）
+        LATEST_CSV=$(ls -t results/*.csv 2>/dev/null | head -n1)
         if [ -n "$LATEST_CSV" ]; then
           echo "Visualizing: $LATEST_CSV"
           python visualize_benchmark.py "$LATEST_CSV"
         else
-          echo "No CSV file found in benchmark_results/"
+          echo "No CSV file found in results/"
           exit 1
         fi
       env:
@@ -91,11 +91,11 @@ jobs:
     - name: List benchmark results
       run: |
         echo "=== Benchmark Results ==="
-        ls -lh benchmark_results/
+        ls -lh others/benchmark/results/
         echo ""
         echo "=== Graphs ==="
-        if [ -d "benchmark_results/graphs" ]; then
-          ls -lh benchmark_results/graphs/
+        if [ -d "others/benchmark/results/graphs" ]; then
+          ls -lh others/benchmark/results/graphs/
         fi
 
     - name: Upload benchmark results
@@ -103,17 +103,17 @@ jobs:
       with:
         name: benchmark-results-${{ matrix.python-version }}
         path: |
-          benchmark_results/*.csv
-          benchmark_results/*.json
-          benchmark_results/*.log
-          benchmark_results/*.md
-          benchmark_results/graphs/*.png
-          benchmark_results/graphs/*.html
+          others/benchmark/results/*.csv
+          others/benchmark/results/*.json
+          others/benchmark/results/*.log
+          others/benchmark/results/*.md
+          others/benchmark/results/graphs/*.png
+          others/benchmark/results/graphs/*.html
         retention-days: 90
 
     - name: Create benchmark summary
       run: |
-        SUMMARY_FILE="benchmark_results/BENCHMARK_SUMMARY.md"
+        SUMMARY_FILE="others/benchmark/results/BENCHMARK_SUMMARY.md"
         if [ -f "$SUMMARY_FILE" ]; then
           echo "## 📊 Benchmark Results" >> $GITHUB_STEP_SUMMARY
           cat "$SUMMARY_FILE" >> $GITHUB_STEP_SUMMARY
@@ -131,6 +131,6 @@ jobs:
         echo "  2. 上部の 'Summary' タブ"
         echo ""
         echo "💾 結果ファイル:"
-        if [ -d "benchmark_results" ]; then
-          find benchmark_results -type f -name "*.csv" -o -name "*.json" -o -name "*.md" -o -name "*.png" | head -20
+        if [ -d "others/benchmark/results" ]; then
+          find others/benchmark/results -type f -name "*.csv" -o -name "*.json" -o -name "*.md" -o -name "*.png" | head -20
         fi

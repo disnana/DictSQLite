@@ -64,8 +64,8 @@ class BenchmarkRunner:
         self.async_results = []
         self.temp_dir = Path(tempfile.mkdtemp(prefix="dictsqlite_bench_"))
         
-        # 結果ディレクトリ（リポジトリルートに作成）
-        self.output_dir = REPO_ROOT / "benchmark_results"
+        # 結果ディレクトリ（ベンチマークスクリプトと同じディレクトリに作成）
+        self.output_dir = BASE_DIR / "results"
         self.output_dir.mkdir(exist_ok=True)
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
