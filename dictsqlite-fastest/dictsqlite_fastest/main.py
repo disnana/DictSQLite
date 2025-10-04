@@ -19,6 +19,14 @@ from contextlib import asynccontextmanager
 
 import apsw
 
+# aiosqlite サポート（非同期版で使用）
+try:
+    import aiosqlite
+    AIOSQLITE_AVAILABLE = True
+except ImportError:
+    AIOSQLITE_AVAILABLE = False
+    aiosqlite = None
+
 # ZSTDサポート（オプション）
 try:
     import zstandard as zstd
@@ -1822,44 +1830,136 @@ class AsyncConnectionPool:
 
 
 class AsyncDictSQLiteFastest:
-    """完全に再設計された高性能非同期DictSQLite（asyncio native）"""
+    """完全aiosqlite実装の高性能非同期DictSQLite
+    
+    特徴:
+    - ✅ 真のasyncio非同期（aiosqliteネイティブ）
+    - ✅ 接続プール（再利用可能な接続）
+    - ✅ 自動バッチ処理（内部バッファリング）
+    - ✅ LRUキャッシュ（メモリ高速化）
+    - ❌ ThreadPoolExecutor不使用（非同期ネイティブ）
+    """
 
-    def __init__(self, *args, max_connections: int = 10, enable_pipeline: bool = True, **kwargs):
-        self._args = args
-        self._kwargs = kwargs
+    def __init__(
+        self,
+        db_name: str,
+        table_name: str = 'main',
+        max_connections: int = 5,
+        batch_size: int = 100,
+        batch_interval: float = 1.0,
+        cache_size: int = 1000,
+        **kwargs
+    ):
+        """
+        Args:
+            db_name: データベースファイルパス
+            table_name: テーブル名
+            max_connections: 最大接続数
+            batch_size: バッチ書き込みサイズ
+            batch_interval: バッチコミット間隔（秒）
+            cache_size: LRUキャッシュサイズ
+        """
+        if not AIOSQLITE_AVAILABLE:
+            raise ImportError(
+                "aiosqlite is required for AsyncDictSQLiteFastest. "
+                "Install with: pip install aiosqlite"
+            )
+        
+        self.db_name = db_name
+        self.table_name = table_name
         self.max_connections = max_connections
-        self.enable_pipeline = enable_pipeline
-
-        # 非同期接続プール
-        self._connection_pool = AsyncConnectionPool(
-            lambda: DictSQLiteFastest(*self._args, **self._kwargs),
-            max_connections=max_connections
-        )
-
-        # パイプライン操作用のセマフォ
-        self._pipeline_semaphore = asyncio.Semaphore(max_connections * 2)
-
+        self.batch_size = batch_size
+        self.batch_interval = batch_interval
+        self.cache_size = cache_size
+        
+        # 接続プール（遅延初期化）
+        self._connection_pool = []  # List of aiosqlite.Connection
+        self._available_connections = None  # asyncio.Queue
+        self._pool_lock = None
+        self._initialized = False
+        
+        # 書き込みバッファ
+        self._write_buffer: Dict[str, bytes] = {}
+        self._delete_buffer: set = set()
+        self._buffer_lock = None
+        
+        # LRUキャッシュ（読み取り高速化）
+        from collections import OrderedDict
+        self._cache: OrderedDict = OrderedDict()
+        self._cache_lock = None
+        
+        # バックグラウンドコミットタスク
+        self._commit_task = None
+        self._commit_stop_event = None
+        
         # 統計情報
-        self._operation_stats = {
+        self._stats = {
             'total_operations': 0,
-            'pipeline_operations': 0,
             'bulk_operations': 0,
-            'cache_hits': 0
+            'cache_hits': 0,
+            'cache_misses': 0,
+            'batch_writes': 0
         }
+        
+        # 再利用可能なThreadPoolExecutor（1つだけ作成）
+        self._executor = ThreadPoolExecutor(max_workers=1)
 
-        # 操作キャッシュ（頻繁なアクセスキーの高速化）
-        self._operation_cache = {}
+    async def _ensure_initialized(self):
+        """非同期初期化"""
+        if self._initialized:
+            return
+        
+        # asyncio関連の初期化
+        self._available_connections = asyncio.Queue(maxsize=self.max_connections)
+        self._pool_lock = asyncio.Lock()
+        self._buffer_lock = asyncio.Lock()
         self._cache_lock = asyncio.Lock()
+        self._commit_stop_event = asyncio.Event()
+        
+        # 接続プールの作成
+        for _ in range(self.max_connections):
+            conn = await aiosqlite.connect(self.db_name)
+            
+            # 最適化PRAGMA
+            await conn.execute("PRAGMA journal_mode=WAL")
+            await conn.execute("PRAGMA synchronous=NORMAL")
+            await conn.execute("PRAGMA cache_size=-64000")  # 64MB
+            await conn.execute("PRAGMA temp_store=MEMORY")
+            await conn.execute("PRAGMA mmap_size=268435456")  # 256MB
+            await conn.execute("PRAGMA busy_timeout=60000")  # 60秒
+            
+            self._connection_pool.append(conn)
+            await self._available_connections.put(conn)
+        
+        # テーブル作成（最初の接続で）
+        conn = self._connection_pool[0]
+        await conn.execute(f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                key TEXT PRIMARY KEY,
+                value BLOB NOT NULL
+            )
+        """)
+        await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_key ON {self.table_name}(key)")
+        await conn.commit()
+        
+        # バックグラウンドコミットタスク開始
+        if self.batch_interval > 0:
+            self._commit_task = asyncio.create_task(self._background_commit_worker())
+        
+        self._initialized = True
 
-        # 同期初期化
-        self._ensure_initialized()
-
-    def _ensure_initialized(self):
-        """同期的に初期化"""
-        init_db = DictSQLiteFastest(*self._args, **self._kwargs)
-        init_db.close()
+    @asynccontextmanager
+    async def _get_connection(self):
+        """接続プールから接続を取得"""
+        await self._ensure_initialized()
+        conn = await self._available_connections.get()
+        try:
+            yield conn
+        finally:
+            await self._available_connections.put(conn)
 
     async def __aenter__(self):
+        await self._ensure_initialized()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -1867,76 +1967,144 @@ class AsyncDictSQLiteFastest:
 
     async def aclose(self):
         """非同期クリーンアップ"""
-        await self._connection_pool.close_all()
+        if not self._initialized:
+            return
+        
+        # バックグラウンドタスク停止
+        if self._commit_task and not self._commit_task.done():
+            self._commit_stop_event.set()
+            try:
+                await asyncio.wait_for(self._commit_task, timeout=2.0)
+            except asyncio.TimeoutError:
+                self._commit_task.cancel()
+                try:
+                    await self._commit_task
+                except asyncio.CancelledError:
+                    pass
+        
+        # 残りのバッファをフラッシュ
+        await self._flush_write_buffer()
+        
+        # 接続プールをクローズ
+        for conn in self._connection_pool:
+            await conn.close()
+        
+        # ThreadPoolExecutorをシャットダウン
+        self._executor.shutdown(wait=True)
+        
+        self._initialized = False
 
-    @asynccontextmanager
-    async def _get_connection(self):
-        """非同期コンテキストマネージャーで接続を取得"""
-        conn = await self._connection_pool.get_connection()
-        try:
-            yield conn
-        finally:
-            await self._connection_pool.return_connection(conn)
+    # LRUキャッシュ管理
+    async def _cache_get(self, key):
+        """キャッシュから取得"""
+        async with self._cache_lock:
+            if key in self._cache:
+                self._stats['cache_hits'] += 1
+                # LRU: 最後に移動
+                self._cache.move_to_end(key)
+                return self._cache[key]
+        self._stats['cache_misses'] += 1
+        return None
 
-    async def _run_in_thread(self, func, *args, **kwargs):
-        """スレッドプールで同期操作を実行"""
-        async with self._pipeline_semaphore:
-            loop = asyncio.get_event_loop()
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                async with self._get_connection() as db:
-                    result = await loop.run_in_executor(executor, func, db, *args, **kwargs)
-                    self._operation_stats['total_operations'] += 1
-                    return result
+    async def _cache_put(self, key, value):
+        """キャッシュに追加"""
+        async with self._cache_lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            else:
+                if len(self._cache) >= self.cache_size:
+                    self._cache.popitem(last=False)
+            self._cache[key] = value
+
+    async def _cache_remove(self, key):
+        """キャッシュから削除"""
+        async with self._cache_lock:
+            self._cache.pop(key, None)
 
     # 基本非同期操作
-    async def aget(self, key):
+    async def aget(self, key, default=None):
         """非同期でキーを取得"""
+        await self._ensure_initialized()
+        
         # キャッシュチェック
-        async with self._cache_lock:
-            if key in self._operation_cache:
-                self._operation_stats['cache_hits'] += 1
-                return self._operation_cache[key]
-
-        def sync_get(db, k):
-            return db[k]
-
-        result = await self._run_in_thread(sync_get, key)
-
-        # 結果をキャッシュ（小さなキャッシュサイズを維持）
-        async with self._cache_lock:
-            if len(self._operation_cache) < 100:
-                self._operation_cache[key] = result
-
-        return result
+        cached = await self._cache_get(key)
+        if cached is not None:
+            return pickle.loads(cached)
+        
+        # 書き込みバッファチェック
+        async with self._buffer_lock:
+            if key in self._write_buffer:
+                value_bytes = self._write_buffer[key]
+                await self._cache_put(key, value_bytes)
+                return pickle.loads(value_bytes)
+            
+            if key in self._delete_buffer:
+                return default
+        
+        # DBから読み込み
+        async with self._get_connection() as conn:
+            cursor = await conn.execute(
+                f"SELECT value FROM {self.table_name} WHERE key = ?",
+                (key,)
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+        
+        if row is None:
+            return default
+        
+        # キャッシュに追加
+        await self._cache_put(key, row[0])
+        self._stats['total_operations'] += 1
+        
+        return pickle.loads(row[0])
 
     async def aset(self, key, value):
-        """非同期でキーを設定"""
-        def sync_set(db, k, v):
-            db[k] = v
-
-        # キャッシュ更新
-        async with self._cache_lock:
-            self._operation_cache[key] = value
-
-        return await self._run_in_thread(sync_set, key, value)
+        """非同期でキーを設定（バッファリング）"""
+        await self._ensure_initialized()
+        
+        value_bytes = pickle.dumps(value)
+        
+        # キャッシュに即座に反映
+        await self._cache_put(key, value_bytes)
+        
+        # バッファに追加
+        should_flush = False
+        async with self._buffer_lock:
+            self._write_buffer[key] = value_bytes
+            self._delete_buffer.discard(key)
+            should_flush = len(self._write_buffer) >= self.batch_size
+        
+        # バッチサイズに達したらフラッシュ
+        if should_flush:
+            await self._flush_write_buffer()
+        
+        self._stats['total_operations'] += 1
 
     async def adelete(self, key):
         """非同期でキーを削除"""
-        def sync_delete(db, k):
-            del db[k]
-
+        await self._ensure_initialized()
+        
         # キャッシュから削除
-        async with self._cache_lock:
-            self._operation_cache.pop(key, None)
-
-        return await self._run_in_thread(sync_delete, key)
+        await self._cache_remove(key)
+        
+        # バッファに追加
+        should_flush = False
+        async with self._buffer_lock:
+            self._write_buffer.pop(key, None)
+            self._delete_buffer.add(key)
+            should_flush = len(self._delete_buffer) >= self.batch_size
+        
+        # バッチサイズに達したらフラッシュ
+        if should_flush:
+            await self._flush_write_buffer()
+        
+        self._stats['total_operations'] += 1
 
     async def acontains(self, key):
         """非同期でキー存在チェック"""
-        def sync_contains(db, k):
-            return k in db
-
-        return await self._run_in_thread(sync_contains, key)
+        result = await self.aget(key, default=object())
+        return result is not object()
 
     async def ahas_key(self, key):
         """非同期でキー存在チェック（has_keyエイリアス）"""
@@ -1948,121 +2116,195 @@ class AsyncDictSQLiteFastest:
 
     async def akeys(self):
         """非同期でキー一覧を取得"""
-        def sync_keys(db):
-            return db.keys()
-
-        return await self._run_in_thread(sync_keys)
+        await self._ensure_initialized()
+        
+        async with self._get_connection() as conn:
+            cursor = await conn.execute(f"SELECT key FROM {self.table_name}")
+            rows = await cursor.fetchall()
+            await cursor.close()
+        
+        return [row[0] for row in rows]
 
     async def avalues(self):
         """非同期で値一覧を取得"""
-        def sync_values(db):
-            proxy = db[db.table_name] if hasattr(db, 'table_name') else db
-            return list(proxy.values())
-
-        return await self._run_in_thread(sync_values)
+        await self._ensure_initialized()
+        
+        async with self._get_connection() as conn:
+            cursor = await conn.execute(f"SELECT value FROM {self.table_name}")
+            rows = await cursor.fetchall()
+            await cursor.close()
+        
+        return [pickle.loads(row[0]) for row in rows]
 
     async def aitems(self):
         """非同期でアイテム一覧を取得"""
-        def sync_items(db):
-            proxy = db[db.table_name] if hasattr(db, 'table_name') else db
-            return list(proxy.items())
+        await self._ensure_initialized()
+        
+        async with self._get_connection() as conn:
+            cursor = await conn.execute(f"SELECT key, value FROM {self.table_name}")
+            rows = await cursor.fetchall()
+            await cursor.close()
+        
+        return [(row[0], pickle.loads(row[1])) for row in rows]
 
-        return await self._run_in_thread(sync_items)
+    async def alen(self):
+        """非同期でアイテム数を取得"""
+        await self._ensure_initialized()
+        
+        async with self._get_connection() as conn:
+            cursor = await conn.execute(f"SELECT COUNT(*) FROM {self.table_name}")
+            row = await cursor.fetchone()
+            await cursor.close()
+        
+        return row[0] if row else 0
 
     # 高度な非同期バルク操作
     async def abulk_insert(self, items):
         """非同期バルク挿入（最適化済み）"""
+        await self._ensure_initialized()
+        
         if not items:
             return
-
-        def sync_bulk_insert(db, item_data):
-            # 新しいAPSW最適化バルク挿入を使用
-            if hasattr(db, 'bulk_insert_apsw_optimized'):
-                db.bulk_insert_apsw_optimized(item_data)
-            else:
-                db.bulk_insert_optimized(item_data)
-
-        self._operation_stats['bulk_operations'] += 1
-        return await self._run_in_thread(sync_bulk_insert, items)
+        
+        # キャッシュに追加
+        data = []
+        for key, value in items.items():
+            value_bytes = pickle.dumps(value)
+            await self._cache_put(key, value_bytes)
+            data.append((key, value_bytes))
+        
+        # 直接DBに書き込み（バッファをバイパス）
+        async with self._get_connection() as conn:
+            await conn.executemany(
+                f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
+                data
+            )
+            await conn.commit()
+        
+        self._stats['bulk_operations'] += 1
+        self._stats['batch_writes'] += 1
 
     async def abulk_get(self, keys):
         """非同期バルク取得（最適化済み）"""
+        await self._ensure_initialized()
+        
         if not keys:
             return {}
-
-        def sync_bulk_get(db, key_list):
-            # 新しいAPSW最適化バルク取得を使用
-            if hasattr(db, 'bulk_get_apsw_optimized'):
-                return db.bulk_get_apsw_optimized(key_list)
+        
+        result = {}
+        uncached_keys = []
+        
+        # キャッシュからチェック
+        for key in keys:
+            cached = await self._cache_get(key)
+            if cached is not None:
+                result[key] = pickle.loads(cached)
             else:
-                return db.bulk_get(key_list)
-
-        self._operation_stats['bulk_operations'] += 1
-        return await self._run_in_thread(sync_bulk_get, keys)
+                uncached_keys.append(key)
+        
+        # DBから取得
+        if uncached_keys:
+            placeholders = ','.join('?' * len(uncached_keys))
+            async with self._get_connection() as conn:
+                cursor = await conn.execute(
+                    f"SELECT key, value FROM {self.table_name} WHERE key IN ({placeholders})",
+                    uncached_keys
+                )
+                rows = await cursor.fetchall()
+                await cursor.close()
+            
+            for key, value_bytes in rows:
+                result[key] = pickle.loads(value_bytes)
+                await self._cache_put(key, value_bytes)
+        
+        self._stats['bulk_operations'] += 1
+        return result
 
     async def abulk_delete(self, keys):
         """非同期バルク削除（最適化済み）"""
+        await self._ensure_initialized()
+        
         if not keys:
             return 0
+        
+        # キャッシュから削除
+        for key in keys:
+            await self._cache_remove(key)
+        
+        # 直接DBから削除（バッファをバイパス）
+        placeholders = ','.join('?' * len(keys))
+        async with self._get_connection() as conn:
+            await conn.execute(
+                f"DELETE FROM {self.table_name} WHERE key IN ({placeholders})",
+                keys
+            )
+            await conn.commit()
+        
+        self._stats['bulk_operations'] += 1
+        return len(keys)
 
-        def sync_bulk_delete(db, key_list):
-            # 新しいAPSW最適化バルク削除を使用
-            if hasattr(db, 'bulk_delete_apsw_optimized'):
-                return db.bulk_delete_apsw_optimized(key_list)
-            else:
-                db.bulk_delete(key_list)
-                return len(key_list)
+    # バッファ管理
+    async def _flush_write_buffer(self):
+        """書き込みバッファをフラッシュ"""
+        # バッファをコピーしてクリア
+        async with self._buffer_lock:
+            if not self._write_buffer and not self._delete_buffer:
+                return
+            
+            write_buffer = self._write_buffer.copy()
+            delete_buffer = self._delete_buffer.copy()
+            
+            self._write_buffer.clear()
+            self._delete_buffer.clear()
+        
+        # 書き込み実行
+        async with self._get_connection() as conn:
+            if write_buffer:
+                data = list(write_buffer.items())
+                await conn.executemany(
+                    f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
+                    data
+                )
+                self._stats['batch_writes'] += 1
+            
+            # 削除実行
+            if delete_buffer:
+                placeholders = ','.join('?' * len(delete_buffer))
+                await conn.execute(
+                    f"DELETE FROM {self.table_name} WHERE key IN ({placeholders})",
+                    tuple(delete_buffer)
+                )
+            
+            await conn.commit()
 
-        # キャッシュからも削除
-        async with self._cache_lock:
-            for key in keys:
-                self._operation_cache.pop(key, None)
-
-        self._operation_stats['bulk_operations'] += 1
-        return await self._run_in_thread(sync_bulk_delete, keys)
-
-    # パイプライン操作（複数操作の効率的な実行）
-    async def apipeline_operations(self, operations):
-        """複数操作をパイプラインで効率的に実行
-
-        Args:
-            operations: List of ('get'|'set'|'delete', key, [value]) tuples
-        """
-        if not self.enable_pipeline or not operations:
-            return []
-
-        def sync_pipeline(db, ops):
-            results = []
-            for op in ops:
-                if op[0] == 'get':
-                    results.append(db[op[1]])
-                elif op[0] == 'set':
-                    db[op[1]] = op[2]
-                    results.append(None)
-                elif op[0] == 'delete':
-                    del db[op[1]]
-                    results.append(None)
-            return results
-
-        self._operation_stats['pipeline_operations'] += len(operations)
-        return await self._run_in_thread(sync_pipeline, operations)
+    async def _background_commit_worker(self):
+        """バックグラウンドコミットワーカー"""
+        try:
+            while not self._commit_stop_event.is_set():
+                await asyncio.sleep(self.batch_interval)
+                
+                if self._commit_stop_event.is_set():
+                    break
+                
+                await self._flush_write_buffer()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
 
     # 統計情報とモニタリング
     def get_stats(self):
         """非同期操作統計を取得"""
-        pool_stats = self._connection_pool.get_stats()
         return {
-            'async_operations': self._operation_stats,
-            'connection_pool': pool_stats,
-            'cache_size': len(self._operation_cache)
+            **self._stats,
+            'cache_size': len(self._cache),
+            'buffer_size': len(self._write_buffer),
+            'pending_deletes': len(self._delete_buffer),
+            'pool_size': len(self._connection_pool)
         }
 
-    async def aoptimize(self):
-        """非同期でデータベース最適化"""
-        def sync_optimize(db):
-            db.optimize_database(full_optimization=True)
 
-        return await self._run_in_thread(sync_optimize)
+# Legacy AsyncDictSQLiteFastest for backward compatibility
 
 
 # Legacy AsyncDictSQLiteFastest for backward compatibility

@@ -629,7 +629,8 @@ class AsyncDictSQLiteFastestBeta:
         async with self._async_buffer_lock:
             if key in self._async_write_buffer:
                 value = self._async_write_buffer[key]
-                self._sync_db._cache.put(key, value)
+                # キャッシュに保存（_sync_dbは使わない）
+                self._cache.put(key, value)
                 return value
             
             if key in self._async_delete_buffer:
