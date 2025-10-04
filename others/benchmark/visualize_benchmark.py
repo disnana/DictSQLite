@@ -606,7 +606,8 @@ class BenchmarkGraphGenerator:
         plot_df = self.df[self.df['OPS'] > 0]
         if len(plot_df) > 0:
             sns.violinplot(data=plot_df, x='Version', y='OPS', ax=ax6, 
-                          palette=['#FF6B6B', '#4ECDC4', '#45B7D1'])
+                          hue='Version', palette=['#FF6B6B', '#4ECDC4', '#45B7D1'], 
+                          legend=False)
             ax6.set_title('OPS分布（バイオリンプロット）', fontsize=11, fontweight='bold')
             ax6.set_ylabel('OPS', fontsize=10)
             ax6.set_yscale('log')
