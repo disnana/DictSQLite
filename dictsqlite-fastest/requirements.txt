@@ -1,3 +1,4 @@
 apsw>=3.40.0.0
 zstandard>=0.21.0
 pytest-benchmark>=3.4.0
+tqdm>=4.65.0

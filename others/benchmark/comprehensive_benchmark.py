@@ -27,6 +27,27 @@ from typing import Dict, List, Tuple, Callable, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
 import traceback
 
+# tqdmのインポート (利用可能な場合のみ)
+try:
+    from tqdm import tqdm
+    TQDM_AVAILABLE = True
+except ImportError:
+    TQDM_AVAILABLE = False
+    # tqdmがない場合のダミー実装
+    class tqdm:
+        def __init__(self, iterable=None, **kwargs):
+            self.iterable = iterable
+        def __iter__(self):
+            return iter(self.iterable) if self.iterable else iter([])
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def update(self, n=1):
+            pass
+        def set_description(self, desc):
+            pass
+
 # モジュールパスの設定
 BASE_DIR = Path(__file__).parent
 REPO_ROOT = BASE_DIR.parent.parent  # /others/benchmark から / へ
@@ -152,12 +173,22 @@ class ComprehensiveBenchmark:
         times = []
         errors = []
         
-        for i in range(iterations):
+        # tqdmが利用可能な場合はプログレスバーを表示
+        iterator = range(iterations)
+        if TQDM_AVAILABLE:
+            iterator = tqdm(iterator, desc=f"  測定中", leave=False, ncols=80)
+        
+        for i in iterator:
             try:
                 start = time.perf_counter()
                 result = func()
                 duration = time.perf_counter() - start
                 times.append(duration)
+                
+                # 経過時間を表示
+                if TQDM_AVAILABLE and hasattr(iterator, 'set_description'):
+                    iterator.set_description(f"  測定中 ({format_time(duration)})")
+                    
             except Exception as e:
                 errors.append(str(e))
                 self.log(f"  エラー (試行 {i+1}): {e}", print_console=False)
@@ -210,12 +241,22 @@ class ComprehensiveBenchmark:
         times = []
         errors = []
         
-        for i in range(iterations):
+        # tqdmが利用可能な場合はプログレスバーを表示
+        iterator = range(iterations)
+        if TQDM_AVAILABLE:
+            iterator = tqdm(iterator, desc=f"  測定中", leave=False, ncols=80)
+        
+        for i in iterator:
             try:
                 start = time.perf_counter()
                 await func()
                 duration = time.perf_counter() - start
                 times.append(duration)
+                
+                # 経過時間を表示
+                if TQDM_AVAILABLE and hasattr(iterator, 'set_description'):
+                    iterator.set_description(f"  測定中 ({format_time(duration)})")
+                    
             except Exception as e:
                 errors.append(str(e))
                 self.log(f"  エラー (試行 {i+1}): {e}", print_console=False)
@@ -265,18 +306,22 @@ class ComprehensiveBenchmark:
         
         # 各バージョンを測定
         results = {}
+        test_start_time = time.perf_counter()
         
         # オリジナル版
         self.log("\n[DictSQLite オリジナル版]")
+        version_start = time.perf_counter()
         original_result = self.measure_sync_operation(
             f"{test_name} (Original)",
             original_func,
             iterations
         )
+        version_elapsed = time.perf_counter() - version_start
+        
         if original_result['success']:
             orig_time = original_result['stats']['mean']
             orig_ops = operation_count / orig_time
-            self.log(f"  平均時間: {format_time(orig_time)}")
+            self.log(f"  平均時間: {format_time(orig_time)} (実測: {format_time(version_elapsed)})")
             self.log(f"  スループット: {format_ops(orig_ops)}")
             results['original'] = {
                 'time': orig_time,
@@ -289,15 +334,18 @@ class ComprehensiveBenchmark:
         
         # Fastest版
         self.log("\n[DictSQLite-Fastest APSW版]")
+        version_start = time.perf_counter()
         fastest_result = self.measure_sync_operation(
             f"{test_name} (Fastest)",
             fastest_func,
             iterations
         )
+        version_elapsed = time.perf_counter() - version_start
+        
         if fastest_result['success']:
             fastest_time = fastest_result['stats']['mean']
             fastest_ops = operation_count / fastest_time
-            self.log(f"  平均時間: {format_time(fastest_time)}")
+            self.log(f"  平均時間: {format_time(fastest_time)} (実測: {format_time(version_elapsed)})")
             self.log(f"  スループット: {format_ops(fastest_ops)}")
             results['fastest'] = {
                 'time': fastest_time,
@@ -310,15 +358,18 @@ class ComprehensiveBenchmark:
         
         # Beta版
         self.log("\n[DictSQLite-Fastest Beta版]")
+        version_start = time.perf_counter()
         beta_result = self.measure_sync_operation(
             f"{test_name} (Beta)",
             beta_func,
             iterations
         )
+        version_elapsed = time.perf_counter() - version_start
+        
         if beta_result['success']:
             beta_time = beta_result['stats']['mean']
             beta_ops = operation_count / beta_time
-            self.log(f"  平均時間: {format_time(beta_time)}")
+            self.log(f"  平均時間: {format_time(beta_time)} (実測: {format_time(version_elapsed)})")
             self.log(f"  スループット: {format_ops(beta_ops)}")
             results['beta'] = {
                 'time': beta_time,
@@ -328,6 +379,10 @@ class ComprehensiveBenchmark:
         else:
             self.log(f"  失敗: {beta_result.get('error', 'Unknown')}")
             results['beta'] = None
+        
+        # テスト全体の経過時間を表示
+        total_elapsed = time.perf_counter() - test_start_time
+        self.log(f"\n[テスト全体の実測時間: {format_time(total_elapsed)}]")
         
         # 比較結果
         self.log("\n[比較結果]")
@@ -379,18 +434,22 @@ class ComprehensiveBenchmark:
         self.log(f"{'='*80}")
         
         results = {}
+        test_start_time = time.perf_counter()
         
         # Fastest版
         self.log("\n[AsyncDictSQLiteFastest]")
+        version_start = time.perf_counter()
         fastest_result = await self.measure_async_operation(
             f"{test_name} (Async Fastest)",
             fastest_func,
             iterations
         )
+        version_elapsed = time.perf_counter() - version_start
+        
         if fastest_result['success']:
             fastest_time = fastest_result['stats']['mean']
             fastest_ops = operation_count / fastest_time
-            self.log(f"  平均時間: {format_time(fastest_time)}")
+            self.log(f"  平均時間: {format_time(fastest_time)} (実測: {format_time(version_elapsed)})")
             self.log(f"  スループット: {format_ops(fastest_ops)}")
             results['fastest'] = {
                 'time': fastest_time,
@@ -403,15 +462,18 @@ class ComprehensiveBenchmark:
         
         # Beta版
         self.log("\n[AsyncDictSQLiteFastestBeta]")
+        version_start = time.perf_counter()
         beta_result = await self.measure_async_operation(
             f"{test_name} (Async Beta)",
             beta_func,
             iterations
         )
+        version_elapsed = time.perf_counter() - version_start
+        
         if beta_result['success']:
             beta_time = beta_result['stats']['mean']
             beta_ops = operation_count / beta_time
-            self.log(f"  平均時間: {format_time(beta_time)}")
+            self.log(f"  平均時間: {format_time(beta_time)} (実測: {format_time(version_elapsed)})")
             self.log(f"  スループット: {format_ops(beta_ops)}")
             results['beta'] = {
                 'time': beta_time,
@@ -421,6 +483,10 @@ class ComprehensiveBenchmark:
         else:
             self.log(f"  失敗: {beta_result.get('error', 'Unknown')}")
             results['beta'] = None
+        
+        # テスト全体の経過時間を表示
+        total_elapsed = time.perf_counter() - test_start_time
+        self.log(f"\n[テスト全体の実測時間: {format_time(total_elapsed)}]")
         
         # 比較結果
         self.log("\n[比較結果]")
@@ -1189,17 +1255,27 @@ def main():
     print("  1. DictSQLite (オリジナル版)")
     print("  2. DictSQLite-Fastest (APSW版)")
     print("  3. DictSQLite-Fastest Beta版 (メモリ最適化)")
-    print("\n同期・非同期操作、バルク処理、複雑データを網羅的にテストします。\n")
+    print("\n同期・非同期操作、バルク処理、複雑データを網羅的にテストします。")
+    
+    # tqdmの利用可否を表示
+    if TQDM_AVAILABLE:
+        print("✓ tqdmを使用してプログレスバーを表示します\n")
+    else:
+        print("⚠ tqdm未インストール（プログレスバーなし）\n")
     
     # ベンチマーク初期化
     benchmark = ComprehensiveBenchmark()
     scenarios = BenchmarkScenarios(benchmark)
+    
+    # 全体の開始時間を記録
+    overall_start = time.perf_counter()
     
     try:
         # ===== 同期操作テスト =====
         print("\n" + "="*80)
         print("同期操作テスト開始")
         print("="*80)
+        sync_start = time.perf_counter()
         
         # 基本操作
         scenarios.test_basic_write(count=1000)
@@ -1230,10 +1306,14 @@ def main():
         scenarios.test_mixed_operations(count=1000)
         scenarios.test_mixed_operations(count=5000)
         
+        sync_elapsed = time.perf_counter() - sync_start
+        print(f"\n✓ 同期操作テスト完了 (所要時間: {format_time(sync_elapsed)})")
+        
         # ===== 非同期操作テスト =====
         print("\n" + "="*80)
         print("非同期操作テスト開始")
         print("="*80)
+        async_start = time.perf_counter()
         
         async def run_async_tests():
             await scenarios.test_async_write(count=1000)
@@ -1247,20 +1327,28 @@ def main():
         
         asyncio.run(run_async_tests())
         
+        async_elapsed = time.perf_counter() - async_start
+        print(f"\n✓ 非同期操作テスト完了 (所要時間: {format_time(async_elapsed)})")
+        
         # ===== レポート生成 =====
         print("\n" + "="*80)
         print("レポート生成中...")
         print("="*80)
+        report_start = time.perf_counter()
         
         reporter = ReportGenerator(benchmark)
         reporter.generate_csv()
         reporter.generate_json()
         reporter.generate_markdown_summary()
         
+        report_elapsed = time.perf_counter() - report_start
+        print(f"\n✓ レポート生成完了 (所要時間: {format_time(report_elapsed)})")
+        
         # ===== グラフ生成 =====
         print("\n" + "="*80)
         print("グラフ生成中...")
         print("="*80)
+        graph_start = time.perf_counter()
         
         graph_generation_success = False
         try:
@@ -1277,7 +1365,9 @@ def main():
             print(f"  出力ディレクトリ: {generator.output_dir}")
             
             generator.generate_all_graphs()
-            print(f"✓ グラフ生成完了: {generator.output_dir}")
+            
+            graph_elapsed = time.perf_counter() - graph_start
+            print(f"✓ グラフ生成完了: {generator.output_dir} (所要時間: {format_time(graph_elapsed)})")
             graph_generation_success = True
             
         except ImportError as e:
@@ -1376,6 +1466,17 @@ def main():
                 print(f"  - グラフ: ディレクトリが作成されませんでした ({graph_dir})")
         else:
             print(f"  - グラフ: 生成スキップまたは失敗 (上記エラー参照)")
+        
+        # 全体の所要時間を表示
+        overall_elapsed = time.perf_counter() - overall_start
+        print(f"\n{'='*80}")
+        print(f"全ベンチマーク完了! 総所要時間: {format_time(overall_elapsed)}")
+        print(f"  - 同期テスト: {format_time(sync_elapsed)}")
+        print(f"  - 非同期テスト: {format_time(async_elapsed)}")
+        print(f"  - レポート生成: {format_time(report_elapsed)}")
+        if graph_generation_success:
+            print(f"  - グラフ生成: {format_time(graph_elapsed)}")
+        print(f"{'='*80}")
         
     except KeyboardInterrupt:
         print("\n\nベンチマーク中断されました。")
