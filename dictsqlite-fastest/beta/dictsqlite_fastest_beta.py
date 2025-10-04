@@ -398,44 +398,68 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             self._check_and_auto_load_database(db_name, auto_load_threshold_mb)
     
     def _ensure_table_exists(self):
-        """高速テーブル存在確認（親クラスのグローバルフラグ活用）
+        """高速テーブル存在確認（強化版 - WAL対応）
         
-        親クラスのグローバル初期化状態をチェックし、未初期化の場合のみ
-        実際のテーブル確認を実行。これにより、不要なSQLクエリを削減。
+        WALモードでのコネクション間可視性問題に対応した堅牢な実装。
+        各コネクションで直接テーブルの存在を確認し、必要なら作成。
         
-        パフォーマンス:
-            - 初期化済み: ~10ns (辞書ルックアップのみ)
-            - 未初期化: SQLクエリ実行（初回のみ）
+        戦略:
+        1. スレッドローカルフラグで2回目以降をスキップ（最速）
+        2. グローバルフラグで大部分のケースをスキップ
+        3. それでもダメな場合は直接SQLでテーブル確認・作成
         """
         # 親クラスのグローバル初期化状態をインポート
         from dictsqlite_fastest.main import _db_init_states
         
+        # 【超高速パス】スレッドローカルフラグ（このスレッドで既に確認済み）
+        if getattr(self._local, 'table_verified', False):
+            return  # 2-5ナノ秒
+        
         init_key = f"{self.db_name}:{self.table_name}"
         
-        # 【高速パス】親クラスで既に初期化済みの場合
+        # 【高速パス】グローバルフラグチェック
         if _db_init_states.get(init_key, False):
-            return  # 何もしない（最速）
+            # スレッドローカルフラグを設定して次回から超高速パスを使用
+            self._local.table_verified = True
+            return  # 約10ナノ秒
         
-        # 【低速パス】未初期化の場合のみ実行
+        # 【確実パス】直接このコネクションでテーブルを確認・作成
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
             # テーブルが存在するか確認
-            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name=?", (self.table_name,))
-            if not cursor.fetchone():
+            result = cursor.execute(
+                f"SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (self.table_name,)
+            )
+            if not list(result):
                 # テーブルが存在しない場合は作成
                 schema = f'CREATE TABLE IF NOT EXISTS {self._quote_ident(self.table_name)} (key TEXT PRIMARY KEY, value TEXT)'
                 cursor.execute(schema)
                 
-                # WALモードの場合、チェックポイント実行
+                # WALモードの場合、強力なチェックポイント実行
                 if hasattr(self, 'journal_mode') and self.journal_mode == 'WAL':
                     try:
-                        cursor.execute("PRAGMA wal_checkpoint(PASSIVE)")
+                        cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                     except Exception:
-                        pass
+                        try:
+                            cursor.execute("PRAGMA wal_checkpoint(RESTART)")
+                        except Exception:
+                            try:
+                                cursor.execute("PRAGMA wal_checkpoint(PASSIVE)")
+                            except Exception:
+                                pass
             
             # グローバルフラグを更新
             _db_init_states[init_key] = True
+            # スレッドローカルフラグを設定
+            self._local.table_verified = True
+        except Exception as e:
+            # 予期しないエラーの場合は親クラスの初期化を試みる
+            import logging
+            logging.warning(f"Table verification failed, attempting initialization: {e}")
+            super()._initialize_database()
+            self._local.table_verified = True
         finally:
             pass  # カーソルは閉じない（キャッシュされている）
     

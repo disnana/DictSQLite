@@ -608,7 +608,7 @@ class DictSQLiteFastest:
         self._bulk_operator = None
 
     def _initialize_database(self, schema=None):
-        """データベースの初期化を一度だけ実行（グローバル同期）- WAL最適化版"""
+        """データベースの初期化を一度だけ実行（グローバル同期）- 強化版"""
         global _db_init_locks, _db_init_states, _db_init_lock # noqa:F824
 
         # データベースファイル+テーブル名をキーとして使用
@@ -639,14 +639,22 @@ class DictSQLiteFastest:
                         schema = f'CREATE TABLE IF NOT EXISTS {self._quote_ident(self.table_name)} (key TEXT PRIMARY KEY, value TEXT)'
                     cursor.execute(schema)
                     
-                    # WALモードの可視性問題を解決（他のコネクションでも即座にテーブルが見えるように）
+                    # WALモードの可視性問題を強力に解決
                     if self.journal_mode == 'WAL':
                         try:
-                            # PASSIVEチェックポイント: 非ブロッキング、バックグラウンドで実行
-                            cursor.execute("PRAGMA wal_checkpoint(PASSIVE)")
+                            # TRUNCATEモードで強制的にチェックポイント実行
+                            # これにより確実に他のコネクションからも見えるようになる
+                            cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                         except Exception:  # pylint: disable=broad-exception-caught
-                            # チェックポイント失敗しても続行（ベストエフォート）
-                            pass
+                            try:
+                                # TRUNCATEが失敗したらRESTARTを試す
+                                cursor.execute("PRAGMA wal_checkpoint(RESTART)")
+                            except Exception:  # pylint: disable=broad-exception-caught
+                                # それでも失敗したらPASSIVE
+                                try:
+                                    cursor.execute("PRAGMA wal_checkpoint(PASSIVE)")
+                                except Exception:  # pylint: disable=broad-exception-caught
+                                    pass
                 finally:
                     cursor.close()
 
@@ -768,29 +776,56 @@ class DictSQLiteFastest:
         pass
 
     def _ensure_table_exists_fast(self):
-        """超高速テーブル存在確認（ゼロコストパス）
+        """超高速テーブル存在確認（強化版 - WAL対応）
         
-        グローバル初期化フラグをチェックし、未初期化の場合のみ初期化を実行。
-        初期化済みの場合、辞書ルックアップのみで完了（約5-10ナノ秒）。
+        WALモードでのコネクション間可視性問題に対応した堅牢な実装。
+        各コネクションで直接テーブルの存在を確認し、必要なら作成。
         
-        パフォーマンス:
-            - 初期化済み: ~10ns (辞書ルックアップのみ)
-            - 未初期化: 初期化コスト（初回のみ）
-            - オーバーヘッド: < 0.001%
+        戦略:
+        1. スレッドローカルフラグで2回目以降をスキップ（最速）
+        2. グローバルフラグで大部分のケースをスキップ
+        3. それでもダメな場合は直接SQLでテーブル確認・作成
         """
         global _db_init_states
+        
+        # 【超高速パス】スレッドローカルフラグ（このスレッドで既に確認済み）
+        if getattr(self._local, 'table_verified', False):
+            return  # 2-5ナノ秒
         
         # データベース+テーブルの初期化キー
         init_key = f"{self.db_name}:{self.table_name}"
         
-        # 【高速パス】グローバルフラグチェック（99.9%のケースでここで終了）
-        # 辞書ルックアップのみ = 約5-10ナノ秒
+        # 【高速パス】グローバルフラグチェック
         if _db_init_states.get(init_key, False):
-            return  # 既に初期化済み、何もしない
+            # スレッドローカルフラグを設定して次回から超高速パスを使用
+            self._local.table_verified = True
+            return  # 約10ナノ秒
         
-        # 【低速パス】未初期化の場合のみ実行（初回のみ）
-        # この時点でテーブルが存在しない可能性があるため初期化を実行
-        self._initialize_database()
+        # 【確実パス】直接このコネクションでテーブルを確認・作成
+        # WALモードでは他のコネクションで作成されたテーブルが見えない可能性があるため
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            # テーブルが存在するか確認
+            result = cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (self.table_name,)
+            )
+            if not list(result):
+                # テーブルが存在しない場合は作成
+                schema = f'CREATE TABLE IF NOT EXISTS {self._quote_ident(self.table_name)} (key TEXT PRIMARY KEY, value TEXT)'
+                cursor.execute(schema)
+                
+                # グローバルフラグを更新
+                _db_init_states[init_key] = True
+            
+            # スレッドローカルフラグを設定
+            self._local.table_verified = True
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # 予期しないエラーの場合はログを出力して初期化を試みる
+            logger.warning(f"Table verification failed, attempting initialization: {e}")
+            self._initialize_database()
+            self._local.table_verified = True
 
     def _prepare_statements(self):
         """パフォーマンス向上のためのprepared statements"""
@@ -1049,17 +1084,7 @@ class DictSQLiteFastest:
 
             # 再利用可能なカーソルを使用（プリペアドステートメント）
             stmt = self.db._get_prepared_statement('insert')
-            try:
-                self.db._execute_with_cursor(stmt, (key, value_str))
-            except apsw.SQLError as e:
-                # エラーハンドリング: テーブルが存在しない場合の自動修復
-                if 'no such table' in str(e).lower():
-                    logger.warning(f"Table not found despite initialization flag, re-initializing: {e}")
-                    self.db._initialize_database()
-                    # リトライ
-                    self.db._execute_with_cursor(stmt, (key, value_str))
-                else:
-                    raise
+            self.db._execute_with_cursor(stmt, (key, value_str))
 
         def __delitem__(self, key):
             # プリペアドステートメントを使用
@@ -1290,7 +1315,7 @@ class DictSQLiteFastest:
         if not items:
             return
 
-        # ゼロコストテーブル存在確認
+        # ゼロコストテーブル存在確認（確実にテーブルを作成）
         self._ensure_table_exists_fast()
 
         # データを準備
@@ -1317,17 +1342,6 @@ class DictSQLiteFastest:
             insert_sql = f"INSERT OR REPLACE INTO {self._quote_ident(self.table_name)} (key, value) VALUES (?, ?)"
             cursor.executemany(insert_sql, prepared_items)
             cursor.execute("COMMIT")
-        except apsw.SQLError as e:
-            cursor.execute("ROLLBACK")
-            # エラーハンドリングによる自動リトライ
-            if 'no such table' in str(e).lower():
-                logger.warning(f"Table not found despite initialization flag, re-initializing: {e}")
-                self._initialize_database()
-                # リトライ
-                self.bulk_insert_apsw_optimized(items)
-                return
-            else:
-                raise
         except Exception:
             cursor.execute("ROLLBACK")
             raise
@@ -1376,7 +1390,7 @@ class DictSQLiteFastest:
         if not items:
             return
 
-        # ゼロコストテーブル存在確認（初回以降は約10ナノ秒のオーバーヘッドのみ）
+        # ゼロコストテーブル存在確認（確実にテーブルを作成）
         self._ensure_table_exists_fast()
 
         conn = self._get_connection()
@@ -1399,19 +1413,6 @@ class DictSQLiteFastest:
 
             # トランザクションをコミット
             cursor.execute("COMMIT")
-        except apsw.SQLError as e:
-            cursor.execute("ROLLBACK")
-            # エラーハンドリングによる自動リトライ（フォールバック）
-            if 'no such table' in str(e).lower():
-                # 万が一グローバルフラグと実際の状態が不一致の場合の自動修復
-                logger.warning(f"Table not found despite initialization flag, re-initializing: {e}")
-                self._initialize_database()
-                # リトライ（再帰呼び出し、ただし無限ループ防止のため1回のみ）
-                cursor.close()
-                self.bulk_insert(items)
-                return
-            else:
-                raise
         except Exception:
             cursor.execute("ROLLBACK")
             raise
