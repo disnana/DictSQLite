@@ -21,6 +21,7 @@ import shutil
 import statistics
 import json
 import csv
+import gc  # ガベージコレクション
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Tuple, Callable, Any, Optional
@@ -218,7 +219,8 @@ class ComprehensiveBenchmark:
         name: str,
         func: Callable,
         iterations: int = 3,
-        warmup: int = 1
+        warmup: int = 1,
+        timeout: float = 120.0  # デフォルト120秒のタイムアウト
     ) -> Dict[str, Any]:
         """非同期操作のベンチマーク測定
         
@@ -227,6 +229,7 @@ class ComprehensiveBenchmark:
             func: 測定する非同期関数
             iterations: 測定回数
             warmup: ウォームアップ回数
+            timeout: 各イテレーションのタイムアウト（秒）
             
         Returns:
             測定結果の辞書
@@ -234,8 +237,8 @@ class ComprehensiveBenchmark:
         # ウォームアップ
         for _ in range(warmup):
             try:
-                await func()
-            except Exception:
+                await asyncio.wait_for(func(), timeout=timeout)
+            except (Exception, asyncio.TimeoutError):
                 pass
         
         # 測定
@@ -251,7 +254,7 @@ class ComprehensiveBenchmark:
         for i in iterator:
             try:
                 start = time.perf_counter()
-                await func()
+                await asyncio.wait_for(func(), timeout=timeout)
                 duration = time.perf_counter() - start
                 times.append(duration)
                 
@@ -259,6 +262,9 @@ class ComprehensiveBenchmark:
                 if use_tqdm and hasattr(iterator, 'set_description'):
                     iterator.set_description(f"  測定中 ({format_time(duration)})")
                     
+            except asyncio.TimeoutError:
+                errors.append(f'Timeout after {timeout}s')
+                self.log(f"  タイムアウト (試行 {i+1}): {timeout}秒経過", print_console=False)
             except Exception as e:
                 errors.append(str(e))
                 self.log(f"  エラー (試行 {i+1}): {e}", print_console=False)
@@ -412,6 +418,9 @@ class ComprehensiveBenchmark:
             'operation_count': operation_count,
             'results': results
         })
+        
+        # メモリ解放
+        gc.collect()
     
     async def compare_async_versions(
         self,
@@ -507,6 +516,9 @@ class ComprehensiveBenchmark:
             'operation_count': operation_count,
             'results': results
         })
+        
+        # メモリ解放
+        gc.collect()
 
 
 # =====================================================================
@@ -957,9 +969,11 @@ class BenchmarkScenarios:
             if db_path.exists():
                 db_path.unlink()
             db = AsyncDictSQLiteFastestBeta(str(db_path), memory_budget_mb=100)
-            for i in range(count):
-                await db.aset(f'key_{i}', f'value_{i}')
-            await db.aclose()
+            try:
+                for i in range(count):
+                    await db.aset(f'key_{i}', f'value_{i}')
+            finally:
+                await db.aclose()
         
         await self.benchmark.compare_async_versions(
             test_name, fastest, beta, count
@@ -983,8 +997,10 @@ class BenchmarkScenarios:
             if db_path.exists():
                 db_path.unlink()
             db = AsyncDictSQLiteFastestBeta(str(db_path), memory_budget_mb=100)
-            await db.abulk_insert(data)
-            await db.aclose()
+            try:
+                await db.abulk_insert(data)
+            finally:
+                await db.aclose()
         
         await self.benchmark.compare_async_versions(
             test_name, fastest, beta, count
@@ -1013,15 +1029,17 @@ class BenchmarkScenarios:
             if db_path.exists():
                 db_path.unlink()
             db = AsyncDictSQLiteFastestBeta(str(db_path), memory_budget_mb=100)
-            tasks = []
-            for i in range(count):
-                tasks.append(db.aset(f'key_{i}', f'value_{i}'))
-                if len(tasks) >= concurrency:
+            try:
+                tasks = []
+                for i in range(count):
+                    tasks.append(db.aset(f'key_{i}', f'value_{i}'))
+                    if len(tasks) >= concurrency:
+                        await asyncio.gather(*tasks)
+                        tasks = []
+                if tasks:
                     await asyncio.gather(*tasks)
-                    tasks = []
-            if tasks:
-                await asyncio.gather(*tasks)
-            await db.aclose()
+            finally:
+                await db.aclose()
         
         await self.benchmark.compare_async_versions(
             test_name, fastest, beta, count
@@ -1318,16 +1336,29 @@ def main():
         async_start = time.perf_counter()
         
         async def run_async_tests():
-            await scenarios.test_async_write(count=1000)
-            await scenarios.test_async_write(count=5000)
-            await scenarios.test_async_bulk_insert(count=1000)
-            await scenarios.test_async_bulk_insert(count=5000)
-            await scenarios.test_async_bulk_insert(count=10000)
-            await scenarios.test_async_concurrent_operations(count=500, concurrency=10)
-            await scenarios.test_async_concurrent_operations(count=1000, concurrency=20)
-            await scenarios.test_async_concurrent_operations(count=2000, concurrency=50)
+            """非同期テストを順次実行"""
+            try:
+                await scenarios.test_async_write(count=1000)
+                await scenarios.test_async_write(count=5000)
+                await scenarios.test_async_bulk_insert(count=1000)
+                await scenarios.test_async_bulk_insert(count=5000)
+                await scenarios.test_async_bulk_insert(count=10000)
+                await scenarios.test_async_concurrent_operations(count=500, concurrency=10)
+                await scenarios.test_async_concurrent_operations(count=1000, concurrency=20)
+                await scenarios.test_async_concurrent_operations(count=2000, concurrency=50)
+            except Exception as e:
+                print(f"\n⚠ 非同期テスト中にエラーが発生: {e}")
+                traceback.print_exc()
+                raise
         
-        asyncio.run(run_async_tests())
+        try:
+            asyncio.run(run_async_tests())
+        except KeyboardInterrupt:
+            print("\n非同期テストが中断されました")
+            raise
+        except Exception as e:
+            print(f"\n⚠ 非同期テスト実行中にエラー: {e}")
+            # 続行可能な場合は続ける
         
         async_elapsed = time.perf_counter() - async_start
         print(f"\n✓ 非同期操作テスト完了 (所要時間: {format_time(async_elapsed)})")
