@@ -69,12 +69,20 @@ class BenchmarkRunner:
         self.output_dir.mkdir(exist_ok=True)
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
+        # ログファイルの設定
+        self.log_file = self.output_dir / f"benchmark_{self.timestamp}.log"
+        self.log_buffer = []
+        
     def safe_print(self, message: str):
-        """Windowsエンコードエラーを回避した出力"""
+        """Windowsエンコードエラーを回避した出力（ログにも記録）"""
         try:
             print(message)
+            self.log_buffer.append(message)
         except UnicodeEncodeError:
-            print(message.encode('cp932', errors='replace').decode('cp932'))
+            safe_msg = message.encode('cp932', errors='replace').decode('cp932')
+            print(safe_msg)
+            self.log_buffer.append(message)  # ログには元のメッセージを保存
+
     
     def measure(self, name: str, func: Callable, iterations: int = 3) -> Dict[str, Any]:
         """関数の実行時間を測定"""
@@ -428,6 +436,71 @@ class BenchmarkRunner:
             }, f, indent=2, ensure_ascii=False)
         
         self.safe_print(f"結果をJSONに保存: {json_path}")
+        
+        # ログファイル保存
+        with open(self.log_file, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(self.log_buffer))
+        self.safe_print(f"ログを保存: {self.log_file}")
+        
+        # マークダウンサマリー保存
+        self.save_markdown_summary()
+    
+    def save_markdown_summary(self):
+        """マークダウン形式のサマリーを保存"""
+        md_path = self.output_dir / "BENCHMARK_SUMMARY.md"
+        
+        # 勝率集計
+        wins = {'original': 0, 'fastest': 0, 'beta': 0}
+        for result in self.results:
+            times = {k: v['time'] for k, v in result['results'].items()}
+            if times:
+                winner = min(times.items(), key=lambda x: x[1])[0]
+                wins[winner] += 1
+        
+        total = len(self.results)
+        
+        with open(md_path, 'w', encoding='utf-8') as f:
+            f.write("# DictSQLite ベンチマーク結果\n\n")
+            f.write(f"**実行日時**: {self.timestamp}\n\n")
+            
+            f.write("## 📊 総合勝率\n\n")
+            f.write(f"全{total}テスト中:\n\n")
+            f.write(f"- 🥇 **Beta版**: {wins['beta']}勝 ({wins['beta']/total*100:.1f}%)\n")
+            f.write(f"- 🥈 **Fastest版**: {wins['fastest']}勝 ({wins['fastest']/total*100:.1f}%)\n")
+            f.write(f"- 🥉 **Original版**: {wins['original']}勝 ({wins['original']/total*100:.1f}%)\n\n")
+            
+            # 推奨バージョン
+            if wins['beta'] >= wins['fastest']:
+                f.write("## 🎯 推奨バージョン\n\n")
+                f.write("**DictSQLite-Fastest Beta版** - LRUキャッシュによる最高速パフォーマンス\n\n")
+            else:
+                f.write("## 🎯 推奨バージョン\n\n")
+                f.write("**DictSQLite-Fastest APSW版** - 安定した高性能\n\n")
+            
+            # 詳細結果テーブル
+            f.write("## 📈 詳細結果\n\n")
+            f.write("| テスト | Original | Fastest | Beta | 最速 |\n")
+            f.write("|--------|----------|---------|------|------|\n")
+            
+            for result in self.results:
+                test_name = result['test']
+                times = {k: v['time'] for k, v in result['results'].items()}
+                winner = min(times.items(), key=lambda x: x[1])[0] if times else '-'
+                
+                orig_time = format_time(result['results']['original']['time'])
+                fast_time = format_time(result['results']['fastest']['time'])
+                beta_time = format_time(result['results']['beta']['time'])
+                
+                winner_emoji = {'original': '🥉', 'fastest': '🥈', 'beta': '🥇'}
+                winner_mark = winner_emoji.get(winner, '')
+                
+                f.write(f"| {test_name} | {orig_time} | {fast_time} | {beta_time} | {winner_mark} {winner.upper()} |\n")
+            
+            f.write(f"\n---\n")
+            f.write(f"*生成日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n")
+        
+        self.safe_print(f"マークダウンサマリーを保存: {md_path}")
+
     
     def print_summary(self):
         """サマリーを表示"""
