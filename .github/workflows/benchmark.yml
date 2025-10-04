@@ -1,3 +1,11 @@
+# パフォーマンスベンチマークワークフロー
+# 
+# このワークフローは負荷が大きいため、手動実行のみ許可されています。
+# 実行方法: GitHub の「Actions」タブ → 「Performance Benchmark」→ 「Run workflow」
+#
+# DictSQLite、DictSQLite-Fastest、DictSQLite-Fastest Beta の
+# 3つのバージョンを包括的にベンチマークし、結果をグラフ化します。
+
 name: Performance Benchmark
 
 permissions:
@@ -104,47 +112,25 @@ jobs:
         retention-days: 90
 
     - name: Create benchmark summary
-      if: github.event_name == 'pull_request'
       run: |
         SUMMARY_FILE="benchmark_results/BENCHMARK_SUMMARY.md"
         if [ -f "$SUMMARY_FILE" ]; then
           echo "## 📊 Benchmark Results" >> $GITHUB_STEP_SUMMARY
           cat "$SUMMARY_FILE" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*手動実行されたベンチマーク - $(date)*" >> $GITHUB_STEP_SUMMARY
         fi
 
-    - name: Comment PR with results
-      if: github.event_name == 'pull_request'
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const fs = require('fs');
-          const summaryPath = 'benchmark_results/BENCHMARK_SUMMARY.md';
-          
-          if (fs.existsSync(summaryPath)) {
-            const summary = fs.readFileSync(summaryPath, 'utf8');
-            const comment = `## 📊 Performance Benchmark Results\n\n${summary}\n\n---\n*Benchmark run for commit ${context.sha.substring(0, 7)}*`;
-            
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
-          }
-
-    - name: Commit and push results to repository
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    - name: Display benchmark info
       run: |
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git config --local user.name "github-actions[bot]"
-        
-        # benchmark_resultsディレクトリが.gitignoreに含まれていないことを確認
-        if grep -q "benchmark_results" .gitignore 2>/dev/null; then
-          sed -i '/^benchmark_results/d' .gitignore
+        echo "✅ ベンチマーク実行完了！"
+        echo ""
+        echo "📊 結果は以下の場所で確認できます:"
+        echo "  1. このワークフロー実行ページの 'Artifacts' セクション"
+        echo "  2. 上部の 'Summary' タブ"
+        echo ""
+        echo "💾 結果ファイル:"
+        if [ -d "benchmark_results" ]; then
+          find benchmark_results -type f -name "*.csv" -o -name "*.json" -o -name "*.md" -o -name "*.png" | head -20
         fi
-        
-        git add benchmark_results/
-        git diff --staged --quiet || git commit -m "chore: update benchmark results [skip ci]"
-        git push
-      continue-on-error: true
