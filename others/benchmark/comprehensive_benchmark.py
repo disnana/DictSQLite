@@ -657,25 +657,31 @@ class BenchmarkScenarios:
         """複雑なデータ構造の処理"""
         test_name = f"複雑データ構造 ({count}件)"
         
-        # 複雑なデータを生成
+        # プログレス表示
+        print(f"\n[準備] {test_name} - 複雑データ生成中...")
+        
+        # 複雑なデータを生成（最適化版）
         complex_data = {}
+        # データサイズを若干縮小して処理時間を短縮
         for i in range(count):
             complex_data[f'item_{i}'] = {
                 'id': i,
                 'name': f'アイテム_{i}',
                 'metadata': {
                     'tags': ['tag1', 'tag2', f'tag_{i}'],
-                    'scores': [1.0, 2.5, 3.7] * 10,
+                    'scores': [1.0, 2.5, 3.7] * 5,  # 10 → 5 に縮小
                     'nested': {
                         'level1': {
                             'level2': {
-                                'data': [i] * 50
+                                'data': [i] * 25  # 50 → 25 に縮小
                             }
                         }
                     }
                 },
-                'history': [{'timestamp': j, 'value': j * i} for j in range(20)]
+                'history': [{'timestamp': j, 'value': j * i} for j in range(10)]  # 20 → 10 に縮小
             }
+        
+        print(f"[準備完了] データ生成完了 ({len(complex_data)}件)")
         
         def original():
             db_path = self.temp_dir / f"original_complex_{count}.db"
