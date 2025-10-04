@@ -141,6 +141,9 @@ class BenchmarkGraphGenerator:
             print("Wide形式のCSVを検出、Long形式に変換中...")
             self._convert_wide_to_long()
         
+        # 列名の正規化（異なるCSV形式に対応）
+        self._normalize_column_names()
+        
         # タイムスタンプ
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
@@ -184,6 +187,18 @@ class BenchmarkGraphGenerator:
         # DataFrameを置き換え
         self.df = pd.DataFrame(records)
         print(f"✓ 変換完了: {len(self.df)}行 (Long形式)")
+    
+    def _normalize_column_names(self):
+        """列名を正規化して統一形式にする"""
+        # 時間列の正規化: 'Time (s)' → 'Duration(s)'
+        if 'Time (s)' in self.df.columns and 'Duration(s)' not in self.df.columns:
+            self.df.rename(columns={'Time (s)': 'Duration(s)'}, inplace=True)
+            print("✓ 列名正規化: 'Time (s)' → 'Duration(s)'")
+        
+        # その他の正規化が必要な場合はここに追加
+        # 例: 'Result' → 'Status' など
+        
+        print(f"✓ 正規化後のカラム: {list(self.df.columns)}")
     
     def clean_test_name(self, name: str) -> str:
         """テスト名から件数を抽出"""
