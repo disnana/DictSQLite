@@ -12,7 +12,9 @@ import tempfile
 import os
 import sys
 import statistics
+import csv
 from pathlib import Path
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add both modules to path
@@ -37,9 +39,15 @@ def measure_operation(func, iterations=3):
 class Benchmark:
     """Main benchmark class"""
     
-    def __init__(self, output_file=None):
+    def __init__(self, output_file=None, output_dir=None):
         self.results = []
         self.output_file = output_file
+        self.output_dir = Path(output_dir) if output_dir else Path("benchmark_results")
+        self.output_dir.mkdir(exist_ok=True)
+        
+        # CSV output file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.csv_file = self.output_dir / f"benchmark_{timestamp}.csv"
     
     def log(self, message):
         """Log message to console and optionally to file"""
@@ -190,6 +198,109 @@ class Benchmark:
                 ops_diff = result['ops_fastest'] - result['ops_original']
                 ops_speedup = result.get('ops_speedup', 1.0)
                 self.log(f"{result['name']:<30}: {ops_diff:+11,.0f} ops/sec improvement ({ops_speedup:.2f}x)")
+    
+    def save_csv(self):
+        """Save results to CSV file for graph generation"""
+        with open(self.csv_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Test', 'Version', 'Time(s)', 'OPS', 'Operations'])
+            
+            for result in self.results:
+                # Original version
+                if result['original_time'] != float('inf'):
+                    writer.writerow([
+                        result['name'],
+                        'original',
+                        f"{result['original_time']:.4f}",
+                        f"{result['ops_original']:.0f}",
+                        result['operation_count']
+                    ])
+                
+                # Fastest version
+                if result['fastest_time'] != float('inf'):
+                    writer.writerow([
+                        result['name'],
+                        'fastest',
+                        f"{result['fastest_time']:.4f}",
+                        f"{result['ops_fastest']:.0f}",
+                        result['operation_count']
+                    ])
+        
+        self.log(f"\n✓ CSV saved: {self.csv_file}")
+    
+    def generate_graphs(self):
+        """Generate performance graphs"""
+        try:
+            import matplotlib.pyplot as plt
+            import numpy as np
+            
+            graph_dir = self.output_dir / "graphs"
+            graph_dir.mkdir(exist_ok=True)
+            
+            # 1. OPS Comparison Graph
+            fig, ax = plt.subplots(figsize=(12, 6))
+            
+            test_names = [r['name'] for r in self.results]
+            x = np.arange(len(test_names))
+            width = 0.35
+            
+            original_ops = [r['ops_original'] for r in self.results]
+            fastest_ops = [r['ops_fastest'] for r in self.results]
+            
+            ax.bar(x - width/2, original_ops, width, label='Original', color='#FF6B6B')
+            ax.bar(x + width/2, fastest_ops, width, label='Fastest', color='#4ECDC4')
+            
+            ax.set_xlabel('Test', fontweight='bold')
+            ax.set_ylabel('Operations Per Second (OPS)', fontweight='bold')
+            ax.set_title('DictSQLite vs DictSQLite-Fastest: OPS Comparison', fontweight='bold', fontsize=14)
+            ax.set_xticks(x)
+            ax.set_xticklabels(test_names, rotation=45, ha='right')
+            ax.legend()
+            ax.grid(axis='y', alpha=0.3)
+            
+            plt.tight_layout()
+            ops_graph = graph_dir / "ops_comparison.png"
+            plt.savefig(ops_graph, dpi=150, bbox_inches='tight')
+            plt.close()
+            
+            self.log(f"✓ Graph saved: {ops_graph}")
+            
+            # 2. Speedup Graph
+            fig, ax = plt.subplots(figsize=(12, 6))
+            
+            speedups = [r['speedup'] for r in self.results]
+            colors = ['#4ECDC4' if s > 1 else '#FF6B6B' for s in speedups]
+            
+            ax.barh(test_names, speedups, color=colors)
+            ax.axvline(x=1.0, color='gray', linestyle='--', linewidth=2, label='Baseline (1x)')
+            ax.set_xlabel('Speedup Factor', fontweight='bold')
+            ax.set_ylabel('Test', fontweight='bold')
+            ax.set_title('DictSQLite-Fastest Performance Improvement', fontweight='bold', fontsize=14)
+            ax.legend()
+            ax.grid(axis='x', alpha=0.3)
+            
+            # Add value labels
+            for i, (test, speedup) in enumerate(zip(test_names, speedups)):
+                ax.text(speedup + 0.1, i, f'{speedup:.2f}x', va='center', fontweight='bold')
+            
+            plt.tight_layout()
+            speedup_graph = graph_dir / "speedup_comparison.png"
+            plt.savefig(speedup_graph, dpi=150, bbox_inches='tight')
+            plt.close()
+            
+            self.log(f"✓ Graph saved: {speedup_graph}")
+            
+            return graph_dir
+            
+        except ImportError:
+            self.log("\n⚠ Graph generation skipped: matplotlib not installed")
+            self.log("  To generate graphs, install: pip install matplotlib")
+            return None
+        except Exception as e:
+            self.log(f"\n⚠ Graph generation error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
 
 def main():
@@ -317,6 +428,20 @@ def main():
     
     # Print final summary
     benchmark.print_summary()
+    
+    # Save CSV and generate graphs
+    benchmark.save_csv()
+    graph_dir = benchmark.generate_graphs()
+    
+    # Final output summary
+    print("\n" + "="*80)
+    print("BENCHMARK COMPLETE")
+    print("="*80)
+    print(f"\nOutput Directory: {benchmark.output_dir}")
+    print(f"  - CSV: {benchmark.csv_file.name}")
+    if graph_dir:
+        graph_files = list(graph_dir.glob('*.png'))
+        print(f"  - Graphs: {len(graph_files)} files in {graph_dir.name}/")
 
 
 if __name__ == "__main__":
