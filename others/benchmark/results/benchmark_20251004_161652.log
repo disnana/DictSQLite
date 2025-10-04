@@ -1,0 +1,350 @@
+
+================================================================================
+テスト: 基本書き込み (1000件)
+操作数: 1,000
+================================================================================
+
+[DictSQLite オリジナル版]
+  平均時間: 2.964s
+  スループット: 337.35 ops/sec
+
+[DictSQLite-Fastest APSW版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[DictSQLite-Fastest Beta版]
+  平均時間: 9.38ms
+  スループット: 106.59K ops/sec
+
+[比較結果]
+  Beta vs Original: 315.97x 高速
+
+  [最速] BETA
+
+================================================================================
+テスト: 基本書き込み (5000件)
+操作数: 5,000
+================================================================================
+
+[DictSQLite オリジナル版]
+  平均時間: 12.453s
+  スループット: 401.53 ops/sec
+
+[DictSQLite-Fastest APSW版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[DictSQLite-Fastest Beta版]
+  平均時間: 18.14ms
+  スループット: 275.65K ops/sec
+
+[比較結果]
+  Beta vs Original: 686.51x 高速
+
+  [最速] BETA
+
+================================================================================
+テスト: 基本読み込み (1000件)
+操作数: 1,000
+================================================================================
+
+[DictSQLite オリジナル版]
+  平均時間: 184.77ms
+  スループット: 5.41K ops/sec
+
+[DictSQLite-Fastest APSW版]
+  平均時間: 20.38ms
+  スループット: 49.08K ops/sec
+
+[DictSQLite-Fastest Beta版]
+  平均時間: 28.55ms
+  スループット: 35.03K ops/sec
+
+[比較結果]
+  Fastest vs Original: 9.07x 高速
+  Beta vs Original: 6.47x 高速
+  Beta vs Fastest: 0.71x 高速
+
+  [最速] FASTEST
+
+================================================================================
+テスト: 基本読み込み (5000件)
+操作数: 5,000
+================================================================================
+
+[DictSQLite オリジナル版]
+  平均時間: 824.06ms
+  スループット: 6.07K ops/sec
+
+[DictSQLite-Fastest APSW版]
+  平均時間: 75.33ms
+  スループット: 66.37K ops/sec
+
+[DictSQLite-Fastest Beta版]
+  平均時間: 103.01ms
+  スループット: 48.54K ops/sec
+
+[比較結果]
+  Fastest vs Original: 10.94x 高速
+  Beta vs Original: 8.00x 高速
+  Beta vs Fastest: 0.73x 高速
+
+  [最速] FASTEST
+
+================================================================================
+テスト: バルク挿入 (1000件)
+操作数: 1,000
+================================================================================
+
+[DictSQLite オリジナル版]
+  平均時間: 2.647s
+  スループット: 377.74 ops/sec
+
+[DictSQLite-Fastest APSW版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[DictSQLite-Fastest Beta版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[比較結果]
+
+  [最速] ORIGINAL
+
+================================================================================
+テスト: バルク挿入 (5000件)
+操作数: 5,000
+================================================================================
+
+[DictSQLite オリジナル版]
+  平均時間: 13.258s
+  スループット: 377.13 ops/sec
+
+[DictSQLite-Fastest APSW版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[DictSQLite-Fastest Beta版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[比較結果]
+
+  [最速] ORIGINAL
+
+================================================================================
+テスト: バルク挿入 (10000件)
+操作数: 10,000
+================================================================================
+
+[DictSQLite オリジナル版]
+  平均時間: 26.355s
+  スループット: 379.44 ops/sec
+
+[DictSQLite-Fastest APSW版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[DictSQLite-Fastest Beta版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[比較結果]
+
+  [最速] ORIGINAL
+
+================================================================================
+テスト: バルク読み込み (1000件)
+操作数: 1,000
+================================================================================
+
+[DictSQLite オリジナル版]
+  平均時間: 191.57ms
+  スループット: 5.22K ops/sec
+
+[DictSQLite-Fastest APSW版]
+  平均時間: 7.09ms
+  スループット: 140.96K ops/sec
+
+[DictSQLite-Fastest Beta版]
+  平均時間: 8.86ms
+  スループット: 112.88K ops/sec
+
+[比較結果]
+  Fastest vs Original: 27.00x 高速
+  Beta vs Original: 21.63x 高速
+  Beta vs Fastest: 0.80x 高速
+
+  [最速] FASTEST
+
+================================================================================
+テスト: バルク読み込み (5000件)
+操作数: 5,000
+================================================================================
+
+[DictSQLite オリジナル版]
+  平均時間: 904.38ms
+  スループット: 5.53K ops/sec
+
+[DictSQLite-Fastest APSW版]
+  平均時間: 24.79ms
+  スループット: 201.73K ops/sec
+
+[DictSQLite-Fastest Beta版]
+  平均時間: 29.75ms
+  スループット: 168.09K ops/sec
+
+[比較結果]
+  Fastest vs Original: 36.49x 高速
+  Beta vs Original: 30.40x 高速
+  Beta vs Fastest: 0.83x 高速
+
+  [最速] FASTEST
+
+================================================================================
+テスト: バルク読み込み (10000件)
+操作数: 10,000
+================================================================================
+
+[DictSQLite オリジナル版]
+  平均時間: 1.893s
+  スループット: 5.28K ops/sec
+
+[DictSQLite-Fastest APSW版]
+  平均時間: 24.69ms
+  スループット: 404.94K ops/sec
+
+[DictSQLite-Fastest Beta版]
+  平均時間: 42.01ms
+  スループット: 238.04K ops/sec
+
+[比較結果]
+  Fastest vs Original: 76.66x 高速
+  Beta vs Original: 45.06x 高速
+  Beta vs Fastest: 0.59x 高速
+
+  [最速] FASTEST
+
+================================================================================
+テスト: 複雑データ構造 (100件)
+操作数: 100
+================================================================================
+
+[DictSQLite オリジナル版]
+  平均時間: 272.73ms
+  スループット: 366.66 ops/sec
+
+[DictSQLite-Fastest APSW版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[DictSQLite-Fastest Beta版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[比較結果]
+
+  [最速] ORIGINAL
+
+================================================================================
+テスト: 複雑データ構造 (500件)
+操作数: 500
+================================================================================
+
+[DictSQLite オリジナル版]
+  平均時間: 1.391s
+  スループット: 359.35 ops/sec
+
+[DictSQLite-Fastest APSW版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[DictSQLite-Fastest Beta版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[比較結果]
+
+  [最速] ORIGINAL
+
+================================================================================
+テスト: 複雑データ構造 (1000件)
+操作数: 1,000
+================================================================================
+
+[DictSQLite オリジナル版]
+  平均時間: 2.628s
+  スループット: 380.58 ops/sec
+
+[DictSQLite-Fastest APSW版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[DictSQLite-Fastest Beta版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[比較結果]
+
+  [最速] ORIGINAL
+
+================================================================================
+テスト: 更新操作 (1000件)
+操作数: 1,000
+================================================================================
+
+[DictSQLite オリジナル版]
+  平均時間: 5.217s
+  スループット: 191.69 ops/sec
+
+[DictSQLite-Fastest APSW版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[DictSQLite-Fastest Beta版]
+  エラー (試行 1): no such table: main
+  エラー (試行 2): no such table: main
+  エラー (試行 3): no such table: main
+  失敗: no such table: main
+
+[比較結果]
+
+  [最速] ORIGINAL
+
+================================================================================
+テスト: 更新操作 (5000件)
+操作数: 5,000
+================================================================================
+
+[DictSQLite オリジナル版]
