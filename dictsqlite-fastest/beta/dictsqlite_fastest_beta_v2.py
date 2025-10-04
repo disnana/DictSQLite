@@ -406,7 +406,10 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
     def _background_flush_worker(self) -> None:
         """バックグラウンドフラッシュワーカー."""
         while not self._background_flush_stop_event.is_set():
-            time.sleep(1.0)  # 1秒ごとにチェック
+            # wait()を使用することで、stopイベントが設定されたら即座に終了できる
+            # タイムアウトは1秒で、定期的にフラッシュをチェック
+            if self._background_flush_stop_event.wait(timeout=1.0):
+                break  # stopイベントが設定された
             
             if self._write_buffer and self._write_buffer._should_flush():
                 try:
