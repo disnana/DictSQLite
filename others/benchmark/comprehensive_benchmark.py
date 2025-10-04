@@ -1301,16 +1301,22 @@ def main():
         print(f"  - JSON: {benchmark.json_file.name}")
         print(f"  - サマリー: {benchmark.summary_file.name}")
         
-        # グラフディレクトリの情報を詳細表示
+        # グラフディレクトリの情報を簡潔に表示
         graph_dir = benchmark.output_dir / "graphs"
         if graph_generation_success:
             if graph_dir.exists():
                 graph_files = list(graph_dir.glob('*.png'))
                 if graph_files:
-                    print(f"  - グラフ: {len(graph_files)}個 ({graph_dir.name}/)")
-                    for gf in sorted(graph_files):
-                        size_kb = gf.stat().st_size / 1024
-                        print(f"      * {gf.name} ({size_kb:.1f} KB)")
+                    # 今回生成されたグラフのみを表示（タイムスタンプでフィルタ）
+                    current_graphs = [gf for gf in graph_files if benchmark.timestamp in gf.name]
+                    total_size_kb = sum(gf.stat().st_size for gf in current_graphs) / 1024
+                    
+                    print(f"  - グラフ: {len(current_graphs)}個生成 ({graph_dir.name}/) - 合計 {total_size_kb:.1f} KB")
+                    
+                    # 詳細はオプション（コメントアウト）
+                    # for gf in sorted(current_graphs):
+                    #     size_kb = gf.stat().st_size / 1024
+                    #     print(f"      * {gf.name} ({size_kb:.1f} KB)")
                 else:
                     print(f"  - グラフ: ディレクトリは存在するがファイルなし")
             else:
