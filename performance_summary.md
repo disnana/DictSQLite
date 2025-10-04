@@ -1,7 +1,7 @@
 # 総合パフォーマンステスト結果
 # Comprehensive Performance Test Results
 
-**テスト実施日時 / Test Date**: 2025-10-04 03:56:24
+**テスト実施日時 / Test Date**: 2025-10-04 04:47:50
 
 ---
 
@@ -9,40 +9,46 @@
 
 | モード | 操作 | アイテム数 | 時間(秒) | OPS | 備考 |
 |--------|------|-----------|---------|-----|------|
-| sync | individual_write | 1,000 | 0.0036 | 277.85K ops/s |  |
-| sync | individual_read | 1,000 | 0.0665 | 15.05K ops/s |  |
-| sync | bulk_write | 1,000 | 0.0030 | 338.98K ops/s |  |
-| sync | update | 1,000 | 0.0034 | 296.84K ops/s |  |
-| sync | delete | 1,000 | 0.0019 | 513.50K ops/s |  |
+| sync | individual_write | 1,000 | 0.0036 | 276.25K ops/s |  |
+| sync | individual_read | 1,000 | 0.0999 | 10.01K ops/s |  |
+| sync | bulk_write | 1,000 | 0.0030 | 337.67K ops/s |  |
+| sync | update | 1,000 | 0.0033 | 304.91K ops/s |  |
+| sync | delete | 1,000 | 0.0020 | 510.85K ops/s |  |
+| async | individual_write | 1,000 | 0.6797 | 1.47K ops/s | via_asyncio.to_thread |
+| async | individual_read | 1,000 | 0.0715 | 13.98K ops/s | via_asyncio.to_thread |
+| async | bulk_write | 1,000 | 0.6975 | 1.43K ops/s | via_asyncio.to_thread |
+| async | update | 1,000 | 0.7010 | 1.43K ops/s | via_asyncio.to_thread |
+| async | delete | 1,000 | 0.6727 | 1.49K ops/s | via_asyncio.to_thread |
+| async | mixed_operations | 1,000 | 0.5030 | 1.99K ops/s | via_asyncio.to_thread |
 
 ## dictsqlite-fastest
 
 | モード | 操作 | アイテム数 | 時間(秒) | OPS | 備考 |
 |--------|------|-----------|---------|-----|------|
-| sync | individual_write | 10,000 | 0.2422 | 41.28K ops/s | optimized |
-| sync | individual_read | 10,000 | 0.1628 | 61.43K ops/s | optimized |
-| sync | bulk_write | 10,000 | 0.0230 | 434.38K ops/s | optimized |
-| sync | update | 10,000 | 0.3105 | 32.21K ops/s | optimized |
-| sync | delete | 10,000 | 0.2168 | 46.12K ops/s | optimized |
-| sync | mixed_operations | 10,000 | 0.2709 | 36.92K ops/s | optimized |
-| async | individual_write | 10,000 | 21.4490 | 466.22 ops/s | optimized |
-| async | individual_read | 10,000 | 6.6473 | 1.50K ops/s | optimized |
-| async | bulk_write | 10,000 | 0.0310 | 322.64K ops/s | optimized |
-| async | update | 10,000 | 19.6516 | 508.86 ops/s | optimized |
-| async | delete | 10,000 | 20.8451 | 479.73 ops/s | optimized |
-| async | mixed_operations | 10,000 | 17.0715 | 585.77 ops/s | optimized |
+| sync | individual_write | 10,000 | 0.2277 | 43.92K ops/s | optimized |
+| sync | individual_read | 10,000 | 0.1675 | 59.70K ops/s | optimized |
+| sync | bulk_write | 10,000 | 0.0230 | 433.86K ops/s | optimized |
+| sync | update | 10,000 | 0.2875 | 34.78K ops/s | optimized |
+| sync | delete | 10,000 | 0.2057 | 48.62K ops/s | optimized |
+| sync | mixed_operations | 10,000 | 0.2646 | 37.80K ops/s | optimized |
+| async | individual_write | 10,000 | 15.5983 | 641.09 ops/s | optimized |
+| async | individual_read | 10,000 | 6.8814 | 1.45K ops/s | optimized |
+| async | bulk_write | 10,000 | 0.0308 | 325.03K ops/s | optimized |
+| async | update | 10,000 | 16.2394 | 615.79 ops/s | optimized |
+| async | delete | 10,000 | 15.8144 | 632.34 ops/s | optimized |
+| async | mixed_operations | 10,000 | 13.1519 | 760.35 ops/s | optimized |
 
 ## beta
 
 | モード | 操作 | アイテム数 | 時間(秒) | OPS | 備考 |
 |--------|------|-----------|---------|-----|------|
-| sync | individual_write | 10,000 | 0.0425 | 235.19K ops/s | normal_mode |
-| sync | individual_write | 10,000 | 0.0404 | 247.31K ops/s | optimized_mode |
-| sync | individual_read | 10,000 | 0.1632 | 61.27K ops/s | optimized_mode |
-| sync | bulk_write | 10,000 | 0.0293 | 341.10K ops/s | optimized_mode |
-| sync | update | 10,000 | 0.0471 | 212.42K ops/s | optimized_mode |
-| sync | delete | 10,000 | 0.1615 | 61.93K ops/s | optimized_mode |
-| sync | mixed_operations | 10,000 | 0.0840 | 119.05K ops/s | optimized_mode |
+| sync | individual_write | 10,000 | 0.0422 | 237.07K ops/s | normal_mode |
+| sync | individual_write | 10,000 | 0.0408 | 244.93K ops/s | optimized_mode |
+| sync | individual_read | 10,000 | 0.1661 | 60.19K ops/s | optimized_mode |
+| sync | bulk_write | 10,000 | 0.0288 | 347.37K ops/s | optimized_mode |
+| sync | update | 10,000 | 0.0441 | 226.81K ops/s | optimized_mode |
+| sync | delete | 10,000 | 0.1606 | 62.27K ops/s | optimized_mode |
+| sync | mixed_operations | 10,000 | 0.0862 | 115.99K ops/s | optimized_mode |
 
 ## パフォーマンス比較 / Performance Comparison
 
@@ -50,60 +56,66 @@
 
 | バージョン | OPS | ベースライン比 | 備考 |
 |-----------|-----|---------------|------|
-| dictsqlite | 277.85K ops/s | 1.00x |  |
-| dictsqlite-fastest | 41.28K ops/s | 0.15x | optimized |
-| beta | 235.19K ops/s | 0.85x | normal_mode |
-| beta | 247.31K ops/s | 0.89x | optimized_mode |
+| dictsqlite | 276.25K ops/s | 1.00x |  |
+| dictsqlite-fastest | 43.92K ops/s | 0.16x | optimized |
+| beta | 237.07K ops/s | 0.86x | normal_mode |
+| beta | 244.93K ops/s | 0.89x | optimized_mode |
 
 ### 個別読み込み / Individual Read
 
 | バージョン | OPS | ベースライン比 | 備考 |
 |-----------|-----|---------------|------|
-| dictsqlite | 15.05K ops/s | 1.00x |  |
-| dictsqlite-fastest | 61.43K ops/s | 4.08x | optimized |
-| beta | 61.27K ops/s | 4.07x | optimized_mode |
+| dictsqlite | 10.01K ops/s | 1.00x |  |
+| dictsqlite-fastest | 59.70K ops/s | 5.96x | optimized |
+| beta | 60.19K ops/s | 6.01x | optimized_mode |
 
 ### バルク書き込み / Bulk Write
 
 | バージョン | OPS | ベースライン比 | 備考 |
 |-----------|-----|---------------|------|
-| dictsqlite | 338.98K ops/s | 1.00x |  |
-| dictsqlite-fastest | 434.38K ops/s | 1.28x | optimized |
-| beta | 341.10K ops/s | 1.01x | optimized_mode |
+| dictsqlite | 337.67K ops/s | 1.00x |  |
+| dictsqlite-fastest | 433.86K ops/s | 1.28x | optimized |
+| beta | 347.37K ops/s | 1.03x | optimized_mode |
 
 ### 更新 / Update
 
 | バージョン | OPS | ベースライン比 | 備考 |
 |-----------|-----|---------------|------|
-| dictsqlite | 296.84K ops/s | 1.00x |  |
-| dictsqlite-fastest | 32.21K ops/s | 0.11x | optimized |
-| beta | 212.42K ops/s | 0.72x | optimized_mode |
+| dictsqlite | 304.91K ops/s | 1.00x |  |
+| dictsqlite-fastest | 34.78K ops/s | 0.11x | optimized |
+| beta | 226.81K ops/s | 0.74x | optimized_mode |
 
 ### 削除 / Delete
 
 | バージョン | OPS | ベースライン比 | 備考 |
 |-----------|-----|---------------|------|
-| dictsqlite | 513.50K ops/s | 1.00x |  |
-| dictsqlite-fastest | 46.12K ops/s | 0.09x | optimized |
-| beta | 61.93K ops/s | 0.12x | optimized_mode |
+| dictsqlite | 510.85K ops/s | 1.00x |  |
+| dictsqlite-fastest | 48.62K ops/s | 0.10x | optimized |
+| beta | 62.27K ops/s | 0.12x | optimized_mode |
 
 ### 混合操作 / Mixed Operations
 
 | バージョン | OPS | ベースライン比 | 備考 |
 |-----------|-----|---------------|------|
-| dictsqlite-fastest | 36.92K ops/s | 36917.16x | optimized |
-| beta | 119.05K ops/s | 119045.55x | optimized_mode |
+| dictsqlite-fastest | 37.80K ops/s | 37799.42x | optimized |
+| beta | 115.99K ops/s | 115992.56x | optimized_mode |
 
 ### 非同期パフォーマンス / Async Performance
 
 | バージョン | 操作 | OPS |
 |-----------|------|-----|
-| dictsqlite-fastest | individual_write | 466.22 ops/s |
-| dictsqlite-fastest | individual_read | 1.50K ops/s |
-| dictsqlite-fastest | bulk_write | 322.64K ops/s |
-| dictsqlite-fastest | update | 508.86 ops/s |
-| dictsqlite-fastest | delete | 479.73 ops/s |
-| dictsqlite-fastest | mixed_operations | 585.77 ops/s |
+| dictsqlite | individual_write | 1.47K ops/s |
+| dictsqlite | individual_read | 13.98K ops/s |
+| dictsqlite | bulk_write | 1.43K ops/s |
+| dictsqlite | update | 1.43K ops/s |
+| dictsqlite | delete | 1.49K ops/s |
+| dictsqlite | mixed_operations | 1.99K ops/s |
+| dictsqlite-fastest | individual_write | 641.09 ops/s |
+| dictsqlite-fastest | individual_read | 1.45K ops/s |
+| dictsqlite-fastest | bulk_write | 325.03K ops/s |
+| dictsqlite-fastest | update | 615.79 ops/s |
+| dictsqlite-fastest | delete | 632.34 ops/s |
+| dictsqlite-fastest | mixed_operations | 760.35 ops/s |
 
 ## 速度倍率サマリー / Speed Multiplier Summary
 
@@ -111,11 +123,11 @@ DictSQLiteをベースライン(1.0x)とした場合の各バージョンの速�
 
 | 操作 | dictsqlite-fastest | beta (optimized) |
 |------|-------------------|------------------|
-| 個別書き込み | 0.15x | 0.89x |
-| 個別読み込み | 4.08x | 4.07x |
-| バルク書き込み | 1.28x | 1.01x |
-| 更新 | 0.11x | 0.72x |
-| 削除 | 0.09x | 0.12x |
+| 個別書き込み | 0.16x | 0.89x |
+| 個別読み込み | 5.96x | 6.01x |
+| バルク書き込み | 1.28x | 1.03x |
+| 更新 | 0.11x | 0.74x |
+| 削除 | 0.10x | 0.12x |
 
 ## サマリー / Summary
 
