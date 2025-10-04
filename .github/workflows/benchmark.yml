@@ -41,29 +41,21 @@ jobs:
         pip install -r requirements.txt
         pip install matplotlib seaborn pandas numpy plotly kaleido
         pip install -e .
-        # dictsqlite-fastest のインストール
-        if [ -d "dictsqlite-fastest" ]; then
-          cd dictsqlite-fastest
-          if [ -f "requirements.txt" ]; then
-            pip install -r requirements.txt
-          fi
-          pip install -e .
-          cd ..
+        # dictsqlite-fastest の依存関係をインストール（パッケージとしてではなく）
+        if [ -f "dictsqlite-fastest/requirements.txt" ]; then
+          pip install -r dictsqlite-fastest/requirements.txt
         fi
-        # dictsqlite-fastest beta のインストール
-        if [ -d "dictsqlite-fastest/beta" ]; then
-          cd dictsqlite-fastest/beta
-          if [ -f "requirements.txt" ]; then
-            pip install -r requirements.txt
-          fi
-          pip install -e .
-          cd ../..
+        # dictsqlite-fastest beta の依存関係をインストール
+        if [ -f "dictsqlite-fastest/beta/requirements.txt" ]; then
+          pip install -r dictsqlite-fastest/beta/requirements.txt
         fi
 
     - name: Run fast comprehensive benchmark
       run: |
         cd others/benchmark
         python fast_comprehensive_benchmark.py
+      env:
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/dictsqlite-fastest:${{ github.workspace }}/dictsqlite-fastest/beta
       continue-on-error: false
 
     - name: Generate benchmark visualizations
@@ -78,6 +70,8 @@ jobs:
           echo "No CSV file found in benchmark_results/"
           exit 1
         fi
+      env:
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/dictsqlite-fastest:${{ github.workspace }}/dictsqlite-fastest/beta
       continue-on-error: false
 
     - name: List benchmark results

@@ -11,7 +11,7 @@
 5. オプションの完全メモリモード
 """
 
-from .dictsqlite_fastest_beta import DictSQLiteFastestBeta
+from .dictsqlite_fastest_beta import DictSQLiteFastestBeta, AsyncDictSQLiteFastestBeta
 
-__all__ = ['DictSQLiteFastestBeta']
+__all__ = ['DictSQLiteFastestBeta', 'AsyncDictSQLiteFastestBeta']
 __version__ = '0.1.0-beta'
