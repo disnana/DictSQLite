@@ -186,6 +186,19 @@ class BenchmarkGraphGenerator:
         
         print(f"\n✓ すべてのグラフ生成完了!")
         print(f"  保存先: {self.output_dir}")
+        
+        # 生成されたファイルをリスト表示
+        if self.output_dir.exists():
+            graph_files = list(self.output_dir.glob('*.*'))
+            if graph_files:
+                print(f"\n📊 生成されたグラフファイル ({len(graph_files)}個):")
+                for f in sorted(graph_files):
+                    size = f.stat().st_size / 1024  # KB
+                    print(f"  - {f.name} ({size:.1f} KB)")
+            else:
+                print(f"\n⚠️ 警告: グラフファイルが見つかりません！")
+        else:
+            print(f"\n⚠️ エラー: 出力ディレクトリが存在しません: {self.output_dir}")
     
     def plot_ops_comparison(self):
         """OPS比較棒グラフ"""

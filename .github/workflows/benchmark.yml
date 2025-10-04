@@ -129,8 +129,28 @@ jobs:
         echo "📊 結果は以下の場所で確認できます:"
         echo "  1. このワークフロー実行ページの 'Artifacts' セクション"
         echo "  2. 上部の 'Summary' タブ"
+        echo "  3. リポジトリの others/benchmark/results/ ディレクトリ（コミット後）"
         echo ""
         echo "💾 結果ファイル:"
         if [ -d "others/benchmark/results" ]; then
           find others/benchmark/results -type f -name "*.csv" -o -name "*.json" -o -name "*.md" -o -name "*.png" | head -20
         fi
+
+    - name: Commit and push benchmark results
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        
+        # ベンチマーク結果を追加
+        git add others/benchmark/results/
+        
+        # 変更があればコミット
+        if git diff --staged --quiet; then
+          echo "コミットする変更がありません"
+        else
+          TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+          git commit -m "📊 ベンチマーク結果を追加 - ${TIMESTAMP} [skip ci]"
+          git push
+          echo "✅ ベンチマーク結果をリポジトリにコミットしました"
+        fi
+      continue-on-error: true
