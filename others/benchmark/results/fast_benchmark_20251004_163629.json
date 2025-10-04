@@ -1,0 +1,295 @@
+{
+  "timestamp": "2025-10-04T16:36:29.544107",
+  "config": {
+    "iterations": 2,
+    "thread_count": 3,
+    "verbose": true
+  },
+  "test_sizes": {
+    "tiny": 50,
+    "small": 100,
+    "medium": 500,
+    "large": 2000
+  },
+  "total_time": 42.16086673736572,
+  "results": {
+    "original": {
+      "write_small": {
+        "name": "基本書き込み (100件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.23649860000023182,
+        "errors": []
+      },
+      "read_small": {
+        "name": "基本読み込み (100件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.015510949999224977,
+        "errors": []
+      },
+      "write_medium": {
+        "name": "基本書き込み (500件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 1.1773061000003509,
+        "errors": []
+      },
+      "bulk_insert_medium": {
+        "name": "バルク挿入 (500件)",
+        "success": 0,
+        "failure": 1,
+        "total": 1,
+        "success_rate": 0.0,
+        "avg_time": 0,
+        "errors": [
+          "bulk_insert not supported"
+        ]
+      },
+      "complex_medium": {
+        "name": "複雑データ (500件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 1.341712300000836,
+        "errors": []
+      },
+      "bulk_insert_large": {
+        "name": "バルク挿入 (2000件)",
+        "success": 0,
+        "failure": 1,
+        "total": 1,
+        "success_rate": 0.0,
+        "avg_time": 0,
+        "errors": [
+          "bulk_insert not supported"
+        ]
+      },
+      "update_large": {
+        "name": "更新操作 (2000件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 5.771588749999864,
+        "errors": []
+      },
+      "mixed": {
+        "name": "混合操作 (500件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 2.160637700000734,
+        "errors": []
+      },
+      "multithreaded": {
+        "name": "マルチスレッド (100件 x 3スレッド)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.9663128000001961,
+        "errors": []
+      }
+    },
+    "fastest": {},
+    "beta": {
+      "write_small": {
+        "name": "基本書き込み (100件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.015777999999954773,
+        "errors": []
+      },
+      "read_small": {
+        "name": "基本読み込み (100件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.008014949999960663,
+        "errors": []
+      },
+      "write_medium": {
+        "name": "基本書き込み (500件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.017602400001123897,
+        "errors": []
+      },
+      "bulk_insert_medium": {
+        "name": "バルク挿入 (500件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.015420849999827624,
+        "errors": []
+      },
+      "complex_medium": {
+        "name": "複雑データ (500件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.01903195000068081,
+        "errors": []
+      },
+      "bulk_insert_large": {
+        "name": "バルク挿入 (2000件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.019003849999535305,
+        "errors": []
+      },
+      "update_large": {
+        "name": "更新操作 (2000件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.015423650000229827,
+        "errors": []
+      },
+      "mixed": {
+        "name": "混合操作 (500件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.015586849999635888,
+        "errors": []
+      },
+      "multithreaded": {
+        "name": "マルチスレッド (100件 x 3スレッド)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 3.0778113500000472,
+        "errors": []
+      },
+      "async_basic": {
+        "name": "非同期基本 (500件)",
+        "success": 0,
+        "failure": 2,
+        "total": 2,
+        "success_rate": 0.0,
+        "avg_time": 0,
+        "errors": [
+          "AttributeError: 'AsyncDictSQLiteFastestBeta' object has no attribute 'close'",
+          "AttributeError: 'AsyncDictSQLiteFastestBeta' object has no attribute 'close'"
+        ]
+      }
+    },
+    "fastest_apsw": {
+      "write_small": {
+        "name": "基本書き込み (100件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.017027349999807484,
+        "errors": []
+      },
+      "read_small": {
+        "name": "基本読み込み (100件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.006014250001499022,
+        "errors": []
+      },
+      "write_medium": {
+        "name": "基本書き込み (500件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.03352164999978413,
+        "errors": []
+      },
+      "bulk_insert_medium": {
+        "name": "バルク挿入 (500件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.013327049999134033,
+        "errors": []
+      },
+      "complex_medium": {
+        "name": "複雑データ (500件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.03641255000002275,
+        "errors": []
+      },
+      "bulk_insert_large": {
+        "name": "バルク挿入 (2000件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.019292349999886937,
+        "errors": []
+      },
+      "update_large": {
+        "name": "更新操作 (2000件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.09028605000003154,
+        "errors": []
+      },
+      "mixed": {
+        "name": "混合操作 (500件)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 0.05649290000019391,
+        "errors": []
+      },
+      "multithreaded": {
+        "name": "マルチスレッド (100件 x 3スレッド)",
+        "success": 2,
+        "failure": 0,
+        "total": 2,
+        "success_rate": 100.0,
+        "avg_time": 3.1319568499993693,
+        "errors": []
+      },
+      "async_basic": {
+        "name": "非同期基本 (500件)",
+        "success": 0,
+        "failure": 2,
+        "total": 2,
+        "success_rate": 0.0,
+        "avg_time": 0,
+        "errors": [
+          "AttributeError: 'AsyncDictSQLiteFastest' object has no attribute 'close'",
+          "AttributeError: 'AsyncDictSQLiteFastest' object has no attribute 'close'"
+        ]
+      }
+    }
+  }
+}

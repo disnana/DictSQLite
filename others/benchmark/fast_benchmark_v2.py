@@ -418,7 +418,11 @@ class FastComprehensiveBenchmark:
                     for i in range(count):
                         await db.set(f'key_{i}', f'value_{i}')
                 finally:
-                    await db.close()
+                    # 非同期版は aclose() を使用
+                    if hasattr(db, 'aclose'):
+                        await db.aclose()
+                    elif hasattr(db, 'close'):
+                        await db.close()
                 duration = time.perf_counter() - start
                 result.add_success(duration)
             except Exception as e:
