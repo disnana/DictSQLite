@@ -1,0 +1,150 @@
+name: Performance Benchmark
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main", "dev" ]
+  workflow_dispatch:  # 手動実行を許可
+  schedule:
+    # 毎週月曜日の午前9時(UTC)に実行
+    - cron: '0 9 * * 1'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y fonts-noto-cjk fonts-ipafont fonts-ipaexfont
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install matplotlib seaborn pandas numpy plotly kaleido
+        pip install -e .
+        # dictsqlite-fastest のインストール
+        if [ -d "dictsqlite-fastest" ]; then
+          cd dictsqlite-fastest
+          if [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt
+          fi
+          pip install -e .
+          cd ..
+        fi
+        # dictsqlite-fastest beta のインストール
+        if [ -d "dictsqlite-fastest/beta" ]; then
+          cd dictsqlite-fastest/beta
+          if [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt
+          fi
+          pip install -e .
+          cd ../..
+        fi
+
+    - name: Run fast comprehensive benchmark
+      run: |
+        cd others/benchmark
+        python fast_comprehensive_benchmark.py
+      continue-on-error: false
+
+    - name: Generate benchmark visualizations
+      run: |
+        cd others/benchmark
+        # 最新のベンチマーク結果CSVファイルを探す
+        LATEST_CSV=$(ls -t ../../benchmark_results/*.csv 2>/dev/null | head -n1)
+        if [ -n "$LATEST_CSV" ]; then
+          echo "Visualizing: $LATEST_CSV"
+          python visualize_benchmark.py "$LATEST_CSV"
+        else
+          echo "No CSV file found in benchmark_results/"
+          exit 1
+        fi
+      continue-on-error: false
+
+    - name: List benchmark results
+      run: |
+        echo "=== Benchmark Results ==="
+        ls -lh benchmark_results/
+        echo ""
+        echo "=== Graphs ==="
+        if [ -d "benchmark_results/graphs" ]; then
+          ls -lh benchmark_results/graphs/
+        fi
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results-${{ matrix.python-version }}
+        path: |
+          benchmark_results/*.csv
+          benchmark_results/*.json
+          benchmark_results/*.log
+          benchmark_results/*.md
+          benchmark_results/graphs/*.png
+          benchmark_results/graphs/*.html
+        retention-days: 90
+
+    - name: Create benchmark summary
+      if: github.event_name == 'pull_request'
+      run: |
+        SUMMARY_FILE="benchmark_results/BENCHMARK_SUMMARY.md"
+        if [ -f "$SUMMARY_FILE" ]; then
+          echo "## 📊 Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          cat "$SUMMARY_FILE" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Comment PR with results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const fs = require('fs');
+          const summaryPath = 'benchmark_results/BENCHMARK_SUMMARY.md';
+          
+          if (fs.existsSync(summaryPath)) {
+            const summary = fs.readFileSync(summaryPath, 'utf8');
+            const comment = `## 📊 Performance Benchmark Results\n\n${summary}\n\n---\n*Benchmark run for commit ${context.sha.substring(0, 7)}*`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+          }
+
+    - name: Commit and push results to repository
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        
+        # benchmark_resultsディレクトリが.gitignoreに含まれていないことを確認
+        if grep -q "benchmark_results" .gitignore 2>/dev/null; then
+          sed -i '/^benchmark_results/d' .gitignore
+        fi
+        
+        git add benchmark_results/
+        git diff --staged --quiet || git commit -m "chore: update benchmark results [skip ci]"
+        git push
+      continue-on-error: true
