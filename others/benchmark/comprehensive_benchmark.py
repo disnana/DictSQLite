@@ -559,13 +559,13 @@ class BenchmarkScenarios:
             db_path = self.temp_dir / f"fastest_write_{count}.db"
             if db_path.exists():
                 db_path.unlink()
-            # コンテキストマネージャーを使用
             db = DictSQLiteFastest(str(db_path))
             try:
                 for i in range(count):
                     db[f'key_{i}'] = f'value_{i}'
             finally:
                 db.close()
+                del db  # 明示的に削除
         
         def beta():
             db_path = self.temp_dir / f"beta_write_{count}.db"
@@ -577,6 +577,7 @@ class BenchmarkScenarios:
                     db[f'key_{i}'] = f'value_{i}'
             finally:
                 db.close()
+                del db  # 明示的に削除
         
         self.benchmark.compare_sync_versions(
             test_name, original, fastest, beta, count
@@ -591,10 +592,11 @@ class BenchmarkScenarios:
         fastest_db_path = self.temp_dir / f"fastest_read_{count}.db"
         beta_db_path = self.temp_dir / f"beta_read_{count}.db"
         
-        # データ作成
+        # データ作成 - 必ず閉じる
         with DictSQLite(str(original_db_path)) as db:
             for i in range(count):
                 db[f'key_{i}'] = f'value_{i}'
+        # with文を抜けた時点でDBは閉じられている
         
         db_fastest = DictSQLiteFastest(str(fastest_db_path))
         try:
@@ -602,6 +604,8 @@ class BenchmarkScenarios:
                 db_fastest[f'key_{i}'] = f'value_{i}'
         finally:
             db_fastest.close()
+        # 閉じた後、明示的にNoneに設定
+        db_fastest = None
         
         db_beta = DictSQLiteFastestBeta(str(beta_db_path), memory_budget_mb=100)
         try:
@@ -609,6 +613,11 @@ class BenchmarkScenarios:
                 db_beta[f'key_{i}'] = f'value_{i}'
         finally:
             db_beta.close()
+        # 閉じた後、明示的にNoneに設定
+        db_beta = None
+        
+        # ガベージコレクション実行でファイルハンドルを確実に開放
+        gc.collect()
         
         def original():
             with DictSQLite(str(original_db_path)) as db:
@@ -622,6 +631,7 @@ class BenchmarkScenarios:
                     _ = db[f'key_{i}']
             finally:
                 db.close()
+                del db
         
         def beta():
             db = DictSQLiteFastestBeta(str(beta_db_path), memory_budget_mb=100)
@@ -629,6 +639,8 @@ class BenchmarkScenarios:
                 for i in range(count):
                     _ = db[f'key_{i}']
             finally:
+                db.close()
+                del db
                 db.close()
         
         self.benchmark.compare_sync_versions(
@@ -663,6 +675,7 @@ class BenchmarkScenarios:
                 db.bulk_insert(data)
             finally:
                 db.close()
+                del db
         
         def beta():
             db_path = self.temp_dir / f"beta_bulk_insert_{count}.db"
@@ -673,6 +686,7 @@ class BenchmarkScenarios:
                 db.bulk_insert(data)
             finally:
                 db.close()
+                del db
         
         self.benchmark.compare_sync_versions(
             test_name, original, fastest, beta, count
@@ -690,21 +704,28 @@ class BenchmarkScenarios:
         fastest_db_path = self.temp_dir / f"fastest_bulk_read_{count}.db"
         beta_db_path = self.temp_dir / f"beta_bulk_read_{count}.db"
         
+        # データ作成 - 必ず閉じる
         with DictSQLite(str(original_db_path)) as db:
             for key, value in data.items():
                 db[key] = value
+        # with文を抜けた時点でDBは閉じられている
         
         db_fastest = DictSQLiteFastest(str(fastest_db_path))
         try:
             db_fastest.bulk_insert(data)
         finally:
             db_fastest.close()
+        db_fastest = None
         
         db_beta = DictSQLiteFastestBeta(str(beta_db_path), memory_budget_mb=100)
         try:
             db_beta.bulk_insert(data)
         finally:
             db_beta.close()
+        db_beta = None
+        
+        # ガベージコレクション実行でファイルハンドルを確実に開放
+        gc.collect()
         
         def original():
             with DictSQLite(str(original_db_path)) as db:
@@ -717,12 +738,15 @@ class BenchmarkScenarios:
                 _ = db.bulk_get(keys)
             finally:
                 db.close()
+                db = None
         
         def beta():
             db = DictSQLiteFastestBeta(str(beta_db_path), memory_budget_mb=100)
             try:
                 _ = db.bulk_get(keys)
             finally:
+                db.close()
+                db = None
                 db.close()
         
         self.benchmark.compare_sync_versions(
