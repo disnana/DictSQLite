@@ -1004,6 +1004,7 @@ try:
         - 非同期バルク操作の最適化
         - 共有キャッシュによる高速化
         - 非同期バックグラウンドフラッシュ
+        - Queue-based操作シリアライゼーションでデータベースロック問題を解決
         
         使用例:
             >>> async def main():
@@ -1034,36 +1035,154 @@ try:
         ):
             """
             Args:
-                max_connections: 非同期接続プールのサイズ
+                max_connections: 非同期接続プールのサイズ（互換性のため残されているが使用されない）
                 enable_pipeline: パイプライン操作を有効化
                 その他のパラメータは同期版と同じ
             """
+            # 非同期モードではバックグラウンドフラッシュを無効化（ロック競合を防ぐ）
+            if enable_background_flush:
+                # 警告: 非同期モードではバックグラウンドフラッシュは使用されません
+                enable_background_flush = False
+            
+            # 非同期モードでは排他ロックを無効化（ロック競合を防ぐ）
+            # aggressive_memoryを無効化してEXCLUSIVEロックが設定されないようにする
+            original_aggressive = aggressive_memory
+            aggressive_memory = False  # これによりEXCLUSIVEロックが設定されない
+            
+            # 手動でメモリ最適化設定を適用（EXCLUSIVEロック以外）
+            if original_aggressive and not memory_only:
+                kwargs.setdefault('cache_size', -256000)  # 256MB cache
+                kwargs.setdefault('mmap_size', 1073741824)  # 1GB mmap
+                kwargs.setdefault('journal_mode', 'WAL')  # WALモード
+                
+                # カスタムPRAGMA設定（EXCLUSIVEロックを除く）
+                custom_pragma = kwargs.get('custom_pragma_settings', {})
+                custom_pragma.update({
+                    'temp_store': 'MEMORY',
+                    'locking_mode': 'NORMAL',  # EXCLUSIVEではなくNORMALロック
+                    'synchronous': 'NORMAL',
+                    'wal_autocheckpoint': 10000,
+                })
+                kwargs['custom_pragma_settings'] = custom_pragma
+            
             # 同期版のベータインスタンスを内部で使用
             self._sync_db = DictSQLiteFastestBeta(
                 db_name=db_name,
                 table_name=table_name,
                 cache_capacity=cache_capacity,
-                write_buffer_size=write_buffer_size,
+                write_buffer_size=write_buffer_size if not memory_only else 0,  # メモリオンリーならバッファ不要
                 write_buffer_interval=write_buffer_interval,
                 memory_only=memory_only,
-                aggressive_memory=aggressive_memory,
+                aggressive_memory=aggressive_memory,  # 無効化済み
                 memory_budget_mb=memory_budget_mb,
                 auto_load_threshold_mb=auto_load_threshold_mb,
-                enable_background_flush=enable_background_flush,
+                enable_background_flush=False,  # 非同期モードでは常に無効
                 enable_hot_data_detection=enable_hot_data_detection,
                 **kwargs
             )
             
-            # 非同期操作用のエグゼキュータ
-            self._executor = None
-            self._loop = None
+            # 非同期モードでは、自動フラッシュを完全に無効化する
+            # 代わりに、明示的なflushのみを許可（キュー経由）
+            if not memory_only and hasattr(self._sync_db, '_write_buffer'):
+                # write_bufferのflush_thresholdを非常に大きくして自動フラッシュを防ぐ
+                self._sync_db._write_buffer.flush_threshold = 1000000  # 100万件に設定（事実上無制限）
+            
+            # 非同期操作用のQueue（データベースロック問題を解決）
+            self._operation_queue = None
+            self._worker_task = None
+            self._shutdown_event = None
+            
+            # 永続的なエグゼキュータ（シングルスレッド）
+            from concurrent.futures import ThreadPoolExecutor
+            self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="AsyncDB")
             
             # 非同期ロック（キャッシュアクセス用）
-            self._async_cache_lock = asyncio.Lock()
+            self._async_cache_lock = None
             
             # 設定を保存
             self.max_connections = max_connections
             self.enable_pipeline = enable_pipeline
+            
+            # 初期化フラグ
+            self._initialized = False
+        
+        async def _ensure_initialized(self) -> None:
+            """非同期コンポーネントの遅延初期化."""
+            if self._initialized:
+                return
+            
+            # asyncioコンポーネントを初期化
+            self._operation_queue = asyncio.Queue()
+            self._shutdown_event = asyncio.Event()
+            self._async_cache_lock = asyncio.Lock()
+            
+            # ワーカータスクを開始
+            self._worker_task = asyncio.create_task(self._process_operations())
+            
+            self._initialized = True
+        
+        async def _process_operations(self) -> None:
+            """キューから操作を取り出して順次実行（データベースロック回避）."""
+            while not self._shutdown_event.is_set():
+                try:
+                    # タイムアウト付きでキューから取得
+                    operation = await asyncio.wait_for(
+                        self._operation_queue.get(),
+                        timeout=0.1
+                    )
+                    
+                    # 操作を実行
+                    func, args, kwargs, future = operation
+                    
+                    try:
+                        # エグゼキュータで同期操作を実行
+                        loop = asyncio.get_event_loop()
+                        result = await loop.run_in_executor(
+                            self._executor,
+                            func,
+                            *args,
+                            **kwargs
+                        )
+                        # 結果をFutureにセット
+                        if not future.done():
+                            future.set_result(result)
+                    except Exception as e:
+                        # エラーをFutureにセット
+                        if not future.done():
+                            future.set_exception(e)
+                    finally:
+                        # タスク完了を通知
+                        self._operation_queue.task_done()
+                        
+                except asyncio.TimeoutError:
+                    # タイムアウトは正常（シャットダウンチェック用）
+                    continue
+                except Exception:
+                    # 予期しないエラーは無視してループを継続
+                    continue
+        
+        async def _execute_in_queue(self, func, *args, **kwargs) -> Any:
+            """操作をキューに追加して結果を待つ.
+            
+            Args:
+                func: 実行する関数
+                *args: 関数の引数
+                **kwargs: 関数のキーワード引数
+                
+            Returns:
+                関数の実行結果
+            """
+            # 初期化を確認
+            await self._ensure_initialized()
+            
+            # 結果を受け取るためのFuture
+            future = asyncio.Future()
+            
+            # 操作をキューに追加
+            await self._operation_queue.put((func, args, kwargs, future))
+            
+            # 結果を待つ
+            return await future
         
         async def aget(self, key: str, default: Any = None) -> Any:
             """非同期でキーから値を取得.
@@ -1083,11 +1202,9 @@ try:
                 self._sync_db._track_access_frequency(key)
                 return cached_value
             
-            # キャッシュミスの場合は非同期で読み込み
-            loop = asyncio.get_event_loop()
+            # キャッシュミスの場合はキュー経由で読み込み
             try:
-                value = await loop.run_in_executor(
-                    self._executor,
+                value = await self._execute_in_queue(
                     self._sync_db.__getitem__,
                     key
                 )
@@ -1105,10 +1222,8 @@ try:
             # キャッシュは即座に更新（同期的に高速）
             self._sync_db._cache.put(key, value)
             
-            # 書き込みバッファに追加（非同期）
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                self._executor,
+            # 書き込みはキュー経由で実行
+            await self._execute_in_queue(
                 self._sync_db.__setitem__,
                 key,
                 value
@@ -1120,9 +1235,7 @@ try:
             Args:
                 key: 削除するキー
             """
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                self._executor,
+            await self._execute_in_queue(
                 self._sync_db.__delitem__,
                 key
             )
@@ -1147,11 +1260,9 @@ try:
                 else:
                     missing_keys.append(key)
             
-            # キャッシュミスは非同期で読み込み
+            # キャッシュミスはキュー経由で読み込み
             if missing_keys:
-                loop = asyncio.get_event_loop()
-                disk_values = await loop.run_in_executor(
-                    self._executor,
+                disk_values = await self._execute_in_queue(
                     self._sync_db.bulk_get,
                     missing_keys
                 )
@@ -1168,30 +1279,48 @@ try:
             # キャッシュは即座に更新
             self._sync_db._cache.bulk_put(items)
             
-            # ディスクへの書き込みは非同期で実行
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                self._executor,
+            # 非同期モードでは、先にバッファをフラッシュしてからバルク挿入
+            # これにより、bulk_insert内部でのflushとの競合を避ける
+            if not self._sync_db.memory_only and hasattr(self._sync_db, '_write_buffer'):
+                if self._sync_db._write_buffer.has_pending():
+                    await self._execute_in_queue(self._sync_db.flush)
+            
+            # ディスクへの書き込みはキュー経由で実行
+            await self._execute_in_queue(
                 self._sync_db.bulk_insert,
                 items
             )
         
         async def aflush(self) -> None:
             """非同期でバッファをフラッシュ."""
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                self._executor,
-                self._sync_db.flush
-            )
+            await self._execute_in_queue(self._sync_db.flush)
         
         async def aclose(self) -> None:
             """非同期でデータベースを閉じる."""
+            # バッファをフラッシュ
             await self.aflush()
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                self._executor,
-                self._sync_db.close
-            )
+            
+            # シャットダウンイベントをセット
+            self._shutdown_event.set()
+            
+            # ワーカータスクの完了を待つ
+            if self._worker_task and not self._worker_task.done():
+                try:
+                    await asyncio.wait_for(self._worker_task, timeout=5.0)
+                except asyncio.TimeoutError:
+                    # タイムアウトした場合はキャンセル
+                    self._worker_task.cancel()
+                    try:
+                        await self._worker_task
+                    except asyncio.CancelledError:
+                        pass
+            
+            # エグゼキュータをシャットダウン
+            if self._executor:
+                self._executor.shutdown(wait=True)
+            
+            # 同期DBをクローズ
+            self._sync_db.close()
         
         def get_beta_stats(self) -> Dict[str, Any]:
             """ベータ版の統計情報を取得（同期メソッド）."""
@@ -1203,9 +1332,7 @@ try:
             Args:
                 keys: プリフェッチするキーのリスト
             """
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                self._executor,
+            await self._execute_in_queue(
                 self._sync_db.prefetch_keys,
                 keys
             )
@@ -1217,9 +1344,7 @@ try:
                 key_pattern: SQLのLIKEパターン
                 limit: プリフェッチする最大キー数
             """
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                self._executor,
+            await self._execute_in_queue(
                 self._sync_db.bulk_prefetch,
                 key_pattern,
                 limit
@@ -1227,6 +1352,7 @@ try:
         
         async def __aenter__(self):
             """非同期コンテキストマネージャのenter."""
+            await self._ensure_initialized()
             return self
         
         async def __aexit__(self, exc_type, exc_val, exc_tb):
