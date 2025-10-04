@@ -1292,6 +1292,60 @@ def main():
             import traceback
             traceback.print_exc()
         
+        # ===== 古いファイルのクリーンアップ =====
+        print("\n" + "="*80)
+        print("古いファイルのクリーンアップ中...")
+        print("="*80)
+        
+        cleanup_count = 0
+        cleanup_size_kb = 0
+        
+        # 古いグラフファイルを削除
+        graph_dir = benchmark.output_dir / "graphs"
+        if graph_dir.exists():
+            all_graphs = list(graph_dir.glob('*.png'))
+            current_graphs = [gf for gf in all_graphs if benchmark.timestamp in gf.name]
+            old_graphs = [gf for gf in all_graphs if benchmark.timestamp not in gf.name]
+            
+            for gf in old_graphs:
+                try:
+                    cleanup_size_kb += gf.stat().st_size / 1024
+                    gf.unlink()
+                    cleanup_count += 1
+                except Exception:
+                    pass
+            
+            if cleanup_count > 0:
+                print(f"✓ 古いグラフ削除: {cleanup_count}個 ({cleanup_size_kb:.1f} KB)")
+        
+        # 古いログファイルを削除（最新5個を保持）
+        log_files = sorted(benchmark.output_dir.glob('benchmark_*.log'), 
+                          key=lambda f: f.stat().st_mtime, reverse=True)
+        csv_files = sorted(benchmark.output_dir.glob('benchmark_*.csv'), 
+                          key=lambda f: f.stat().st_mtime, reverse=True)
+        json_files = sorted(benchmark.output_dir.glob('benchmark_*.json'), 
+                           key=lambda f: f.stat().st_mtime, reverse=True)
+        summary_files = sorted(benchmark.output_dir.glob('summary_*.md'), 
+                              key=lambda f: f.stat().st_mtime, reverse=True)
+        
+        old_logs_count = 0
+        old_logs_size_kb = 0
+        
+        # 最新5個以外を削除
+        for old_file in log_files[5:] + csv_files[5:] + json_files[5:] + summary_files[5:]:
+            try:
+                old_logs_size_kb += old_file.stat().st_size / 1024
+                old_file.unlink()
+                old_logs_count += 1
+            except Exception:
+                pass
+        
+        if old_logs_count > 0:
+            print(f"✓ 古いログ削除: {old_logs_count}個 ({old_logs_size_kb:.1f} KB)")
+        
+        if cleanup_count == 0 and old_logs_count == 0:
+            print("✓ クリーンアップ不要（古いファイルなし）")
+        
         print("\n" + "="*80)
         print("ベンチマーク完了!")
         print("="*80)
@@ -1302,7 +1356,6 @@ def main():
         print(f"  - サマリー: {benchmark.summary_file.name}")
         
         # グラフディレクトリの情報を簡潔に表示
-        graph_dir = benchmark.output_dir / "graphs"
         if graph_generation_success:
             if graph_dir.exists():
                 graph_files = list(graph_dir.glob('*.png'))
