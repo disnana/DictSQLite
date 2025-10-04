@@ -554,6 +554,7 @@ class AsyncDictSQLiteFastestBeta:
         self._connection_pool = []  # List of aiosqlite.Connection
         self._available_connections = None  # asyncio.Queue
         self._pool_lock = None
+        self._init_lock = None  # 初期化用ロック
         self._initialized = False
         
         # 非同期書き込みバッファ
@@ -577,53 +578,66 @@ class AsyncDictSQLiteFastestBeta:
         self._commit_stop_event = None
     
     async def _ensure_initialized(self) -> None:
-        """非同期コンポーネントの初期化."""
+        """非同期コンポーネントの初期化（スレッドセーフ）."""
+        # 高速パス: 既に初期化済みの場合は即座に返る
         if self._initialized:
             return
         
-        # asyncio関連の初期化
-        self._available_connections = asyncio.Queue(maxsize=self._max_connections)
-        self._pool_lock = asyncio.Lock()
-        self._async_buffer_lock = asyncio.Lock()
-        self._async_write_lock = asyncio.Lock()
-        self._commit_stop_event = asyncio.Event()
+        # 初期化ロックを遅延作成（最初の呼び出しで作成）
+        if self._init_lock is None:
+            # この部分はロックなしだが、asyncio.Lock()の作成自体はスレッドセーフ
+            self._init_lock = asyncio.Lock()
         
-        # 接続プールの作成
-        for _ in range(self._max_connections):
-            conn = await aiosqlite.connect(self.db_name)
+        # ロックを取得して初期化（他のタスクは待機）
+        async with self._init_lock:
+            # ダブルチェック: ロック取得中に他のタスクが初期化完了した可能性
+            if self._initialized:
+                return
             
-            # 最適化PRAGMA設定
-            await conn.execute("PRAGMA journal_mode=WAL")
-            await conn.execute("PRAGMA synchronous=NORMAL")
-            await conn.execute("PRAGMA cache_size=-64000")  # 64MB
-            await conn.execute("PRAGMA temp_store=MEMORY")
-            await conn.execute("PRAGMA mmap_size=268435456")  # 256MB
-            await conn.execute("PRAGMA busy_timeout=60000")  # 60秒
-            await conn.execute("PRAGMA wal_autocheckpoint=1000")  # WAL自動チェックポイント
-            await conn.execute("PRAGMA journal_size_limit=67108864")  # 64MB
+            # asyncio関連の初期化
+            self._available_connections = asyncio.Queue(maxsize=self._max_connections)
+            self._pool_lock = asyncio.Lock()
+            self._async_buffer_lock = asyncio.Lock()
+            self._async_write_lock = asyncio.Lock()
+            self._commit_stop_event = asyncio.Event()
             
-            self._connection_pool.append(conn)
-            await self._available_connections.put(conn)
-        
-        # テーブル作成（最初の接続で）
-        conn = self._connection_pool[0]
-        create_sql = f"""
-        CREATE TABLE IF NOT EXISTS {self.table_name} (
-            key TEXT PRIMARY KEY,
-            value BLOB NOT NULL
-        )
-        """
-        await conn.execute(create_sql)
-        
-        # テーブル可視性確保（GitHub Actions対策）
-        await conn.execute(f"SELECT COUNT(*) FROM {self.table_name}")
-        await conn.commit()
-        
-        # バックグラウンドコミットタスク開始
-        if self.async_commit_interval > 0:
-            self._commit_task = asyncio.create_task(self._background_commit_worker())
-        
-        self._initialized = True
+            # 接続プールの作成
+            for _ in range(self._max_connections):
+                conn = await aiosqlite.connect(self.db_name)
+                
+                # 最適化PRAGMA設定
+                await conn.execute("PRAGMA journal_mode=WAL")
+                await conn.execute("PRAGMA synchronous=NORMAL")
+                await conn.execute("PRAGMA cache_size=-64000")  # 64MB
+                await conn.execute("PRAGMA temp_store=MEMORY")
+                await conn.execute("PRAGMA mmap_size=268435456")  # 256MB
+                await conn.execute("PRAGMA busy_timeout=60000")  # 60秒
+                await conn.execute("PRAGMA wal_autocheckpoint=1000")  # WAL自動チェックポイント
+                await conn.execute("PRAGMA journal_size_limit=67108864")  # 64MB
+                
+                self._connection_pool.append(conn)
+                await self._available_connections.put(conn)
+            
+            # テーブル作成（最初の接続で）
+            conn = self._connection_pool[0]
+            create_sql = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                key TEXT PRIMARY KEY,
+                value BLOB NOT NULL
+            )
+            """
+            await conn.execute(create_sql)
+            
+            # テーブル可視性確保（GitHub Actions対策）
+            await conn.execute(f"SELECT COUNT(*) FROM {self.table_name}")
+            await conn.commit()
+            
+            # バックグラウンドコミットタスク開始
+            if self.async_commit_interval > 0:
+                self._commit_task = asyncio.create_task(self._background_commit_worker())
+            
+            # 最後に初期化完了フラグを設定
+            self._initialized = True
     
     @asynccontextmanager
     async def _get_connection(self):
