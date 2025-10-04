@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 from collections import OrderedDict
 from threading import Lock, RLock, Thread, Event
+from contextlib import asynccontextmanager
 import time
 import weakref
 import pickle
@@ -548,17 +549,20 @@ class AsyncDictSQLiteFastestBeta:
         # 同期版は使わない（キャッシュとDBロックの競合を避けるため）
         self._sync_db = None
         
-        # aiosqlite接続（遅延初期化）
-        self._aiosqlite_conn = None  # aiosqlite.Connection
+        # aiosqlite接続プール（遅延初期化）
+        self._max_connections = 5  # 接続プールサイズ
+        self._connection_pool = []  # List of aiosqlite.Connection
+        self._available_connections = None  # asyncio.Queue
+        self._pool_lock = None
         self._initialized = False
         
         # 非同期書き込みバッファ
         self._async_write_buffer: Dict[str, Any] = {}
         self._async_delete_buffer: set = set()
-        self._async_buffer_lock = asyncio.Lock()  # 即座に初期化
+        self._async_buffer_lock = None
         
         # 書き込み操作のシリアライズ用ロック（デッドロック防止）
-        self._async_write_lock = asyncio.Lock()
+        self._async_write_lock = None
         
         # 統計情報
         self._async_stats = {
@@ -577,40 +581,59 @@ class AsyncDictSQLiteFastestBeta:
         if self._initialized:
             return
         
-        # asyncio.Eventの初期化
+        # asyncio関連の初期化
+        self._available_connections = asyncio.Queue(maxsize=self._max_connections)
+        self._pool_lock = asyncio.Lock()
+        self._async_buffer_lock = asyncio.Lock()
+        self._async_write_lock = asyncio.Lock()
         self._commit_stop_event = asyncio.Event()
         
-        # aiosqlite接続を作成
-        self._aiosqlite_conn = await aiosqlite.connect(self.db_name)
+        # 接続プールの作成
+        for _ in range(self._max_connections):
+            conn = await aiosqlite.connect(self.db_name)
+            
+            # 最適化PRAGMA設定
+            await conn.execute("PRAGMA journal_mode=WAL")
+            await conn.execute("PRAGMA synchronous=NORMAL")
+            await conn.execute("PRAGMA cache_size=-64000")  # 64MB
+            await conn.execute("PRAGMA temp_store=MEMORY")
+            await conn.execute("PRAGMA mmap_size=268435456")  # 256MB
+            await conn.execute("PRAGMA busy_timeout=60000")  # 60秒
+            await conn.execute("PRAGMA wal_autocheckpoint=1000")  # WAL自動チェックポイント
+            await conn.execute("PRAGMA journal_size_limit=67108864")  # 64MB
+            
+            self._connection_pool.append(conn)
+            await self._available_connections.put(conn)
         
-        # 最適化PRAGMA設定
-        await self._aiosqlite_conn.execute("PRAGMA journal_mode=WAL")
-        await self._aiosqlite_conn.execute("PRAGMA synchronous=NORMAL")
-        await self._aiosqlite_conn.execute("PRAGMA cache_size=-64000")  # 64MB
-        await self._aiosqlite_conn.execute("PRAGMA temp_store=MEMORY")
-        await self._aiosqlite_conn.execute("PRAGMA mmap_size=268435456")  # 256MB
-        await self._aiosqlite_conn.execute("PRAGMA busy_timeout=60000")  # 60秒
-        await self._aiosqlite_conn.execute("PRAGMA wal_autocheckpoint=1000")  # WAL自動チェックポイント
-        await self._aiosqlite_conn.execute("PRAGMA journal_size_limit=67108864")  # 64MB
-        
-        # テーブル作成
+        # テーブル作成（最初の接続で）
+        conn = self._connection_pool[0]
         create_sql = f"""
         CREATE TABLE IF NOT EXISTS {self.table_name} (
             key TEXT PRIMARY KEY,
             value BLOB NOT NULL
         )
         """
-        await self._aiosqlite_conn.execute(create_sql)
+        await conn.execute(create_sql)
         
         # テーブル可視性確保（GitHub Actions対策）
-        await self._aiosqlite_conn.execute(f"SELECT COUNT(*) FROM {self.table_name}")
-        await self._aiosqlite_conn.commit()
+        await conn.execute(f"SELECT COUNT(*) FROM {self.table_name}")
+        await conn.commit()
         
         # バックグラウンドコミットタスク開始
         if self.async_commit_interval > 0:
             self._commit_task = asyncio.create_task(self._background_commit_worker())
         
         self._initialized = True
+    
+    @asynccontextmanager
+    async def _get_connection(self):
+        """接続プールから接続を取得"""
+        await self._ensure_initialized()
+        conn = await self._available_connections.get()
+        try:
+            yield conn
+        finally:
+            await self._available_connections.put(conn)
     
     async def aget(self, key: str, default: Any = None) -> Any:
         """非同期でキーから値を取得.
@@ -644,12 +667,13 @@ class AsyncDictSQLiteFastestBeta:
         # aiosqliteで読み込み
         self._async_stats['cache_misses'] += 1
         
-        cursor = await self._aiosqlite_conn.execute(
-            f"SELECT value FROM {self.table_name} WHERE key = ?",
-            (key,)
-        )
-        row = await cursor.fetchone()
-        await cursor.close()
+        async with self._get_connection() as conn:
+            cursor = await conn.execute(
+                f"SELECT value FROM {self.table_name} WHERE key = ?",
+                (key,)
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
         
         if row is None:
             return default
@@ -729,16 +753,17 @@ class AsyncDictSQLiteFastestBeta:
         data = [(key, pickle.dumps(value)) for key, value in items.items()]
         
         async with self._async_write_lock:
-            await self._aiosqlite_conn.execute("BEGIN IMMEDIATE")
-            try:
-                await self._aiosqlite_conn.executemany(
-                    f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
-                    data
-                )
-                await self._aiosqlite_conn.commit()
-            except Exception as e:
-                await self._aiosqlite_conn.rollback()
-                raise e
+            async with self._get_connection() as conn:
+                await conn.execute("BEGIN IMMEDIATE")
+                try:
+                    await conn.executemany(
+                        f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
+                        data
+                    )
+                    await conn.commit()
+                except Exception as e:
+                    await conn.rollback()
+                    raise e
         
         self._async_stats['batch_writes'] += 1
     
@@ -757,30 +782,31 @@ class AsyncDictSQLiteFastestBeta:
         
         # 書き込みロックで保護
         async with self._async_write_lock:
-            await self._aiosqlite_conn.execute("BEGIN IMMEDIATE")
-            try:
-                # 書き込み実行
-                if write_buffer:
-                    data = [(key, pickle.dumps(value)) for key, value in write_buffer.items()]
-                    await self._aiosqlite_conn.executemany(
-                        f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
-                        data
-                    )
-                    self._async_stats['batch_writes'] += 1
-                
-                # 削除実行
-                if delete_buffer:
-                    placeholders = ','.join('?' * len(delete_buffer))
-                    await self._aiosqlite_conn.execute(
-                        f"DELETE FROM {self.table_name} WHERE key IN ({placeholders})",
-                        tuple(delete_buffer)
-                    )
-                
-                await self._aiosqlite_conn.commit()
-            except Exception as e:
-                await self._aiosqlite_conn.rollback()
-                # バックグラウンドフラッシュでのエラーは許容
-                pass
+            async with self._get_connection() as conn:
+                await conn.execute("BEGIN IMMEDIATE")
+                try:
+                    # 書き込み実行
+                    if write_buffer:
+                        data = [(key, pickle.dumps(value)) for key, value in write_buffer.items()]
+                        await conn.executemany(
+                            f"INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)",
+                            data
+                        )
+                        self._async_stats['batch_writes'] += 1
+                    
+                    # 削除実行
+                    if delete_buffer:
+                        placeholders = ','.join('?' * len(delete_buffer))
+                        await conn.execute(
+                            f"DELETE FROM {self.table_name} WHERE key IN ({placeholders})",
+                            tuple(delete_buffer)
+                        )
+                    
+                    await conn.commit()
+                except Exception as e:
+                    await conn.rollback()
+                    # バックグラウンドフラッシュでのエラーは許容
+                    pass
     
     async def _background_commit_worker(self) -> None:
         """バックグラウンドコミットワーカー."""
@@ -804,11 +830,12 @@ class AsyncDictSQLiteFastestBeta:
         """非同期で全キーを取得."""
         await self._ensure_initialized()
         
-        cursor = await self._aiosqlite_conn.execute(
-            f"SELECT key FROM {self.table_name}"
-        )
-        rows = await cursor.fetchall()
-        await cursor.close()
+        async with self._get_connection() as conn:
+            cursor = await conn.execute(
+                f"SELECT key FROM {self.table_name}"
+            )
+            rows = await cursor.fetchall()
+            await cursor.close()
         
         return [row[0] for row in rows]
     
@@ -816,11 +843,12 @@ class AsyncDictSQLiteFastestBeta:
         """非同期で全アイテムを取得."""
         await self._ensure_initialized()
         
-        cursor = await self._aiosqlite_conn.execute(
-            f"SELECT key, value FROM {self.table_name}"
-        )
-        rows = await cursor.fetchall()
-        await cursor.close()
+        async with self._get_connection() as conn:
+            cursor = await conn.execute(
+                f"SELECT key, value FROM {self.table_name}"
+            )
+            rows = await cursor.fetchall()
+            await cursor.close()
         
         return [(row[0], pickle.loads(row[1])) for row in rows]
     
@@ -828,11 +856,12 @@ class AsyncDictSQLiteFastestBeta:
         """非同期でアイテム数を取得."""
         await self._ensure_initialized()
         
-        cursor = await self._aiosqlite_conn.execute(
-            f"SELECT COUNT(*) FROM {self.table_name}"
-        )
-        row = await cursor.fetchone()
-        await cursor.close()
+        async with self._get_connection() as conn:
+            cursor = await conn.execute(
+                f"SELECT COUNT(*) FROM {self.table_name}"
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
         
         return row[0] if row else 0
     
@@ -871,10 +900,10 @@ class AsyncDictSQLiteFastestBeta:
         except Exception:
             pass  # クローズ中のエラーは無視
         
-        # aiosqlite接続を閉じる
-        if self._aiosqlite_conn:
+        # 接続プールをクローズ
+        for conn in self._connection_pool:
             try:
-                await self._aiosqlite_conn.close()
+                await conn.close()
             except Exception:
                 pass  # クローズ中のエラーは無視
         
