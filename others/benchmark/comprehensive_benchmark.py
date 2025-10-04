@@ -1347,33 +1347,10 @@ def main():
         print(f"\n✓ レポート生成完了 (所要時間: {format_time(report_elapsed)})")
         
         # ===== 古いファイルのクリーンアップ =====
-        # グラフ生成前に実行（グラフ生成で独自のタイムスタンプが使われるため）
+        # ===== 古いファイルのクリーンアップ =====
         print("\n" + "="*80)
         print("古いファイルのクリーンアップ中...")
         print("="*80)
-        
-        cleanup_count = 0
-        cleanup_size_kb = 0
-        
-        # 古いグラフファイルを削除
-        graph_dir = benchmark.output_dir / "graphs"
-        if graph_dir.exists():
-            all_graphs = list(graph_dir.glob('*.png'))
-            # ベンチマーク開始から1時間以内のファイルは保持（安全マージン）
-            import datetime
-            cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=1)
-            old_graphs = [gf for gf in all_graphs if datetime.datetime.fromtimestamp(gf.stat().st_mtime) < cutoff_time]
-            
-            for gf in old_graphs:
-                try:
-                    cleanup_size_kb += gf.stat().st_size / 1024
-                    gf.unlink()
-                    cleanup_count += 1
-                except Exception:
-                    pass
-            
-            if cleanup_count > 0:
-                print(f"✓ 古いグラフ削除: {cleanup_count}個 ({cleanup_size_kb:.1f} KB)")
         
         # 古いログファイルを削除（最新5個を保持）
         log_files = sorted(benchmark.output_dir.glob('benchmark_*.log'), 
@@ -1399,14 +1376,21 @@ def main():
         
         if old_logs_count > 0:
             print(f"✓ 古いログ/CSV/JSON削除: {old_logs_count}個 ({old_logs_size_kb:.1f} KB)")
+        else:
+            print("✓ クリーンアップ不要（古いファイルなし）")
         
         # ===== グラフ生成 =====
-        # 環境変数でスキップ可能（GitHub Actionsで時間短縮）
-        skip_graphs = os.getenv('SKIP_BENCHMARK_GRAPHS', 'false').lower() == 'true'
+        # GitHub Actionsではデフォルトでスキップ（CI環境判定）
+        is_ci = os.getenv('CI', 'false').lower() == 'true' or os.getenv('GITHUB_ACTIONS', 'false').lower() == 'true'
+        skip_graphs_env = os.getenv('SKIP_BENCHMARK_GRAPHS', '').lower()
         
-        if skip_graphs:
+        # CI環境ではデフォルトでスキップ、環境変数で明示的に有効化可能
+        if skip_graphs_env == 'true' or (is_ci and skip_graphs_env != 'false'):
             print("\n" + "="*80)
-            print("グラフ生成をスキップ (SKIP_BENCHMARK_GRAPHS=true)")
+            if is_ci:
+                print("グラフ生成をスキップ (GitHub Actions環境を検出)")
+            else:
+                print("グラフ生成をスキップ (SKIP_BENCHMARK_GRAPHS=true)")
             print("="*80)
             print("⚠ グラフ生成は環境変数により無効化されています")
             print("  有効化するには: export SKIP_BENCHMARK_GRAPHS=false")
@@ -1462,27 +1446,17 @@ def main():
         
         # グラフディレクトリの情報を簡潔に表示
         graph_dir = benchmark.output_dir / "graphs"
-        if graph_generation_success:
-            if graph_dir.exists():
-                graph_files = list(graph_dir.glob('*.png'))
-                if graph_files:
-                    # 1時間以内に生成されたグラフを「今回生成」とみなす
-                    import datetime
-                    cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=1)
-                    current_graphs = [gf for gf in graph_files 
-                                    if datetime.datetime.fromtimestamp(gf.stat().st_mtime) >= cutoff_time]
-                    
-                    if current_graphs:
-                        total_size_kb = sum(gf.stat().st_size for gf in current_graphs) / 1024
-                        print(f"  - グラフ: {len(current_graphs)}個生成 ({graph_dir.name}/) - 合計 {total_size_kb:.1f} KB")
-                    else:
-                        print(f"  - グラフ: {len(graph_files)}個存在 (古いファイル)")
-                else:
-                    print(f"  - グラフ: ディレクトリは存在するがファイルなし")
+        if graph_generation_success and graph_dir.exists():
+            graph_files = list(graph_dir.glob('*.png'))
+            if graph_files:
+                total_size_kb = sum(gf.stat().st_size for gf in graph_files) / 1024
+                print(f"  - グラフ: {len(graph_files)}個生成 ({graph_dir.name}/) - 合計 {total_size_kb:.1f} KB")
             else:
-                print(f"  - グラフ: ディレクトリが作成されませんでした")
+                print(f"  - グラフ: ディレクトリは存在するがファイルなし")
+        elif graph_generation_success:
+            print(f"  - グラフ: ディレクトリが作成されませんでした")
         else:
-            print(f"  - グラフ: 生成スキップまたは失敗 (上記エラー参照)")
+            print(f"  - グラフ: 生成スキップ")
         
         # 全体の所要時間を表示
         overall_elapsed = time.perf_counter() - overall_start

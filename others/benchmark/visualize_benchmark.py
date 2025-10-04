@@ -144,8 +144,8 @@ class BenchmarkGraphGenerator:
         # 列名の正規化（異なるCSV形式に対応）
         self._normalize_column_names()
         
-        # タイムスタンプ
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # タイムスタンプは使用しない（固定ファイル名）
+        # self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     def _convert_wide_to_long(self):
         """Wide形式（comprehensive_benchmark.py）をLong形式（fast版互換）に変換"""
@@ -308,7 +308,7 @@ class BenchmarkGraphGenerator:
             ax.set_ylabel('OPS (対数スケール)', fontsize=12, fontweight='bold')
         
         plt.tight_layout()
-        output_path = self.output_dir / f"1_ops_comparison_{self.timestamp}.png"
+        output_path = self.output_dir / "1_ops_comparison.png"
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"  ✓ 保存: {output_path.name}")
@@ -350,7 +350,7 @@ class BenchmarkGraphGenerator:
         ax.grid(axis='y', alpha=0.3)
         
         plt.tight_layout()
-        output_path = self.output_dir / f"2_time_comparison_{self.timestamp}.png"
+        output_path = self.output_dir / "2_time_comparison.png"
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"  ✓ 保存: {output_path.name}")
@@ -423,7 +423,7 @@ class BenchmarkGraphGenerator:
             ax2.grid(axis='y', alpha=0.3)
         
         plt.tight_layout()
-        output_path = self.output_dir / f"3_speedup_ratio_{self.timestamp}.png"
+        output_path = self.output_dir / "3_speedup_ratio.png"
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"  ✓ 保存: {output_path.name}")
@@ -447,7 +447,7 @@ class BenchmarkGraphGenerator:
         ax.set_ylabel('テスト', fontsize=12, fontweight='bold')
         
         plt.tight_layout()
-        output_path = self.output_dir / f"4_performance_heatmap_{self.timestamp}.png"
+        output_path = self.output_dir / "4_performance_heatmap.png"
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"  ✓ 保存: {output_path.name}")
@@ -482,7 +482,7 @@ class BenchmarkGraphGenerator:
         ax2.tick_params(axis='x', rotation=0)
         
         plt.tight_layout()
-        output_path = self.output_dir / f"5_performance_by_operation_{self.timestamp}.png"
+        output_path = self.output_dir / "5_performance_by_operation.png"
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"  ✓ 保存: {output_path.name}")
@@ -538,7 +538,7 @@ class BenchmarkGraphGenerator:
         ax2.set_yscale('log')
         
         plt.tight_layout()
-        output_path = self.output_dir / f"6_scalability_{self.timestamp}.png"
+        output_path = self.output_dir / "6_scalability.png"
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"  ✓ 保存: {output_path.name}")
@@ -648,7 +648,7 @@ class BenchmarkGraphGenerator:
         fig.suptitle('DictSQLite 包括的パフォーマンス分析ダッシュボード', 
                     fontsize=16, fontweight='bold', y=0.98)
         
-        output_path = self.output_dir / f"7_dashboard_{self.timestamp}.png"
+        output_path = self.output_dir / "7_dashboard.png"
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"  ✓ 保存: {output_path.name}")
@@ -657,7 +657,7 @@ class BenchmarkGraphGenerator:
         """統計サマリーをテキストファイルに保存"""
         print("\n統計サマリー生成中...")
         
-        summary_path = self.output_dir / f"statistics_summary_{self.timestamp}.txt"
+        summary_path = self.output_dir / "statistics_summary.txt"
         
         with open(summary_path, 'w', encoding='utf-8') as f:
             f.write("="*80 + "\n")
