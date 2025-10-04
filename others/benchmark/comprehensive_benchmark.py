@@ -173,10 +173,11 @@ class ComprehensiveBenchmark:
         times = []
         errors = []
         
-        # tqdmが利用可能な場合はプログレスバーを表示
+        # tqdmは5回以上の測定でのみ使用（オーバーヘッド最小化）
         iterator = range(iterations)
-        if TQDM_AVAILABLE:
-            iterator = tqdm(iterator, desc=f"  測定中", leave=False, ncols=80)
+        use_tqdm = TQDM_AVAILABLE and iterations >= 5
+        if use_tqdm:
+            iterator = tqdm(iterator, desc=f"  測定中", leave=False, ncols=80, disable=False)
         
         for i in iterator:
             try:
@@ -185,8 +186,8 @@ class ComprehensiveBenchmark:
                 duration = time.perf_counter() - start
                 times.append(duration)
                 
-                # 経過時間を表示
-                if TQDM_AVAILABLE and hasattr(iterator, 'set_description'):
+                # 経過時間を表示（tqdm使用時のみ）
+                if use_tqdm and hasattr(iterator, 'set_description'):
                     iterator.set_description(f"  測定中 ({format_time(duration)})")
                     
             except Exception as e:
@@ -241,10 +242,11 @@ class ComprehensiveBenchmark:
         times = []
         errors = []
         
-        # tqdmが利用可能な場合はプログレスバーを表示
+        # tqdmは5回以上の測定でのみ使用（オーバーヘッド最小化）
         iterator = range(iterations)
-        if TQDM_AVAILABLE:
-            iterator = tqdm(iterator, desc=f"  測定中", leave=False, ncols=80)
+        use_tqdm = TQDM_AVAILABLE and iterations >= 5
+        if use_tqdm:
+            iterator = tqdm(iterator, desc=f"  測定中", leave=False, ncols=80, disable=False)
         
         for i in iterator:
             try:
@@ -253,8 +255,8 @@ class ComprehensiveBenchmark:
                 duration = time.perf_counter() - start
                 times.append(duration)
                 
-                # 経過時間を表示
-                if TQDM_AVAILABLE and hasattr(iterator, 'set_description'):
+                # 経過時間を表示（tqdm使用時のみ）
+                if use_tqdm and hasattr(iterator, 'set_description'):
                     iterator.set_description(f"  測定中 ({format_time(duration)})")
                     
             except Exception as e:
