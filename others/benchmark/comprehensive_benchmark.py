@@ -1346,6 +1346,60 @@ def main():
         report_elapsed = time.perf_counter() - report_start
         print(f"\n✓ レポート生成完了 (所要時間: {format_time(report_elapsed)})")
         
+        # ===== 古いファイルのクリーンアップ =====
+        # グラフ生成前に実行（グラフ生成で独自のタイムスタンプが使われるため）
+        print("\n" + "="*80)
+        print("古いファイルのクリーンアップ中...")
+        print("="*80)
+        
+        cleanup_count = 0
+        cleanup_size_kb = 0
+        
+        # 古いグラフファイルを削除
+        graph_dir = benchmark.output_dir / "graphs"
+        if graph_dir.exists():
+            all_graphs = list(graph_dir.glob('*.png'))
+            # ベンチマーク開始から1時間以内のファイルは保持（安全マージン）
+            import datetime
+            cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=1)
+            old_graphs = [gf for gf in all_graphs if datetime.datetime.fromtimestamp(gf.stat().st_mtime) < cutoff_time]
+            
+            for gf in old_graphs:
+                try:
+                    cleanup_size_kb += gf.stat().st_size / 1024
+                    gf.unlink()
+                    cleanup_count += 1
+                except Exception:
+                    pass
+            
+            if cleanup_count > 0:
+                print(f"✓ 古いグラフ削除: {cleanup_count}個 ({cleanup_size_kb:.1f} KB)")
+        
+        # 古いログファイルを削除（最新5個を保持）
+        log_files = sorted(benchmark.output_dir.glob('benchmark_*.log'), 
+                          key=lambda f: f.stat().st_mtime, reverse=True)
+        csv_files = sorted(benchmark.output_dir.glob('benchmark_*.csv'), 
+                          key=lambda f: f.stat().st_mtime, reverse=True)
+        json_files = sorted(benchmark.output_dir.glob('benchmark_*.json'), 
+                           key=lambda f: f.stat().st_mtime, reverse=True)
+        summary_files = sorted(benchmark.output_dir.glob('summary_*.md'), 
+                              key=lambda f: f.stat().st_mtime, reverse=True)
+        
+        old_logs_count = 0
+        old_logs_size_kb = 0
+        
+        # 最新5個以外を削除
+        for old_file in log_files[5:] + csv_files[5:] + json_files[5:] + summary_files[5:]:
+            try:
+                old_logs_size_kb += old_file.stat().st_size / 1024
+                old_file.unlink()
+                old_logs_count += 1
+            except Exception:
+                pass
+        
+        if old_logs_count > 0:
+            print(f"✓ 古いログ/CSV/JSON削除: {old_logs_count}個 ({old_logs_size_kb:.1f} KB)")
+        
         # ===== グラフ生成 =====
         print("\n" + "="*80)
         print("グラフ生成中...")
@@ -1384,60 +1438,7 @@ def main():
             import traceback
             traceback.print_exc()
         
-        # ===== 古いファイルのクリーンアップ =====
-        print("\n" + "="*80)
-        print("古いファイルのクリーンアップ中...")
-        print("="*80)
-        
-        cleanup_count = 0
-        cleanup_size_kb = 0
-        
-        # 古いグラフファイルを削除
-        graph_dir = benchmark.output_dir / "graphs"
-        if graph_dir.exists():
-            all_graphs = list(graph_dir.glob('*.png'))
-            current_graphs = [gf for gf in all_graphs if benchmark.timestamp in gf.name]
-            old_graphs = [gf for gf in all_graphs if benchmark.timestamp not in gf.name]
-            
-            for gf in old_graphs:
-                try:
-                    cleanup_size_kb += gf.stat().st_size / 1024
-                    gf.unlink()
-                    cleanup_count += 1
-                except Exception:
-                    pass
-            
-            if cleanup_count > 0:
-                print(f"✓ 古いグラフ削除: {cleanup_count}個 ({cleanup_size_kb:.1f} KB)")
-        
-        # 古いログファイルを削除（最新5個を保持）
-        log_files = sorted(benchmark.output_dir.glob('benchmark_*.log'), 
-                          key=lambda f: f.stat().st_mtime, reverse=True)
-        csv_files = sorted(benchmark.output_dir.glob('benchmark_*.csv'), 
-                          key=lambda f: f.stat().st_mtime, reverse=True)
-        json_files = sorted(benchmark.output_dir.glob('benchmark_*.json'), 
-                           key=lambda f: f.stat().st_mtime, reverse=True)
-        summary_files = sorted(benchmark.output_dir.glob('summary_*.md'), 
-                              key=lambda f: f.stat().st_mtime, reverse=True)
-        
-        old_logs_count = 0
-        old_logs_size_kb = 0
-        
-        # 最新5個以外を削除
-        for old_file in log_files[5:] + csv_files[5:] + json_files[5:] + summary_files[5:]:
-            try:
-                old_logs_size_kb += old_file.stat().st_size / 1024
-                old_file.unlink()
-                old_logs_count += 1
-            except Exception:
-                pass
-        
-        if old_logs_count > 0:
-            print(f"✓ 古いログ削除: {old_logs_count}個 ({old_logs_size_kb:.1f} KB)")
-        
-        if cleanup_count == 0 and old_logs_count == 0:
-            print("✓ クリーンアップ不要（古いファイルなし）")
-        
+        # ===== 結果表示 =====
         print("\n" + "="*80)
         print("ベンチマーク完了!")
         print("="*80)
@@ -1448,24 +1449,26 @@ def main():
         print(f"  - サマリー: {benchmark.summary_file.name}")
         
         # グラフディレクトリの情報を簡潔に表示
+        graph_dir = benchmark.output_dir / "graphs"
         if graph_generation_success:
             if graph_dir.exists():
                 graph_files = list(graph_dir.glob('*.png'))
                 if graph_files:
-                    # 今回生成されたグラフのみを表示（タイムスタンプでフィルタ）
-                    current_graphs = [gf for gf in graph_files if benchmark.timestamp in gf.name]
-                    total_size_kb = sum(gf.stat().st_size for gf in current_graphs) / 1024
+                    # 1時間以内に生成されたグラフを「今回生成」とみなす
+                    import datetime
+                    cutoff_time = datetime.datetime.now() - datetime.timedelta(hours=1)
+                    current_graphs = [gf for gf in graph_files 
+                                    if datetime.datetime.fromtimestamp(gf.stat().st_mtime) >= cutoff_time]
                     
-                    print(f"  - グラフ: {len(current_graphs)}個生成 ({graph_dir.name}/) - 合計 {total_size_kb:.1f} KB")
-                    
-                    # 詳細はオプション（コメントアウト）
-                    # for gf in sorted(current_graphs):
-                    #     size_kb = gf.stat().st_size / 1024
-                    #     print(f"      * {gf.name} ({size_kb:.1f} KB)")
+                    if current_graphs:
+                        total_size_kb = sum(gf.stat().st_size for gf in current_graphs) / 1024
+                        print(f"  - グラフ: {len(current_graphs)}個生成 ({graph_dir.name}/) - 合計 {total_size_kb:.1f} KB")
+                    else:
+                        print(f"  - グラフ: {len(graph_files)}個存在 (古いファイル)")
                 else:
                     print(f"  - グラフ: ディレクトリは存在するがファイルなし")
             else:
-                print(f"  - グラフ: ディレクトリが作成されませんでした ({graph_dir})")
+                print(f"  - グラフ: ディレクトリが作成されませんでした")
         else:
             print(f"  - グラフ: 生成スキップまたは失敗 (上記エラー参照)")
         
