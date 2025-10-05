@@ -599,6 +599,7 @@ class BackgroundStatsCollector:
         """
         self.sampling_rate = sampling_rate
         self._sample_counter = 0
+        self._sample_modulo = max(1, int(1.0 / sampling_rate))
         
         # Fast in-memory dicts for stats
         self._operation_counts = {
@@ -621,9 +622,11 @@ class BackgroundStatsCollector:
         
     def _should_sample(self) -> bool:
         """Determine if this operation should be sampled."""
-        self._sample_counter += 1
         # Use modulo for deterministic sampling
-        return (self._sample_counter % int(1.0 / self.sampling_rate)) == 0
+        # Increment is very fast (single CPU instruction)
+        result = (self._sample_counter % self._sample_modulo) == 0
+        self._sample_counter += 1
+        return result
     
     def record_operation(self, operation: str, duration_ms: float = None):
         """Record an operation (non-blocking, minimal overhead).
@@ -632,19 +635,24 @@ class BackgroundStatsCollector:
             operation: Operation name ('get', 'set', etc.)
             duration_ms: Optional duration in milliseconds
         """
-        # Always count (dict increment is very fast)
-        if operation in self._operation_counts:
+        # Fast path: Just increment counter (single dict lookup + increment)
+        # This is extremely fast - O(1) with minimal overhead
+        try:
             self._operation_counts[operation] += 1
+        except KeyError:
+            pass  # Ignore unknown operations
         
-        # Only sample timing data
+        # Only sample timing data if duration is provided AND should sample
         if duration_ms is not None and self._should_sample():
-            if operation in self._timing_samples:
+            try:
                 samples = self._timing_samples[operation]
                 samples.append(duration_ms)
                 # Keep only recent samples
                 if len(samples) > self._max_samples:
                     # Remove oldest half
                     self._timing_samples[operation] = samples[-self._max_samples // 2:]
+            except KeyError:
+                pass  # Ignore unknown operations
     
     def get_stats(self) -> Dict[str, Any]:
         """Get current statistics (lazy aggregation)."""
@@ -1024,9 +1032,6 @@ class AsyncDictSQLiteFastestBetaV4:
         Returns:
             キーに対応する値、存在しない場合はdefault
         """
-        # v4 Step 2: Record operation start (minimal overhead)
-        start_time = time.time()
-        
         # Phase 4: 操作開始時刻
         extended_start_time = time.time() if self.extended_stats else None
         
@@ -1035,9 +1040,8 @@ class AsyncDictSQLiteFastestBetaV4:
         # Check delete buffer first (before cache)
         async with self._async_buffer_lock:
             if key in self._async_delete_buffer:
-                # v4 Step 2: Record background stats
-                duration_ms = (time.time() - start_time) * 1000
-                self._background_stats.record_operation('get', duration_ms)
+                # v4 Step 2: Record background stats (count only)
+                self._background_stats.record_operation('get')
                 return default
         
         # Phase 2: プリフェッチキャッシュチェック
@@ -1048,7 +1052,7 @@ class AsyncDictSQLiteFastestBetaV4:
             
             # Phase 4: 統計記録
             if self.extended_stats:
-                self._record_operation('get', start_time, key)
+                self._record_operation('get', extended_start_time, key)
             
             return value
         
@@ -1063,7 +1067,7 @@ class AsyncDictSQLiteFastestBetaV4:
                 
                 # Phase 4: 統計記録
                 if self.extended_stats:
-                    self._record_operation('get', start_time, key)
+                    self._record_operation('get', extended_start_time, key)
                 
                 return cached_value
             
@@ -1075,7 +1079,7 @@ class AsyncDictSQLiteFastestBetaV4:
                     
                     # Phase 4: 統計記録
                     if self.extended_stats:
-                        self._record_operation('get', start_time, key)
+                        self._record_operation('get', extended_start_time, key)
                     
                     return value
             
@@ -1107,7 +1111,7 @@ class AsyncDictSQLiteFastestBetaV4:
             
             # Phase 4: 統計記録
             if self.extended_stats:
-                self._record_operation('get', start_time, key)
+                self._record_operation('get', extended_start_time, key)
             
             return value
         
@@ -1141,17 +1145,15 @@ class AsyncDictSQLiteFastestBetaV4:
             await cursor.close()
         
         if row is None:
-            # v4 Step 2: Background stats
-            duration_ms = (time.time() - start_time) * 1000
-            self._background_stats.record_operation('get', duration_ms)
+            # v4 Step 2: Background stats (count only)
+            self._background_stats.record_operation('get')
             return default
         
         value = pickle.loads(row[0])
         self._cache.put(key, value)
         
-        # v4 Step 2: Background stats
-        duration_ms = (time.time() - start_time) * 1000
-        self._background_stats.record_operation('get', duration_ms)
+        # v4 Step 2: Background stats (count only)
+        self._background_stats.record_operation('get')
         
         return value
     
@@ -1162,9 +1164,6 @@ class AsyncDictSQLiteFastestBetaV4:
             key: キー
             value: 値
         """
-        # v4 Step 2: Record operation start
-        start_time = time.time()
-        
         # Phase 4: 操作開始時刻
         extended_start_time = time.time() if self.extended_stats else None
         
@@ -1200,9 +1199,8 @@ class AsyncDictSQLiteFastestBetaV4:
         if self.extended_stats:
             self._record_operation('set', extended_start_time, key)
         
-        # v4 Step 2: Background stats
-        duration_ms = (time.time() - start_time) * 1000
-        self._background_stats.record_operation('set', duration_ms)
+        # v4 Step 2: Background stats (count only - zero overhead)
+        self._background_stats.record_operation('set')
     
     async def adelete(self, key: str) -> None:
         """非同期でキーを削除 - Phase 4対応.
