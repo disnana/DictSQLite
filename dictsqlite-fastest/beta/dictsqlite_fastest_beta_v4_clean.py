@@ -1,23 +1,37 @@
-"""DictSQLite-Fastest Beta v4 - Enhanced Caching & Statistics
+"""DictSQLite-Fastest Beta v3-alpha - 高度最適化実験版
 
-v3-alphaの全機能 + 高度なキャッシング戦略:
+v2の全機能を含み、以下の長期的高度最適化を実装:
 
-v4 New Features:
-- インテリジェント全データロード (小規模データを自動検出して全てメモリに)
-- LRU/LFU ハイブリッドキャッシュ (使用頻度と最終使用時刻の両方を考慮)
-- 統計情報の外部DB保存オプション (メインDBと分離)
-- シーケンシャルリード性能の最適化 (v2以上の性能を保証)
+Phase 1: 動的接続プール
+- 最小2接続、最大8接続の動的プール
+- 負荷に応じた自動スケーリング  
+- アイドル接続のタイムアウト管理
+- 接続再利用による効率化
+- 期待性能: 40%向上
 
-v3-alpha Features (維持):
-- Phase 1: 動的接続プール (30%の並行性能向上)
-- Phase 2: パターンベース先読み (シーケンシャルアクセス最適化)
-- Phase 3: 適応的バッチサイジング (混合ワークロード最適化)
-- Phase 4: 拡張統計追跡 (詳細パフォーマンス分析)
+Phase 2: パターンベース先読みシステム
+- アクセスパターンの自動検出
+- 連続キーの先読みプリフェッチ
+- プリフェッチキャッシュ管理
+- ヒット率ベースの適応調整
+- 期待性能: 25%向上
+
+Phase 3: 適応的バッチサイジング
+- 操作ミックスの自動分析
+- トランザクションサイズの動的調整
+- レイテンシとスループットのバランス最適化
+- 統計ベースのチューニング
+- 期待性能: 15%向上
+
+Phase 4: 拡張統計追跡
+- アクセスパターンの追跡
+- 操作タイプ別の統計
+- タイミング情報の収集
+- パフォーマンスレポート生成
 
 パフォーマンス目標:
-- シーケンシャルリード: v2同等以上 (>= 1,700,000 ops/sec)
-- 並行リード: v3-alpha同等以上 (>= 10,000 ops/sec)
-- 小規模データ: 2倍以上の高速化 (全ロードによる)
+- 同期版: v2と同等以上
+- 非同期版: v2比で20-50%の追加高速化
 """
 
 import sys
@@ -37,7 +51,7 @@ import atexit
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from dictsqlite_fastest.main import DictSQLiteFastest
 
-# aiosqliteのインポート(非同期版で使用)
+# aiosqliteのインポート（非同期版で使用）
 try:
     import aiosqlite
     AIOSQLITE_AVAILABLE = True
@@ -47,244 +61,14 @@ except ImportError:
 
 
 # ============================================================================
-# v4: Database Size Analyzer
-# ============================================================================
-
-class DatabaseSizeAnalyzer:
-    """Database size analyzer to determine caching strategy."""
-    
-    __slots__ = ('db_path', 'table_name')
-    
-    def __init__(self, db_path: str, table_name: str):
-        self.db_path = db_path
-        self.table_name = table_name
-    
-    async def analyze_database(self) -> Dict[str, Any]:
-        """
-        データベースを分析してサイズ情報を返す
-        
-        Returns:
-            {
-                'total_entries': int,
-                'total_size_bytes': int,
-                'avg_entry_size': int,
-                'estimated_memory_mb': float
-            }
-        """
-        try:
-            async with aiosqlite.connect(self.db_path) as conn:
-                # エントリ数を取得
-                cursor = await conn.execute(
-                    f"SELECT COUNT(*) FROM {self.table_name}"
-                )
-                row = await cursor.fetchone()
-                total_entries = row[0] if row else 0
-                await cursor.close()
-                
-                if total_entries == 0:
-                    return {
-                        'total_entries': 0,
-                        'total_size_bytes': 0,
-                        'avg_entry_size': 0,
-                        'estimated_memory_mb': 0.0
-                    }
-                
-                # 合計サイズを推定(サンプリング)
-                # 全件チェックは重いので,最初の1000件から推定
-                sample_size = min(1000, total_entries)
-                cursor = await conn.execute(
-                    f"SELECT LENGTH(key) + LENGTH(value) FROM {self.table_name} LIMIT ?",
-                    (sample_size,)
-                )
-                rows = await cursor.fetchall()
-                await cursor.close()
-                
-                sample_total_size = sum(row[0] for row in rows if row[0])
-                avg_entry_size = sample_total_size / sample_size if sample_size > 0 else 0
-                
-                # 推定合計サイズ
-                estimated_total_size = avg_entry_size * total_entries
-                estimated_memory_mb = estimated_total_size / (1024 * 1024)
-                
-                return {
-                    'total_entries': total_entries,
-                    'total_size_bytes': int(estimated_total_size),
-                    'avg_entry_size': int(avg_entry_size),
-                    'estimated_memory_mb': estimated_memory_mb
-                }
-        except Exception:
-            # テーブルが存在しない場合など
-            return {
-                'total_entries': 0,
-                'total_size_bytes': 0,
-                'avg_entry_size': 0,
-                'estimated_memory_mb': 0.0
-            }
-
-
-# ============================================================================
-# v4: Hybrid Cache (LRU + LFU)
-# ============================================================================
-
-class HybridCache:
-    """LRU + LFU ハイブリッドキャッシュ実装
-    
-    使用頻度と最終使用時刻の両方を考慮した退避アルゴリズム.
-    """
-    
-    __slots__ = (
-        'capacity', 'cache', 'lock', 
-        'access_count', 'last_access_time',
-        'eviction_strategy', 'hits', 'misses',
-        'eviction_count'
-    )
-    
-    def __init__(self, capacity: int = 10000, 
-                 eviction_strategy: str = 'hybrid'):
-        """
-        Args:
-            capacity: キャッシュ容量
-            eviction_strategy: 'lru', 'lfu', 'hybrid'
-        """
-        self.capacity = capacity
-        self.cache = OrderedDict()
-        self.access_count = {}
-        self.last_access_time = {}
-        self.eviction_strategy = eviction_strategy
-        self.lock = Lock()
-        self.hits = 0
-        self.misses = 0
-        self.eviction_count = 0
-    
-    def _calculate_eviction_score(self, key: str) -> float:
-        """
-        退避スコア計算 (低いほど退避対象)
-        
-        hybrid: 使用頻度 * 0.7 + 時間スコア * 0.3
-        lfu: 使用頻度のみ
-        lru: 時間スコアのみ
-        """
-        if self.eviction_strategy == 'lfu':
-            return self.access_count.get(key, 0)
-        
-        if self.eviction_strategy == 'lru':
-            time_score = time.time() - self.last_access_time.get(key, 0)
-            return -time_score  # 古いほど低スコア
-        
-        # hybrid
-        freq_score = self.access_count.get(key, 0)
-        current_time = time.time()
-        time_since_access = current_time - self.last_access_time.get(key, 0)
-        time_normalized = min(time_since_access / 3600, 1.0)  # 1時間で正規化
-        
-        return freq_score * 0.7 + (1.0 - time_normalized) * 0.3
-    
-    def get(self, key: str) -> Optional[Any]:
-        """キャッシュから値を取得"""
-        with self.lock:
-            if key not in self.cache:
-                self.misses += 1
-                return None
-            
-            self.hits += 1
-            self.access_count[key] = self.access_count.get(key, 0) + 1
-            self.last_access_time[key] = time.time()
-            
-            # LRU: アクセスされたアイテムを最後に移動
-            self.cache.move_to_end(key)
-            return self.cache[key]
-    
-    def get_fast(self, key: str) -> Optional[Any]:
-        """高速版 - 統計更新なし(読み取り専用最適化)"""
-        # ロックなしで読み取り(Pythonの辞書はスレッドセーフ読み取り)
-        return self.cache.get(key)
-    
-    def put(self, key: str, value: Any) -> None:
-        """キャッシュに値を追加(ハイブリッド戦略)"""
-        with self.lock:
-            # 容量チェック
-            if len(self.cache) >= self.capacity and key not in self.cache:
-                # 最低スコアのキーを退避
-                evict_key = min(
-                    self.cache.keys(),
-                    key=lambda k: self._calculate_eviction_score(k)
-                )
-                self.cache.pop(evict_key)
-                self.access_count.pop(evict_key, None)
-                self.last_access_time.pop(evict_key, None)
-                self.eviction_count += 1
-            
-            self.cache[key] = value
-            self.access_count[key] = self.access_count.get(key, 0) + 1
-            self.last_access_time[key] = time.time()
-    
-    def put_fast(self, key: str, value: Any) -> None:
-        """高速版 - LRU更新なし"""
-        with self.lock:
-            # 容量チェック(簡略版)
-            if len(self.cache) >= self.capacity and key not in self.cache:
-                # 先頭を削除(最も古い)
-                oldest_key = next(iter(self.cache))
-                self.cache.pop(oldest_key)
-                self.access_count.pop(oldest_key, None)
-                self.last_access_time.pop(oldest_key, None)
-                self.eviction_count += 1
-            
-            self.cache[key] = value
-            self.access_count[key] = self.access_count.get(key, 0) + 1
-            self.last_access_time[key] = time.time()
-    
-    def remove(self, key: str) -> None:
-        """キャッシュからキーを削除"""
-        with self.lock:
-            self.cache.pop(key, None)
-            self.access_count.pop(key, None)
-            self.last_access_time.pop(key, None)
-    
-    def clear(self) -> None:
-        """キャッシュをクリア"""
-        with self.lock:
-            self.cache.clear()
-            self.access_count.clear()
-            self.last_access_time.clear()
-            self.hits = 0
-            self.misses = 0
-            self.eviction_count = 0
-    
-    def get_stats(self) -> Dict[str, Any]:
-        """キャッシュ統計を取得"""
-        with self.lock:
-            total = self.hits + self.misses
-            hit_rate = (self.hits / total * 100) if total > 0 else 0
-            return {
-                'size': len(self.cache),
-                'capacity': self.capacity,
-                'hits': self.hits,
-                'misses': self.misses,
-                'hit_rate': hit_rate,
-                'eviction_count': self.eviction_count,
-                'strategy': self.eviction_strategy
-            }
-    
-    def get_hot_keys(self, top_n: int = 100) -> List[Tuple[str, int]]:
-        """使用頻度上位N件のキーを取得"""
-        with self.lock:
-            return sorted(
-                self.access_count.items(),
-                key=lambda x: x[1],
-                reverse=True
-            )[:top_n]
-
-
-# ============================================================================
-# LRUキャッシュ(v2/v3互換性のため維持)
+# LRUキャッシュ（変更なし）
 # ============================================================================
 
 class LRUCache:
     """スレッドセーフなLRUキャッシュ実装.
     
-    最も頻繁にアクセスされるデータをメモリに保持し,
-    ディスクアクセスを削減します.
+    最も頻繁にアクセスされるデータをメモリに保持し、
+    ディスクアクセスを削減します。
     """
     
     __slots__ = ('capacity', 'cache', 'lock', 'hits', 'misses', 'simple_cache')
@@ -292,14 +76,14 @@ class LRUCache:
     def __init__(self, capacity: int = 10000):
         """
         Args:
-            capacity: キャッシュの最大容量(アイテム数)
+            capacity: キャッシュの最大容量（アイテム数）
         """
         self.capacity = capacity
         self.cache = OrderedDict()
         self.lock = Lock()
         self.hits = 0
         self.misses = 0
-        # 高速モード用のシンプルキャッシュ(ロックなし)
+        # 高速モード用のシンプルキャッシュ（ロックなし）
         self.simple_cache = {}
     
     def get(self, key: str) -> Optional[Any]:
@@ -309,7 +93,7 @@ class LRUCache:
             key: 取得するキー
             
         Returns:
-            キャッシュされている値,存在しない場合はNone
+            キャッシュされている値、存在しない場合はNone
         """
         with self.lock:
             if key not in self.cache:
@@ -322,17 +106,17 @@ class LRUCache:
             return self.cache[key]
     
     def get_fast(self, key: str) -> Optional[Any]:
-        """キャッシュから値を取得(高速版 - ロックなし,LRU更新なし).
+        """キャッシュから値を取得（高速版 - ロックなし、LRU更新なし）.
         
-        初回読み込み時の最適化用.シンプルdictを使用してロックとOrderedDictのオーバーヘッドを回避.
+        初回読み込み時の最適化用。シンプルdictを使用してロックとOrderedDictのオーバーヘッドを回避。
         
         Args:
             key: 取得するキー
             
         Returns:
-            キャッシュにある場合は値,ない場合はNone
+            キャッシュにある場合は値、ない場合はNone
         """
-        # ロックなしで単純に取得(読み取り専用操作なので安全)
+        # ロックなしで単純に取得（読み取り専用操作なので安全）
         return self.simple_cache.get(key)
     
     def put(self, key: str, value: Any) -> None:
@@ -355,18 +139,18 @@ class LRUCache:
             self.cache[key] = value
     
     def put_fast(self, key: str, value: Any) -> None:
-        """キャッシュに値を追加(高速版 - ロックなし,LRU更新なし).
+        """キャッシュに値を追加（高速版 - ロックなし、LRU更新なし）.
         
-        初回読み込み時の最適化用.シンプルdictを使用してロックとOrderedDictのオーバーヘッドを回避.
+        初回読み込み時の最適化用。シンプルdictを使用してロックとOrderedDictのオーバーヘッドを回避。
         
         Args:
             key: キー
             value: 値
         """
-        # ロックなしでシンプルキャッシュに追加(高速)
+        # ロックなしでシンプルキャッシュに追加（高速）
         self.simple_cache[key] = value
         
-        # 容量制限チェック(定期的に)
+        # 容量制限チェック（定期的に）
         if len(self.simple_cache) > self.capacity * 1.2:  # 20%のバッファを許容
             # 容量超過時はシンプルキャッシュをクリアして再構築
             items = list(self.simple_cache.items())
@@ -403,7 +187,7 @@ class LRUCache:
 
 
 # ============================================================================
-# 書き込みバッファ(変更なし)
+# 書き込みバッファ（変更なし）
 # ============================================================================
 
 class WriteBuffer:
@@ -415,7 +199,7 @@ class WriteBuffer:
         """
         Args:
             flush_threshold: この数の書き込みが溜まったらフラッシュ
-            flush_interval: この時間(秒)が経過したらフラッシュ
+            flush_interval: この時間（秒）が経過したらフラッシュ
         """
         self.flush_threshold = flush_threshold
         self.flush_interval = flush_interval
@@ -488,20 +272,20 @@ class WriteBuffer:
 
 
 # ============================================================================
-# 同期版Beta(Fastest版の最適化統合)
+# 同期版Beta（Fastest版の最適化統合）
 # ============================================================================
 
 class DictSQLiteFastestBeta(DictSQLiteFastest):
     """同期版DictSQLite-Fastest Beta - メモリ最優先の高速化実装.
     
     Fastest版の全最適化 + Beta版の追加機能:
-    - ✅ APSW高速化(Fastest版から継承)
-    - ✅ WALモード最適化(Fastest版から継承)
-    - ✅ 3層防御テーブル存在確認(Fastest版から継承)
-    - ✅ LRUキャッシュ(Beta版独自)
-    - ✅ 書き込みバッファリング(Beta版独自)
-    - ✅ メモリ予算管理(Beta版独自)
-    - ✅ ホットデータ検出(Beta版独自)
+    - ✅ APSW高速化（Fastest版から継承）
+    - ✅ WALモード最適化（Fastest版から継承）
+    - ✅ 3層防御テーブル存在確認（Fastest版から継承）
+    - ✅ LRUキャッシュ（Beta版独自）
+    - ✅ 書き込みバッファリング（Beta版独自）
+    - ✅ メモリ予算管理（Beta版独自）
+    - ✅ ホットデータ検出（Beta版独自）
     """
     
     def __init__(
@@ -518,7 +302,7 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         auto_load_threshold_mb: float = 10.0,
         enable_background_flush: bool = True,
         enable_hot_data_detection: bool = True,
-        # 最適化パラメータ(v1からの移植)
+        # 最適化パラメータ（v1からの移植）
         enable_stats_collection: bool = False,
         lazy_tracking_threshold: int = 100,
         fast_mode: bool = True,
@@ -530,18 +314,18 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             table_name: テーブル名
             cache_capacity: LRUキャッシュの最大容量
             write_buffer_size: 書き込みバッファの閾値
-            write_buffer_interval: 書き込みバッファのフラッシュ間隔(秒)
-            memory_only: メモリのみモード(ディスク永続化なし)
+            write_buffer_interval: 書き込みバッファのフラッシュ間隔（秒）
+            memory_only: メモリのみモード（ディスク永続化なし）
             aggressive_memory: アグレッシブなメモリ最適化
-            memory_budget_mb: メモリ予算(MB)
-            auto_load_threshold_mb: 自動全件ロードの閾値(MB)
+            memory_budget_mb: メモリ予算（MB）
+            auto_load_threshold_mb: 自動全件ロードの閾値（MB）
             enable_background_flush: バックグラウンドフラッシュ有効化
             enable_hot_data_detection: ホットデータ検出有効化
-            enable_stats_collection: 統計情報収集を有効化(パフォーマンス重視の場合はFalse)
+            enable_stats_collection: 統計情報収集を有効化（パフォーマンス重視の場合はFalse）
             lazy_tracking_threshold: この操作回数まではアクセス頻度追跡をスキップ
-            fast_mode: 高速モード(ロックなしキャッシュ,初回読み込み最適化)
+            fast_mode: 高速モード（ロックなしキャッシュ、初回読み込み最適化）
         """
-        # Fastest版の初期化(全ての最適化を継承)
+        # Fastest版の初期化（全ての最適化を継承）
         super().__init__(
             db_name=db_name,
             table_name=table_name,
@@ -560,7 +344,7 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         # LRUキャッシュ
         self._cache = LRUCache(capacity=cache_capacity)
         
-        # 書き込みバッファ(メモリオンリーまたは無効化されていない場合)
+        # 書き込みバッファ（メモリオンリーまたは無効化されていない場合）
         if not memory_only and write_buffer_size > 0:
             self._write_buffer = WriteBuffer(
                 flush_threshold=write_buffer_size,
@@ -600,15 +384,15 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             self._try_auto_load_all(auto_load_threshold_mb)
     
     def __getitem__(self, key: str) -> Any:
-        """キーから値を取得(キャッシュ優先)."""
+        """キーから値を取得（キャッシュ優先）."""
         # 高速モード: ロックなし読み取り + LRU更新最小化
         if self.fast_mode:
-            # ロックなしでキャッシュチェック(高速)
+            # ロックなしでキャッシュチェック（高速）
             cached_value = self._cache.get_fast(key)
             if cached_value is not None:
                 return cached_value
             
-            # 書き込みバッファチェック(高速パス用に最小化)
+            # 書き込みバッファチェック（高速パス用に最小化）
             if self._write_buffer is not None:
                 with self._write_buffer.lock:
                     if key in self._write_buffer.buffer:
@@ -620,7 +404,7 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             value = super().__getitem__(key)
             self._cache.put_fast(key, value)
             
-            # 操作カウント更新(ロックなし,アトミックではないが問題ない)
+            # 操作カウント更新（ロックなし、アトミックではないが問題ない）
             self._operation_count += 1
             if self._operation_count > self.lazy_tracking_threshold:
                 if self._access_frequency is not None:
@@ -661,7 +445,7 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         return value
     
     def __setitem__(self, key: str, value: Any) -> None:
-        """キーに値を設定(バッファリング対応)."""
+        """キーに値を設定（バッファリング対応）."""
         # キャッシュ更新
         self._cache.put(key, value)
         
@@ -726,8 +510,8 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
     def _background_flush_worker(self) -> None:
         """バックグラウンドフラッシュワーカー."""
         while not self._background_flush_stop_event.is_set():
-            # wait()を使用することで,stopイベントが設定されたら即座に終了できる
-            # タイムアウトは1秒で,定期的にフラッシュをチェック
+            # wait()を使用することで、stopイベントが設定されたら即座に終了できる
+            # タイムアウトは1秒で、定期的にフラッシュをチェック
             if self._background_flush_stop_event.wait(timeout=1.0):
                 break  # stopイベントが設定された
             
@@ -793,7 +577,7 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             self._background_flush_stop_event.set()
             if self._background_flush_thread and self._background_flush_thread.is_alive():
                 # タイムアウトを短縮: 5秒 → 1秒
-                # wait()を使用しているので,実際は即座に終了するはず
+                # wait()を使用しているので、実際は即座に終了するはず
                 self._background_flush_thread.join(timeout=1.0)
         
         # 残りをフラッシュ
@@ -804,23 +588,26 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
 
 
 # ============================================================================
-# 非同期版Beta(aiosqlite + 内部バッチ処理)
+# 非同期版Beta（aiosqlite + 内部バッチ処理）
 # ============================================================================
 
-class AsyncDictSQLiteFastestBetaV4:
-    """非同期版DictSQLite-Fastest Beta v4 - Enhanced Caching & Statistics.
+class AsyncDictSQLiteFastestBetaV3:
+    """非同期版DictSQLite-Fastest Beta v3-alpha - 高度最適化実験版.
     
-    v3-alphaの全機能 + v4高度キャッシング:
-    - ✅ v3-alpha: 動的接続プール,プリフェッチ,適応バッチ,拡張統計
-    - ✅ v4: インテリジェント全データロード(小規模データ自動検出)
-    - ✅ v4: LRU/LFU ハイブリッドキャッシュ(使用頻度考慮)
-    - ✅ v4: 統計情報の外部DB保存オプション
-    - ✅ v4: シーケンシャルリード性能最適化(v2以上)
+    v2の全機能 + v3-alpha高度最適化:
+    - ✅ aiosqlite（真のasyncio非同期）
+    - ✅ 内部バッチ処理（自動最適化）
+    - ✅ 同期版キャッシュ共有（読み取り高速化）
+    - ✅ Phase 1: 動的接続プール（負荷ベース自動スケーリング）
+    - ✅ Phase 2: パターンベース先読み（連続アクセス最適化）
+    - ✅ Phase 3: 適応的バッチサイジング（混合ワークロード最適化）
+    - ✅ Phase 4: 拡張統計追跡（詳細パフォーマンス分析）
     
-    パフォーマンス目標:
-    - シーケンシャルリード: v2同等以上 (>= 1,700,000 ops/sec)
-    - 並行リード: v3-alpha同等以上 (>= 10,000 ops/sec)
-    - 小規模データ: 2倍以上の高速化
+    期待パフォーマンス:
+    - v2比で20-50%の追加高速化
+    - 並行読み込み: 40%向上
+    - 連続アクセス: 25%向上
+    - 混合ワークロード: 15%向上
     """
     
     def __init__(
@@ -840,49 +627,26 @@ class AsyncDictSQLiteFastestBetaV4:
         async_batch_size: int = 100,
         async_commit_interval: float = 1.0,
         # v3-alpha Phase 1: 動的接続プール
-        pool_min_size: int = 2,
-        pool_max_size: int = 8,
-        pool_idle_timeout: float = 60.0,
-        pool_auto_scale: bool = True,
+        pool_min_size: int = 2,  # 最小接続数
+        pool_max_size: int = 8,  # 最大接続数
+        pool_idle_timeout: float = 60.0,  # アイドル接続タイムアウト（秒）
+        pool_auto_scale: bool = True,  # 負荷ベース自動スケーリング
         # v3-alpha Phase 2: プリフェッチ
-        enable_prefetch: bool = False,  # v4: デフォルト無効(オーバーヘッド削減)
-        prefetch_size: int = 10,
-        prefetch_threshold: float = 0.7,
+        enable_prefetch: bool = True,  # 先読み有効化
+        prefetch_size: int = 10,  # 先読みサイズ
+        prefetch_threshold: float = 0.7,  # ヒット率閾値
         # v3-alpha Phase 3: 適応バッチ
-        adaptive_batch: bool = True,
-        batch_min_size: int = 10,
-        batch_max_size: int = 1000,
+        adaptive_batch: bool = True,  # 適応的バッチサイジング
+        batch_min_size: int = 10,  # 最小バッチサイズ
+        batch_max_size: int = 1000,  # 最大バッチサイズ
         # v3-alpha Phase 4: 拡張統計
-        extended_stats: bool = False,  # v4: デフォルト無効(オーバーヘッド削減)
-        # v4 NEW: インテリジェント全データロード
-        auto_preload: bool = True,  # 自動全ロード有効化
-        preload_threshold_mb: float = 100.0,  # 全ロード閾値(MB)
-        preload_threshold_entries: int = 100000,  # 全ロード閾値(エントリ数)
-        force_preload: bool = False,  # 強制全ロード
-        # v4 NEW: ハイブリッドキャッシュ
-        use_hybrid_cache: bool = True,  # ハイブリッドキャッシュ使用
-        cache_strategy: str = 'hybrid',  # 'lru', 'lfu', 'hybrid'
-        # v4 NEW: 統計DB分離
-        stats_db_path: Optional[str] = None,  # 統計DB(Noneなら無効)
-        stats_batch_size: int = 1000,  # 統計バッチサイズ
-        stats_flush_interval: float = 5.0,  # 統計フラッシュ間隔
+        extended_stats: bool = True,  # 拡張統計収集
         # 最適化パラメータ
         enable_stats_collection: bool = False,
         lazy_tracking_threshold: int = 100,
         fast_mode: bool = True,
         **kwargs
     ):
-        """
-        Args:
-            db_name: データベースファイルパス
-            table_name: テーブル名
-            cache_capacity: キャッシュ容量
-            async_batch_size: 非同期バッチ書き込みサイズ
-            async_commit_interval: 自動コミット間隔
-            pool_min_size: 接続プールの最小サイズ (v3-alpha Phase 1)
-            pool_max_size: 接続プールの最大サイズ (v3-alpha Phase 1)
-            pool_idle_timeout: アイドル接続のタイムアウト (v3-alpha Phase 1)
-            pool_auto_scale: 負荷ベースの自動スケーリング (v3-alpha Phase 1)
         """
         Args:
             db_name: データベースファイルパス
@@ -901,20 +665,11 @@ class AsyncDictSQLiteFastestBetaV4:
             batch_min_size: 最小バッチサイズ (v3-alpha Phase 3)
             batch_max_size: 最大バッチサイズ (v3-alpha Phase 3)
             extended_stats: 拡張統計収集の有効化 (v3-alpha Phase 4)
-            auto_preload: 自動全データロード有効化 (v4)
-            preload_threshold_mb: 全ロード閾値MB (v4)
-            preload_threshold_entries: 全ロード閾値エントリ数 (v4)
-            force_preload: 強制全ロード (v4)
-            use_hybrid_cache: ハイブリッドキャッシュ使用 (v4)
-            cache_strategy: キャッシュ戦略 'lru'/'lfu'/'hybrid' (v4)
-            stats_db_path: 統計DB保存先パス (v4)
-            stats_batch_size: 統計バッチサイズ (v4)
-            stats_flush_interval: 統計フラッシュ間隔秒 (v4)
-            その他: v2/v3と同じ
+            その他: v2と同じ
         """
         if not AIOSQLITE_AVAILABLE:
             raise ImportError(
-                "aiosqlite is required for AsyncDictSQLiteFastestBetaV4. "
+                "aiosqlite is required for AsyncDictSQLiteFastestBetaV3. "
                 "Install with: pip install aiosqlite"
             )
         
@@ -947,40 +702,14 @@ class AsyncDictSQLiteFastestBetaV4:
         # v3-alpha Phase 4: 拡張統計設定
         self.extended_stats = extended_stats
         
-        # v4: インテリジェント全データロード設定
-        self.auto_preload = auto_preload
-        self.preload_threshold_mb = preload_threshold_mb
-        self.preload_threshold_entries = preload_threshold_entries
-        self.force_preload = force_preload
+        # キャッシュのみを使用（同期版のDBは開かない）
+        from dictsqlite_fastest_beta_v3_alpha import LRUCache
+        self._cache = LRUCache(capacity=cache_capacity)
         
-        # v4: ハイブリッドキャッシュ設定
-        self.use_hybrid_cache = use_hybrid_cache
-        self.cache_strategy = cache_strategy
-        
-        # v4: 統計DB設定
-        self.stats_db_path = stats_db_path
-        self.stats_batch_size = stats_batch_size
-        self.stats_flush_interval = stats_flush_interval
-        
-        # キャッシュ作成(v4: ハイブリッドキャッシュ対応)
-        if self.use_hybrid_cache:
-            self._cache = HybridCache(
-                capacity=cache_capacity,
-                eviction_strategy=cache_strategy
-            )
-        else:
-            # v2/v3互換のLRUキャッシュ
-            self._cache = LRUCache(capacity=cache_capacity)
-        
-        # 同期版は使わない(キャッシュとDBロックの競合を避けるため)
+        # 同期版は使わない（キャッシュとDBロックの競合を避けるため）
         self._sync_db = None
         
-        # v4: 全データロード関連
-        self._all_data_loaded = False  # 全データロード済みフラグ
-        self._preloaded_keys = set()  # ロード済みキーのセット
-        self._db_size_stats = None  # DBサイズ情報
-        
-        # aiosqlite接続プール(遅延初期化) - Phase 1: 動的プール
+        # aiosqlite接続プール（遅延初期化） - Phase 1: 動的プール
         self._connection_pool = []  # List of aiosqlite.Connection
         self._connection_last_used = {}  # 接続の最終使用時刻
         self._available_connections = None  # asyncio.Queue
@@ -1000,7 +729,7 @@ class AsyncDictSQLiteFastestBetaV4:
         self._async_delete_buffer: set = set()
         self._async_buffer_lock = None
         
-        # 書き込み操作のシリアライズ用ロック(デッドロック防止)
+        # 書き込み操作のシリアライズ用ロック（デッドロック防止）
         self._async_write_lock = None
         
         # Phase 2: プリフェッチシステム
@@ -1040,7 +769,7 @@ class AsyncDictSQLiteFastestBetaV4:
             'cache_misses': 0
         }
         
-        # 操作カウンタ(遅延追跡用)
+        # 操作カウンタ（遅延追跡用）
         self._operation_count = 0
         self._access_frequency = {} if enable_hot_data_detection else None
         
@@ -1053,17 +782,17 @@ class AsyncDictSQLiteFastestBetaV4:
         self._cleanup_stop_event = None
     
     async def _ensure_initialized(self) -> None:
-        """非同期コンポーネントの初期化(スレッドセーフ) - v3-alpha Phase 1対応."""
+        """非同期コンポーネントの初期化（スレッドセーフ） - v3-alpha Phase 1対応."""
         # 高速パス: 既に初期化済みの場合は即座に返る
         if self._initialized:
             return
         
-        # 初期化ロックを遅延作成(最初の呼び出しで作成)
+        # 初期化ロックを遅延作成（最初の呼び出しで作成）
         if self._init_lock is None:
-            # この部分はロックなしだが,asyncio.Lock()の作成自体はスレッドセーフ
+            # この部分はロックなしだが、asyncio.Lock()の作成自体はスレッドセーフ
             self._init_lock = asyncio.Lock()
         
-        # ロックを取得して初期化(他のタスクは待機)
+        # ロックを取得して初期化（他のタスクは待機）
         async with self._init_lock:
             # ダブルチェック: ロック取得中に他のタスクが初期化完了した可能性
             if self._initialized:
@@ -1078,7 +807,7 @@ class AsyncDictSQLiteFastestBetaV4:
             self._commit_stop_event = asyncio.Event()
             self._cleanup_stop_event = asyncio.Event()
             
-            # Phase 1: 初期接続プールの作成(最小サイズから開始)
+            # Phase 1: 初期接続プールの作成（最小サイズから開始）
             for _ in range(self.pool_min_size):
                 conn = await aiosqlite.connect(self.db_name)
                 
@@ -1100,7 +829,7 @@ class AsyncDictSQLiteFastestBetaV4:
             self._pool_stats['active_connections'] = self.pool_min_size
             self._pool_stats['peak_connections'] = self.pool_min_size
             
-            # テーブル作成(最初の接続で)
+            # テーブル作成（最初の接続で）
             conn = self._connection_pool[0]
             create_sql = f"""
             CREATE TABLE IF NOT EXISTS {self.table_name} (
@@ -1110,13 +839,9 @@ class AsyncDictSQLiteFastestBetaV4:
             """
             await conn.execute(create_sql)
             
-            # テーブル可視性確保(GitHub Actions対策)
+            # テーブル可視性確保（GitHub Actions対策）
             await conn.execute(f"SELECT COUNT(*) FROM {self.table_name}")
             await conn.commit()
-            
-            # v4: 自動全データロード
-            if self.auto_preload or self.force_preload:
-                await self._check_and_preload_data()
             
             # バックグラウンドコミットタスク開始
             if self.async_commit_interval > 0:
@@ -1129,63 +854,17 @@ class AsyncDictSQLiteFastestBetaV4:
             # 最後に初期化完了フラグを設定
             self._initialized = True
     
-    async def _check_and_preload_data(self) -> None:
-        """v4: データサイズをチェックして全データをプリロード"""
-        try:
-            # サイズ分析
-            analyzer = DatabaseSizeAnalyzer(self.db_name, self.table_name)
-            self._db_size_stats = await analyzer.analyze_database()
-            
-            # プリロード判定
-            should_preload = (
-                self.force_preload or
-                (self._db_size_stats['estimated_memory_mb'] < self.preload_threshold_mb and
-                 self._db_size_stats['total_entries'] < self.preload_threshold_entries)
-            )
-            
-            if not should_preload or self._db_size_stats['total_entries'] == 0:
-                return
-            
-            # 全データをプリロード
-            async with self._get_connection() as conn:
-                cursor = await conn.execute(
-                    f"SELECT key, value FROM {self.table_name}"
-                )
-                rows = await cursor.fetchall()
-                await cursor.close()
-            
-            # キャッシュに一括格納
-            for key, value_blob in rows:
-                try:
-                    value = pickle.loads(value_blob)
-                    # 高速モードならput_fast,そうでなければput
-                    if self.fast_mode and hasattr(self._cache, 'put_fast'):
-                        self._cache.put_fast(key, value)
-                    else:
-                        self._cache.put(key, value)
-                    self._preloaded_keys.add(key)
-                except Exception:
-                    # デシリアライズエラーは無視
-                    pass
-            
-            self._all_data_loaded = True
-            
-        except Exception:
-            # プリロードエラーは無視(通常動作に戻る)
-            self._all_data_loaded = False
-            self._preloaded_keys.clear()
-    
     @asynccontextmanager
     async def _get_connection(self):
         """接続プールから接続を取得 - Phase 1: 動的スケーリング対応"""
         await self._ensure_initialized()
         
-        # Phase 4: 接続待機時間の計測開始(サンプリング - 10%のみ)
+        # Phase 4: 接続待機時間の計測開始（サンプリング - 10%のみ）
         should_track_wait = (self.extended_stats and 
                             self._extended_stats_data['operation_counts'].get('get', 0) % 10 == 0)
         wait_start = time.time() if should_track_wait else None
         
-        # Phase 1: 接続取得を試行,失敗時に動的スケーリング
+        # Phase 1: 接続取得を試行、失敗時に動的スケーリング
         try:
             # タイムアウト付きで接続取得を試行
             conn = await asyncio.wait_for(
@@ -1229,7 +908,7 @@ class AsyncDictSQLiteFastestBetaV4:
                 # スケーリング無効 or 上限到達 → 待機
                 conn = await self._available_connections.get()
         
-        # Phase 4: 待機時間の記録(サンプリング)
+        # Phase 4: 待機時間の記録（サンプリング）
         if should_track_wait and wait_start:
             wait_time = (time.time() - wait_start) * 1000  # ms
             self._extended_stats_data['connection_wait_times'].append(wait_time)
@@ -1248,64 +927,33 @@ class AsyncDictSQLiteFastestBetaV4:
             await self._available_connections.put(conn)
     
     async def aget(self, key: str, default: Any = None) -> Any:
-        """非同期でキーから値を取得 - v4: 全ロード対応で超高速化.
+        """非同期でキーから値を取得.
         
         Args:
             key: 取得するキー
             default: キーが存在しない場合のデフォルト値
             
         Returns:
-            キーに対応する値,存在しない場合はdefault
+            キーに対応する値、存在しない場合はdefault
         """
-        # Phase 4: 操作開始時刻(サンプリング)
-        start_time = time.time() if (self.extended_stats and 
-                                     self._extended_stats_data and
-                                     self._extended_stats_data['operation_counts']['get'] % 10 == 0) else None
+        # Phase 4: 操作開始時刻
+        start_time = time.time() if self.extended_stats else None
         
         await self._ensure_initialized()
         
-        # v4: 全データロード済みの超高速パス(最優先)
-        if self._all_data_loaded:
-            # 削除バッファチェック(ロックなし - セットの読み取りは安全)
-            if self._async_delete_buffer and key in self._async_delete_buffer:
+        # Check delete buffer first (before cache)
+        async with self._async_buffer_lock:
+            if key in self._async_delete_buffer:
                 return default
-            
-            # キャッシュから直接取得(ロック不要,最速)
-            if hasattr(self._cache, 'get_fast'):
-                value = self._cache.get_fast(key)
-            else:
-                value = self._cache.get(key)
-            
-            if value is not None:
-                # Phase 4: 統計記録
-                if start_time:
-                    self._record_operation('get', start_time, key)
-                return value
-            
-            # キャッシュミス = キーが存在しないか削除済み
-            if key not in self._preloaded_keys:
-                return default
-            
-            # キャッシュから退避されたが,DBには存在 → 再ロード不要
-            # (全ロード済みなので,キャッシュミス = データなし)
-            return default
-        
-        # 通常パス(v3と同じ,ただし削除バッファチェックは簡略化)
-        # 削除バッファチェック(非ロック - セット読み取り)
-        if self._async_delete_buffer and key in self._async_delete_buffer:
-            return default
         
         # Phase 2: プリフェッチキャッシュチェック
         if self.enable_prefetch and key in self._prefetch_cache:
             value = self._prefetch_cache.pop(key)
-            if hasattr(self._cache, 'put_fast') and self.fast_mode:
-                self._cache.put_fast(key, value)
-            else:
-                self._cache.put(key, value)
+            self._cache.put_fast(key, value) if self.fast_mode else self._cache.put(key, value)
             self._prefetch_stats['prefetch_hits'] += 1
             
             # Phase 4: 統計記録
-            if start_time:
+            if self.extended_stats:
                 self._record_operation('get', start_time, key)
             
             return value
@@ -1352,7 +1000,7 @@ class AsyncDictSQLiteFastestBetaV4:
             value = pickle.loads(row[0])
             self._cache.put_fast(key, value)
             
-            # 操作カウント更新(遅延追跡)
+            # 操作カウント更新（遅延追跡）
             self._operation_count += 1
             if self._operation_count > self.lazy_tracking_threshold:
                 if self._access_frequency is not None:
@@ -1412,7 +1060,7 @@ class AsyncDictSQLiteFastestBetaV4:
         return value
     
     async def aset(self, key: str, value: Any) -> None:
-        """非同期でキーに値を設定(バッファリング) - Phase 3, 4対応.
+        """非同期でキーに値を設定（バッファリング） - Phase 3, 4対応.
         
         Args:
             key: キー
@@ -1423,7 +1071,7 @@ class AsyncDictSQLiteFastestBetaV4:
         
         await self._ensure_initialized()
         
-        # キャッシュに即座に反映(高速モード対応)
+        # キャッシュに即座に反映（高速モード対応）
         if self.fast_mode:
             self._cache.put_fast(key, value)
         else:
@@ -1473,7 +1121,7 @@ class AsyncDictSQLiteFastestBetaV4:
             self._async_write_buffer.pop(key, None)
             self._async_delete_buffer.add(key)
             
-            # バッファサイズチェック(ロック内で判定のみ)
+            # バッファサイズチェック（ロック内で判定のみ）
             should_flush = len(self._async_delete_buffer) >= self.async_batch_size
         
         # ロックを解放してからフラッシュ
@@ -1485,7 +1133,7 @@ class AsyncDictSQLiteFastestBetaV4:
             self._record_operation('delete', start_time, key)
     
     async def abulk_insert(self, items: Dict[str, Any]) -> None:
-        """非同期でバルク挿入(デッドロック防止) - Phase 3, 4対応.
+        """非同期でバルク挿入（デッドロック防止） - Phase 3, 4対応.
         
         Args:
             items: {key: value} の辞書
@@ -1498,7 +1146,7 @@ class AsyncDictSQLiteFastestBetaV4:
         if not items:
             return
         
-        # キャッシュに追加(高速モード対応)
+        # キャッシュに追加（高速モード対応）
         if self.fast_mode:
             for key, value in items.items():
                 self._cache.put_fast(key, value)
@@ -1506,7 +1154,7 @@ class AsyncDictSQLiteFastestBetaV4:
             for key, value in items.items():
                 self._cache.put(key, value)
         
-        # バッチ書き込み(書き込みロックで保護)
+        # バッチ書き込み（書き込みロックで保護）
         data = [(key, pickle.dumps(value)) for key, value in items.items()]
         
         async with self._async_write_lock:
@@ -1530,7 +1178,7 @@ class AsyncDictSQLiteFastestBetaV4:
             self._record_operation('bulk_insert', start_time)
     
     async def _flush_write_buffer(self) -> None:
-        """書き込みバッファをフラッシュ(デッドロック防止)."""
+        """書き込みバッファをフラッシュ（デッドロック防止）."""
         # バッファを取得してクリア
         async with self._async_buffer_lock:
             if not self._async_write_buffer and not self._async_delete_buffer:
@@ -1648,11 +1296,11 @@ class AsyncDictSQLiteFastestBetaV4:
                     pass
     
     async def _record_access(self, key: str) -> None:
-        """Phase 2: アクセス履歴を記録 - 最適化版(サンプリング)."""
+        """Phase 2: アクセス履歴を記録 - 最適化版（サンプリング）."""
         # サンプリング: 20%のみ記録してオーバーヘッド削減
         if len(self._access_history) % 5 == 0:
             self._access_history.append(key)
-            # 最新50件のみ保持(100→50に削減)
+            # 最新50件のみ保持（100→50に削減）
             if len(self._access_history) > 50:
                 self._access_history = self._access_history[-50:]
     
@@ -1734,14 +1382,14 @@ class AsyncDictSQLiteFastestBetaV4:
             pass
     
     def _record_operation(self, op_type: str, start_time: float, key: str = None) -> None:
-        """Phase 4: 操作統計を記録 - 最適化版(オーバーヘッド最小化)."""
+        """Phase 4: 操作統計を記録 - 最適化版（オーバーヘッド最小化）."""
         if not self.extended_stats or not self._extended_stats_data or not start_time:
             return
         
-        # 操作カウント(アトミック操作)
+        # 操作カウント（アトミック操作）
         self._extended_stats_data['operation_counts'][op_type] += 1
         
-        # タイミング情報(サンプリング - 10%のみ記録してオーバーヘッド削減)
+        # タイミング情報（サンプリング - 10%のみ記録してオーバーヘッド削減）
         if self._extended_stats_data['operation_counts'][op_type] % 10 == 0:
             elapsed_ms = (time.time() - start_time) * 1000
             self._extended_stats_data['operation_timings'][op_type].append(elapsed_ms)
@@ -1750,7 +1398,7 @@ class AsyncDictSQLiteFastestBetaV4:
                 self._extended_stats_data['operation_timings'][op_type] = \
                     self._extended_stats_data['operation_timings'][op_type][-1000:]
         
-        # アクセスパターン(サンプリング - 20%のみ記録)
+        # アクセスパターン（サンプリング - 20%のみ記録）
         if key and self._extended_stats_data['operation_counts'][op_type] % 5 == 0:
             if key not in self._extended_stats_data['access_patterns']:
                 self._extended_stats_data['access_patterns'][key] = []
@@ -1760,7 +1408,7 @@ class AsyncDictSQLiteFastestBetaV4:
                 self._extended_stats_data['access_patterns'][key] = \
                     self._extended_stats_data['access_patterns'][key][-10:]
             
-            # ホットキー検出(10回以上アクセス)
+            # ホットキー検出（10回以上アクセス）
             if len(self._extended_stats_data['access_patterns'][key]) >= 10:
                 self._extended_stats_data['hot_keys'].add(key)
     
@@ -1875,7 +1523,7 @@ class AsyncDictSQLiteFastestBetaV4:
                 'hot_keys_count': len(self._extended_stats_data['hot_keys']),
             }
             
-            # 平均タイミング(サンプリングされたデータでも計算)
+            # 平均タイミング（サンプリングされたデータでも計算）
             for op_type, timings in self._extended_stats_data['operation_timings'].items():
                 if timings and len(timings) > 0:
                     stats['extended'][f'{op_type}_avg_ms'] = sum(timings) / len(timings)
@@ -1884,7 +1532,7 @@ class AsyncDictSQLiteFastestBetaV4:
                     stats['extended'][f'{op_type}_avg_ms'] = 0.0
                     stats['extended'][f'{op_type}_p95_ms'] = 0.0
             
-            # 接続待機時間(サンプリングされたデータでも計算)
+            # 接続待機時間（サンプリングされたデータでも計算）
             if self._extended_stats_data['connection_wait_times']:
                 wait_times = self._extended_stats_data['connection_wait_times']
                 stats['extended']['avg_connection_wait_ms'] = sum(wait_times) / len(wait_times)
@@ -1917,7 +1565,7 @@ class AsyncDictSQLiteFastestBetaV4:
             # 停止イベントを設定
             self._commit_stop_event.set()
             
-            # タスクが終了するのを待つ(タイムアウト付き)
+            # タスクが終了するのを待つ（タイムアウト付き）
             try:
                 await asyncio.wait_for(self._commit_task, timeout=2.0)
             except asyncio.TimeoutError:
@@ -1944,12 +1592,12 @@ class AsyncDictSQLiteFastestBetaV4:
         self._initialized = False
     
     async def __aenter__(self):
-        """Async context manager enter."""
+        """非同期コンテキストマネージャー（enter）."""
         await self._ensure_initialized()
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
+        """非同期コンテキストマネージャー（exit）."""
         await self.aclose()
 
 
@@ -1959,16 +1607,11 @@ class AsyncDictSQLiteFastestBetaV4:
 
 __all__ = [
     'DictSQLiteFastestBeta',
-    'AsyncDictSQLiteFastestBeta',  # v4エイリアス(最新)
-    'AsyncDictSQLiteFastestBetaV3',  # v3-alpha (互換性)
-    'AsyncDictSQLiteFastestBetaV4',  # v4 (最新)
+    'AsyncDictSQLiteFastestBeta',  # v2互換エイリアス
+    'AsyncDictSQLiteFastestBetaV3',  # v3-alpha
     'LRUCache',
-    'HybridCache',  # v4
-    'DatabaseSizeAnalyzer',  # v4
     'WriteBuffer',
 ]
 
-# デフォルトエイリアス(最新版を使用)
-AsyncDictSQLiteFastestBeta = AsyncDictSQLiteFastestBetaV4
-# v3互換エイリアス
-AsyncDictSQLiteFastestBetaV3 = AsyncDictSQLiteFastestBetaV4
+# v2互換エイリアス
+AsyncDictSQLiteFastestBeta = AsyncDictSQLiteFastestBetaV3
