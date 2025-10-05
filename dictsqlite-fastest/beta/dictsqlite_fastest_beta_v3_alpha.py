@@ -859,8 +859,10 @@ class AsyncDictSQLiteFastestBetaV3:
         """接続プールから接続を取得 - Phase 1: 動的スケーリング対応"""
         await self._ensure_initialized()
         
-        # Phase 4: 接続待機時間の計測開始
-        wait_start = time.time() if self.extended_stats else None
+        # Phase 4: 接続待機時間の計測開始（サンプリング - 10%のみ）
+        should_track_wait = (self.extended_stats and 
+                            self._extended_stats_data['operation_counts'].get('get', 0) % 10 == 0)
+        wait_start = time.time() if should_track_wait else None
         
         # Phase 1: 接続取得を試行、失敗時に動的スケーリング
         try:
@@ -906,8 +908,8 @@ class AsyncDictSQLiteFastestBetaV3:
                 # スケーリング無効 or 上限到達 → 待機
                 conn = await self._available_connections.get()
         
-        # Phase 4: 待機時間の記録
-        if self.extended_stats and wait_start:
+        # Phase 4: 待機時間の記録（サンプリング）
+        if should_track_wait and wait_start:
             wait_time = (time.time() - wait_start) * 1000  # ms
             self._extended_stats_data['connection_wait_times'].append(wait_time)
             # 最新1000件のみ保持
@@ -1294,15 +1296,21 @@ class AsyncDictSQLiteFastestBetaV3:
                     pass
     
     async def _record_access(self, key: str) -> None:
-        """Phase 2: アクセス履歴を記録."""
-        self._access_history.append(key)
-        # 最新100件のみ保持
-        if len(self._access_history) > 100:
-            self._access_history = self._access_history[-100:]
+        """Phase 2: アクセス履歴を記録 - 最適化版（サンプリング）."""
+        # サンプリング: 20%のみ記録してオーバーヘッド削減
+        if len(self._access_history) % 5 == 0:
+            self._access_history.append(key)
+            # 最新50件のみ保持（100→50に削減）
+            if len(self._access_history) > 50:
+                self._access_history = self._access_history[-50:]
     
     async def _check_and_prefetch(self, key: str) -> None:
-        """Phase 2: アクセスパターンを検出してプリフェッチ."""
+        """Phase 2: アクセスパターンを検出してプリフェッチ - 最適化版."""
+        # サンプリング: 10回に1回のみチェックしてオーバーヘッド削減
         if not self.enable_prefetch or len(self._access_history) < 3:
+            return
+        
+        if self._prefetch_stats['prefetches_triggered'] % 10 != 0:
             return
         
         # 連続アクセスパターンの検出
@@ -1374,23 +1382,24 @@ class AsyncDictSQLiteFastestBetaV3:
             pass
     
     def _record_operation(self, op_type: str, start_time: float, key: str = None) -> None:
-        """Phase 4: 操作統計を記録."""
-        if not self.extended_stats or not self._extended_stats_data:
+        """Phase 4: 操作統計を記録 - 最適化版（オーバーヘッド最小化）."""
+        if not self.extended_stats or not self._extended_stats_data or not start_time:
             return
         
-        # 操作カウント
+        # 操作カウント（アトミック操作）
         self._extended_stats_data['operation_counts'][op_type] += 1
         
-        # タイミング情報
-        elapsed_ms = (time.time() - start_time) * 1000
-        self._extended_stats_data['operation_timings'][op_type].append(elapsed_ms)
-        # 最新1000件のみ保持
-        if len(self._extended_stats_data['operation_timings'][op_type]) > 1000:
-            self._extended_stats_data['operation_timings'][op_type] = \
-                self._extended_stats_data['operation_timings'][op_type][-1000:]
+        # タイミング情報（サンプリング - 10%のみ記録してオーバーヘッド削減）
+        if self._extended_stats_data['operation_counts'][op_type] % 10 == 0:
+            elapsed_ms = (time.time() - start_time) * 1000
+            self._extended_stats_data['operation_timings'][op_type].append(elapsed_ms)
+            # 最新1000件のみ保持
+            if len(self._extended_stats_data['operation_timings'][op_type]) > 1000:
+                self._extended_stats_data['operation_timings'][op_type] = \
+                    self._extended_stats_data['operation_timings'][op_type][-1000:]
         
-        # アクセスパターン
-        if key:
+        # アクセスパターン（サンプリング - 20%のみ記録）
+        if key and self._extended_stats_data['operation_counts'][op_type] % 5 == 0:
             if key not in self._extended_stats_data['access_patterns']:
                 self._extended_stats_data['access_patterns'][key] = []
             self._extended_stats_data['access_patterns'][key].append(time.time())
@@ -1514,17 +1523,23 @@ class AsyncDictSQLiteFastestBetaV3:
                 'hot_keys_count': len(self._extended_stats_data['hot_keys']),
             }
             
-            # 平均タイミング
+            # 平均タイミング（サンプリングされたデータでも計算）
             for op_type, timings in self._extended_stats_data['operation_timings'].items():
-                if timings:
+                if timings and len(timings) > 0:
                     stats['extended'][f'{op_type}_avg_ms'] = sum(timings) / len(timings)
-                    stats['extended'][f'{op_type}_p95_ms'] = sorted(timings)[int(len(timings) * 0.95)] if len(timings) > 1 else 0
+                    stats['extended'][f'{op_type}_p95_ms'] = sorted(timings)[int(len(timings) * 0.95)] if len(timings) > 1 else (timings[0] if timings else 0)
+                else:
+                    stats['extended'][f'{op_type}_avg_ms'] = 0.0
+                    stats['extended'][f'{op_type}_p95_ms'] = 0.0
             
-            # 接続待機時間
+            # 接続待機時間（サンプリングされたデータでも計算）
             if self._extended_stats_data['connection_wait_times']:
                 wait_times = self._extended_stats_data['connection_wait_times']
                 stats['extended']['avg_connection_wait_ms'] = sum(wait_times) / len(wait_times)
-                stats['extended']['p95_connection_wait_ms'] = sorted(wait_times)[int(len(wait_times) * 0.95)] if len(wait_times) > 1 else 0
+                stats['extended']['p95_connection_wait_ms'] = sorted(wait_times)[int(len(wait_times) * 0.95)] if len(wait_times) > 1 else (wait_times[0] if wait_times else 0)
+            else:
+                stats['extended']['avg_connection_wait_ms'] = 0.0
+                stats['extended']['p95_connection_wait_ms'] = 0.0
         
         return stats
     
