@@ -56,6 +56,8 @@ class LRUCache:
         self.lock = Lock()
         self.hits = 0
         self.misses = 0
+        # 高速モード用のシンプルキャッシュ（ロックなし）
+        self.simple_cache = {}
     
     def get(self, key: str) -> Optional[Any]:
         """キャッシュから値を取得.
@@ -76,6 +78,20 @@ class LRUCache:
             self.cache.move_to_end(key)
             return self.cache[key]
     
+    def get_fast(self, key: str) -> Optional[Any]:
+        """キャッシュから値を取得（高速版 - ロックなし、LRU更新なし）.
+        
+        初回読み込み時の最適化用。シンプルdictを使用してロックとOrderedDictのオーバーヘッドを回避。
+        
+        Args:
+            key: 取得するキー
+            
+        Returns:
+            キャッシュにある場合は値、ない場合はNone
+        """
+        # ロックなしで単純に取得（読み取り専用操作なので安全）
+        return self.simple_cache.get(key)
+    
     def put(self, key: str, value: Any) -> None:
         """キャッシュに値を追加.
         
@@ -94,6 +110,24 @@ class LRUCache:
                     self.cache.popitem(last=False)
             
             self.cache[key] = value
+    
+    def put_fast(self, key: str, value: Any) -> None:
+        """キャッシュに値を追加（高速版 - ロックなし、LRU更新なし）.
+        
+        初回読み込み時の最適化用。シンプルdictを使用してロックとOrderedDictのオーバーヘッドを回避。
+        
+        Args:
+            key: キー
+            value: 値
+        """
+        # ロックなしでシンプルキャッシュに追加（高速）
+        self.simple_cache[key] = value
+        
+        # 容量制限チェック（定期的に）
+        if len(self.simple_cache) > self.capacity * 1.2:  # 20%のバッファを許容
+            # 容量超過時はシンプルキャッシュをクリアして再構築
+            items = list(self.simple_cache.items())
+            self.simple_cache = dict(items[-self.capacity:])  # 最新のN件を保持
     
     def remove(self, key: str) -> None:
         """キャッシュからキーを削除.
@@ -239,6 +273,10 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         auto_load_threshold_mb: float = 10.0,
         enable_background_flush: bool = True,
         enable_hot_data_detection: bool = True,
+        # 最適化パラメータ（v1からの移植）
+        enable_stats_collection: bool = False,
+        lazy_tracking_threshold: int = 100,
+        fast_mode: bool = True,
         **kwargs
     ):
         """
@@ -254,6 +292,9 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             auto_load_threshold_mb: 自動全件ロードの閾値（MB）
             enable_background_flush: バックグラウンドフラッシュ有効化
             enable_hot_data_detection: ホットデータ検出有効化
+            enable_stats_collection: 統計情報収集を有効化（パフォーマンス重視の場合はFalse）
+            lazy_tracking_threshold: この操作回数まではアクセス頻度追跡をスキップ
+            fast_mode: 高速モード（ロックなしキャッシュ、初回読み込み最適化）
         """
         # Fastest版の初期化（全ての最適化を継承）
         super().__init__(
@@ -267,6 +308,9 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         self.aggressive_memory = aggressive_memory
         self.memory_budget_mb = memory_budget_mb
         self.enable_hot_data_detection = enable_hot_data_detection
+        self.enable_stats_collection = enable_stats_collection
+        self.lazy_tracking_threshold = lazy_tracking_threshold
+        self.fast_mode = fast_mode
         
         # LRUキャッシュ
         self._cache = LRUCache(capacity=cache_capacity)
@@ -312,6 +356,34 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
     
     def __getitem__(self, key: str) -> Any:
         """キーから値を取得（キャッシュ優先）."""
+        # 高速モード: ロックなし読み取り + LRU更新最小化
+        if self.fast_mode:
+            # ロックなしでキャッシュチェック（高速）
+            cached_value = self._cache.get_fast(key)
+            if cached_value is not None:
+                return cached_value
+            
+            # 書き込みバッファチェック（高速パス用に最小化）
+            if self._write_buffer is not None:
+                with self._write_buffer.lock:
+                    if key in self._write_buffer.buffer:
+                        value = self._write_buffer.buffer[key]
+                        self._cache.put_fast(key, value)
+                        return value
+            
+            # ディスクから読み込み
+            value = super().__getitem__(key)
+            self._cache.put_fast(key, value)
+            
+            # 操作カウント更新（ロックなし、アトミックではないが問題ない）
+            self._operation_count += 1
+            if self._operation_count > self.lazy_tracking_threshold:
+                if self._access_frequency is not None:
+                    self._track_access(key)
+            
+            return value
+        
+        # 通常モード: 完全なLRU機能
         # ホットデータ検出
         if self._access_frequency is not None:
             self._track_access(key)
@@ -319,8 +391,9 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         # キャッシュチェック
         cached_value = self._cache.get(key)
         if cached_value is not None:
-            with self._stats_lock:
-                self._stats['cache_hits'] += 1
+            if self.enable_stats_collection:
+                with self._stats_lock:
+                    self._stats['cache_hits'] += 1
             return cached_value
         
         # 書き込みバッファチェック
@@ -332,9 +405,10 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
                     return value
         
         # ディスクから読み込み
-        with self._stats_lock:
-            self._stats['cache_misses'] += 1
-            self._stats['disk_reads'] += 1
+        if self.enable_stats_collection:
+            with self._stats_lock:
+                self._stats['cache_misses'] += 1
+                self._stats['disk_reads'] += 1
         
         value = super().__getitem__(key)
         self._cache.put(key, value)
@@ -519,6 +593,10 @@ class AsyncDictSQLiteFastestBeta:
         # 非同期専用パラメータ
         async_batch_size: int = 100,  # バッチ書き込みサイズ
         async_commit_interval: float = 1.0,  # 自動コミット間隔（秒）
+        # 最適化パラメータ
+        enable_stats_collection: bool = False,
+        lazy_tracking_threshold: int = 100,
+        fast_mode: bool = True,
         **kwargs
     ):
         """
@@ -541,6 +619,10 @@ class AsyncDictSQLiteFastestBeta:
         self.memory_only = memory_only
         self.async_batch_size = async_batch_size
         self.async_commit_interval = async_commit_interval
+        self.enable_stats_collection = enable_stats_collection
+        self.lazy_tracking_threshold = lazy_tracking_threshold
+        self.fast_mode = fast_mode
+        self.enable_hot_data_detection = enable_hot_data_detection
         
         # キャッシュのみを使用（同期版のDBは開かない）
         from dictsqlite_fastest_beta_v2 import LRUCache
@@ -572,6 +654,10 @@ class AsyncDictSQLiteFastestBeta:
             'cache_hits': 0,
             'cache_misses': 0
         }
+        
+        # 操作カウンタ（遅延追跡用）
+        self._operation_count = 0
+        self._access_frequency = {} if enable_hot_data_detection else None
         
         # バックグラウンドコミットタスク
         self._commit_task = None
@@ -661,17 +747,56 @@ class AsyncDictSQLiteFastestBeta:
         """
         await self._ensure_initialized()
         
-        # キャッシュチェック
+        # 高速モード: ロックなしキャッシュチェック
+        if self.fast_mode:
+            cached_value = self._cache.get_fast(key)
+            if cached_value is not None:
+                return cached_value
+            
+            # 書き込みバッファチェック
+            async with self._async_buffer_lock:
+                if key in self._async_write_buffer:
+                    value = self._async_write_buffer[key]
+                    self._cache.put_fast(key, value)
+                    return value
+                
+                if key in self._async_delete_buffer:
+                    return default
+            
+            # aiosqliteで読み込み
+            async with self._get_connection() as conn:
+                cursor = await conn.execute(
+                    f"SELECT value FROM {self.table_name} WHERE key = ?",
+                    (key,)
+                )
+                row = await cursor.fetchone()
+                await cursor.close()
+            
+            if row is None:
+                return default
+            
+            value = pickle.loads(row[0])
+            self._cache.put_fast(key, value)
+            
+            # 操作カウント更新（遅延追跡）
+            self._operation_count += 1
+            if self._operation_count > self.lazy_tracking_threshold:
+                if self._access_frequency is not None:
+                    self._access_frequency[key] = self._access_frequency.get(key, 0) + 1
+            
+            return value
+        
+        # 通常モード: 完全なLRU機能
         cached_value = self._cache.get(key)
         if cached_value is not None:
-            self._async_stats['cache_hits'] += 1
+            if self.enable_stats_collection:
+                self._async_stats['cache_hits'] += 1
             return cached_value
         
         # 書き込みバッファチェック
         async with self._async_buffer_lock:
             if key in self._async_write_buffer:
                 value = self._async_write_buffer[key]
-                # キャッシュに保存（_sync_dbは使わない）
                 self._cache.put(key, value)
                 return value
             
@@ -679,7 +804,8 @@ class AsyncDictSQLiteFastestBeta:
                 return default
         
         # aiosqliteで読み込み
-        self._async_stats['cache_misses'] += 1
+        if self.enable_stats_collection:
+            self._async_stats['cache_misses'] += 1
         
         async with self._get_connection() as conn:
             cursor = await conn.execute(
@@ -693,6 +819,9 @@ class AsyncDictSQLiteFastestBeta:
             return default
         
         value = pickle.loads(row[0])
+        self._cache.put(key, value)
+        
+        return value
         
         # キャッシュに追加
         self._cache.put(key, value)
@@ -708,8 +837,11 @@ class AsyncDictSQLiteFastestBeta:
         """
         await self._ensure_initialized()
         
-        # キャッシュに即座に反映
-        self._cache.put(key, value)
+        # キャッシュに即座に反映（高速モード対応）
+        if self.fast_mode:
+            self._cache.put_fast(key, value)
+        else:
+            self._cache.put(key, value)
         
         # バッファに追加してサイズチェック
         should_flush = False
@@ -759,9 +891,13 @@ class AsyncDictSQLiteFastestBeta:
         if not items:
             return
         
-        # キャッシュに追加
-        for key, value in items.items():
-            self._cache.put(key, value)
+        # キャッシュに追加（高速モード対応）
+        if self.fast_mode:
+            for key, value in items.items():
+                self._cache.put_fast(key, value)
+        else:
+            for key, value in items.items():
+                self._cache.put(key, value)
         
         # バッチ書き込み（書き込みロックで保護）
         data = [(key, pickle.dumps(value)) for key, value in items.items()]
@@ -779,7 +915,8 @@ class AsyncDictSQLiteFastestBeta:
                     await conn.rollback()
                     raise e
         
-        self._async_stats['batch_writes'] += 1
+        if self.enable_stats_collection:
+            self._async_stats['batch_writes'] += 1
     
     async def _flush_write_buffer(self) -> None:
         """書き込みバッファをフラッシュ（デッドロック防止）."""
