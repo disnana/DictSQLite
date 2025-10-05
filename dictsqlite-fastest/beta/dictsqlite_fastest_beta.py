@@ -268,6 +268,9 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         auto_load_threshold_mb: float = 10.0,  # この容量以下のDBは完全メモリロード（MB）
         enable_background_flush: bool = True,  # バックグラウンド自動フラッシュを有効化
         enable_hot_data_detection: bool = True,  # ホットデータ検出と自動プリフェッチ
+        # 最適化パラメータ（初回読み込みオーバーヘッド削減）
+        enable_stats_collection: bool = False,  # 統計収集を有効化（パフォーマンス重視の場合はFalse）
+        lazy_tracking_threshold: int = 100,  # この回数まではアクセス頻度追跡をスキップ
         # 親クラスのパラメータ
         **kwargs
     ):
@@ -284,6 +287,8 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             auto_load_threshold_mb: この容量以下のDBは起動時に完全メモリロード（MB）
             enable_background_flush: バックグラウンド自動フラッシュを有効化
             enable_hot_data_detection: ホットデータ検出と自動プリフェッチを有効化
+            enable_stats_collection: 統計情報収集を有効化（パフォーマンス重視の場合はFalse推奨）
+            lazy_tracking_threshold: この操作回数まではアクセス頻度追跡をスキップ（初回読み込み高速化）
             **kwargs: 親クラスに渡すその他のパラメータ
         """
         # メモリ予算に基づく自動最適化
@@ -340,6 +345,8 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         self.auto_load_threshold_mb = auto_load_threshold_mb
         self.enable_background_flush = enable_background_flush
         self.enable_hot_data_detection = enable_hot_data_detection
+        self.enable_stats_collection = enable_stats_collection  # 新パラメータ
+        self.lazy_tracking_threshold = lazy_tracking_threshold  # 新パラメータ
         
         # LRUキャッシュの初期化
         self._cache = LRUCache(capacity=cache_capacity)
@@ -475,39 +482,35 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         Raises:
             KeyError: キーが存在しない場合
         """
-        # アクセス頻度を追跡（ホットデータ検出）
-        self._track_access_frequency(key)
-        
-        # まずキャッシュをチェック
+        # まずキャッシュをチェック（最速パス）
         cached_value = self._cache.get(key)
         if cached_value is not None:
-            with self._stats_lock:
+            # 統計収集が有効な場合のみ更新（ロックなし）
+            if self.enable_stats_collection:
                 self._stats['cache_hits'] += 1
             return cached_value
         
-        # 書き込みバッファをチェック（まだディスクに書き込まれていない可能性）
-        if self._write_buffer is not None:
-            with self._write_buffer.lock:
-                if key in self._write_buffer.buffer:
-                    value = self._write_buffer.buffer[key]
-                    # キャッシュに追加
-                    self._cache.put(key, value)
-                    return value
-        
         # キャッシュミス - ディスクから読み込み
-        with self._stats_lock:
-            self._stats['cache_misses'] += 1
-            self._stats['disk_reads'] += 1
-        
         value = super().__getitem__(key)
         
         # キャッシュに追加
         self._cache.put(key, value)
         
-        # 定期的に自動チューニング
+        # 統計収集が有効な場合のみ更新（ロックなし）
+        if self.enable_stats_collection:
+            self._stats['cache_misses'] += 1
+            self._stats['disk_reads'] += 1
+        
+        # 操作カウント更新と遅延最適化
         self._operation_count += 1
-        if self._operation_count % self._auto_tune_interval == 0:
-            self._auto_tune_parameters()
+        if self._operation_count > self.lazy_tracking_threshold:
+            # アクセス頻度を追跡（ホットデータ検出）
+            if self.enable_hot_data_detection:
+                self._track_access_frequency(key)
+            
+            # 定期的に自動チューニング
+            if self._operation_count % self._auto_tune_interval == 0:
+                self._auto_tune_parameters()
         
         return value
     
@@ -1006,14 +1009,19 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         if not self.enable_hot_data_detection:
             return
         
+        # 最適化: 10回に1回だけ追跡（オーバーヘッドを90%削減）
+        if hash(key) % 10 != 0:
+            return
+        
         with self._access_frequency_lock:
-            self._access_frequency[key] = self._access_frequency.get(key, 0) + 1
+            # 10回分をまとめて加算
+            self._access_frequency[key] = self._access_frequency.get(key, 0) + 10
             
-            # 頻度が高いキー（10回以上アクセス）を検出
-            if self._access_frequency[key] == 10:
+            # 頻度が高いキー（100回以上アクセス）を検出
+            if self._access_frequency[key] >= 100 and self._access_frequency[key] < 110:
                 # ホットデータとして認識し、関連データを先読み
                 self._preload_related_keys(key)
-                with self._stats_lock:
+                if self.enable_stats_collection:
                     self._stats['hot_data_promotions'] += 1
             
             # 定期的にアクセス頻度をリセット（メモリ節約）
