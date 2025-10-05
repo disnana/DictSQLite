@@ -46,6 +46,8 @@ class LRUCache:
     ディスクアクセスを削減します。
     """
     
+    __slots__ = ('capacity', 'cache', 'lock', 'hits', 'misses', 'simple_cache')
+    
     def __init__(self, capacity: int = 10000):
         """
         Args:
@@ -165,6 +167,8 @@ class LRUCache:
 
 class WriteBuffer:
     """遅延書き込みバッファ - 書き込みをバッチ化してディスクアクセスを削減"""
+    
+    __slots__ = ('flush_threshold', 'flush_interval', 'buffer', 'deleted_keys', 'lock', 'last_flush_time')
     
     def __init__(self, flush_threshold: int = 1000, flush_interval: float = 5.0):
         """
