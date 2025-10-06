@@ -20,3 +20,10 @@ htmlcov/
 coverage.xml
 *.cover
 HACKATHON_PRESENTATION_PLAN.md
+
+# Benchmark results (generated files)
+others/benchmark/results/*.csv
+others/benchmark/results/*.json
+others/benchmark/results/*.log
+!others/benchmark/results/BENCHMARK_SUMMARY.md
+
