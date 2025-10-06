@@ -20,3 +20,10 @@ htmlcov/
 coverage.xml
 *.cover
 HACKATHON_PRESENTATION_PLAN.md
+
+# Rust build artifacts
+dictsqlite_native/target/
+dictsqlite_native/Cargo.lock
+*.so
+*.pyd
+*.dylib

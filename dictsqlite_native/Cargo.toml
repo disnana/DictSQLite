@@ -1,0 +1,18 @@
+[package]
+name = "dictsqlite_native"
+version = "1.8.9"
+edition = "2021"
+
+[lib]
+name = "dictsqlite_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.20", features = ["extension-module"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+lru = "0.12"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

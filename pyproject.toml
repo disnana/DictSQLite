@@ -43,6 +43,11 @@ dependencies = [
   "cryptography"
 ]
 
+[project.optional-dependencies]
+native = [
+  "maturin>=1.0.0"
+]
+
 # setup.py の VERSION = dictsqlite.main.__version__ と等価
 dynamic = ["version"]
 
