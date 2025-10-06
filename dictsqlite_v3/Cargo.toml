@@ -34,6 +34,9 @@ bincode = "1.3"
 crossbeam = "0.8"       # Lock-free data structures
 parking_lot = "0.12"    # Fast mutex implementations
 
+# Parallel processing
+rayon = "1.8"           # Data parallelism for batch operations
+
 # Hashing
 ahash = "0.8"           # Fast non-cryptographic hash
 
