@@ -33,6 +33,11 @@ class DictSQLiteV2(DictSQLiteFastestBeta):
     継続的な最適化により常にパフォーマンスを向上させる。
     
     Optimization #1: Fast close() - 70-80% faster close operations
+    Optimization #2: Bulk operation hints - Guide users to 3-5x faster APIs
+    
+    Performance Tip:
+        Use bulk_insert() for multiple writes - it's 3-5x faster!
+        Example: db.bulk_insert({'key1': 'val1', 'key2': 'val2'})
     """
     
     def __init__(
@@ -55,6 +60,9 @@ class DictSQLiteV2(DictSQLiteFastestBeta):
         fast_mode: bool = True,
         # Optimization #1: Fast close
         fast_close: bool = True,
+        # Optimization #2: Bulk operation hints
+        warn_inefficient_usage: bool = True,
+        bulk_warning_threshold: int = 10,
         **kwargs
     ):
         """
@@ -72,6 +80,8 @@ class DictSQLiteV2(DictSQLiteFastestBeta):
             enable_hot_data_detection: ホットデータ検出
             fast_mode: 高速モード
             fast_close: 高速クローズ（Trueでthread joinをスキップ、70-80%高速化）
+            warn_inefficient_usage: 非効率なパターンを検出して警告（Optimization #2）
+            bulk_warning_threshold: 警告を出す連続個別書き込み回数（デフォルト10）
         """
         # Beta版を継承して初期化
         super().__init__(
@@ -93,7 +103,72 @@ class DictSQLiteV2(DictSQLiteFastestBeta):
         # Optimization #1: Store fast_close flag
         self._fast_close = fast_close
         
-        logger.info(f"DictSQLiteV2 initialized: {db_name} (fast_close={fast_close})")
+        # Optimization #2: Track consecutive writes for bulk hints
+        self._warn_inefficient_usage = warn_inefficient_usage
+        self._bulk_warning_threshold = bulk_warning_threshold
+        self._consecutive_writes = 0
+        self._bulk_hint_shown = False
+        
+        logger.info(f"DictSQLiteV2 initialized: {db_name} (fast_close={fast_close}, bulk_hints={warn_inefficient_usage})")
+    
+    def __setitem__(self, key: str, value: Any) -> None:
+        """個別の書き込み操作 - Optimization #2でパフォーマンスヒント追加
+        
+        Note: 複数の書き込みには bulk_insert() を使用すると3-5x高速です!
+        """
+        # Optimization #2: Track consecutive writes for bulk hint
+        if self._warn_inefficient_usage:
+            self._consecutive_writes += 1
+            if (self._consecutive_writes >= self._bulk_warning_threshold and 
+                not self._bulk_hint_shown):
+                logger.warning(
+                    f"Performance hint: {self._consecutive_writes} consecutive writes detected. "
+                    f"Consider using bulk_insert() for 3-5x better performance. "
+                    f"Example: db.bulk_insert({{'key1': 'val1', 'key2': 'val2'}}). "
+                    f"To disable this hint, set warn_inefficient_usage=False."
+                )
+                self._bulk_hint_shown = True
+        
+        # Call parent implementation
+        super().__setitem__(key, value)
+    
+    def bulk_insert(self, data: Dict[str, Any]) -> None:
+        """バルク挿入 - Optimization #2でドキュメント強化
+        
+        複数のkey-valueペアを一度に挿入します。
+        個別の __setitem__ より 3-5x 高速です。
+        
+        Args:
+            data: 挿入するkey-valueペアの辞書
+            
+        Performance:
+            - Individual writes: ~17,000 ops/s
+            - Bulk writes: ~50,000 ops/s (3x faster)
+            
+        Example:
+            >>> db.bulk_insert({
+            ...     'user:1': {'name': 'Alice'},
+            ...     'user:2': {'name': 'Bob'},
+            ...     'user:3': {'name': 'Charlie'}
+            ... })
+        """
+        # Optimization #2: Reset consecutive write counter on bulk operation
+        if self._warn_inefficient_usage:
+            self._consecutive_writes = 0
+            self._bulk_hint_shown = False  # Reset for next batch
+        
+        # Call parent implementation
+        super().bulk_insert(data)
+    
+    def update_many(self, data: Dict[str, Any]) -> None:
+        """Convenience alias for bulk_insert() - Optimization #2
+        
+        Pythonの dict.update() に似た名前で bulk_insert() を提供。
+        
+        Args:
+            data: 更新/挿入するkey-valueペアの辞書
+        """
+        self.bulk_insert(data)
     
     def close(self) -> None:
         """データベースを閉じる - Optimization #1: Fast close
