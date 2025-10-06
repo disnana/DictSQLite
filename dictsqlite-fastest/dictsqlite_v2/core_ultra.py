@@ -1,7 +1,7 @@
-"""コア実装 - Ultra-high-performance version achieving 1M+ ops/s
+"""Ultra-high-performance core for DictSQLite v2.0.
 
-完全にメモリベースの実装で、1M+ ops/sを実現。
-APIは完全互換性を保持。
+Achieves 1M+ ops/s through aggressive in-memory caching with background sync.
+Maintains full API compatibility with DictSQLiteFastestBeta.
 """
 
 import sys
@@ -12,34 +12,27 @@ import pickle
 import threading
 import time
 import atexit
+from collections import OrderedDict
 import sqlite3
 
-# 親ディレクトリのモジュールをインポート
+# Add parent directories to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / 'beta'))
 
-# Import utils for compatibility
 try:
-    from .utils import performance_tracker
+    from dictsqlite_fastest_beta_v2 import AsyncDictSQLiteFastestBeta
 except ImportError:
-    from utils import performance_tracker
+    # Stub for testing
+    AsyncDictSQLiteFastestBeta = None
 
 
-class DictSQLiteV2:
-    """DictSQLite v2.0 - Ultra-high-performance version
+class UltraFastDictSQLiteV2:
+    """Ultra-fast in-memory dict with lazy background sync to SQLite.
     
-    Achieves 1M+ ops/s through in-memory caching with background sync to SQLite.
-    Maintains full API compatibility with previous versions.
+    Achieves 1M+ ops/s by keeping all data in memory and syncing to disk
+    in background thread. Maintains API compatibility.
     
-    Performance:
-    - Write: 1.3M+ ops/s
-    - Read: 2.2M+ ops/s  
-    - Bulk: 4.9M+ ops/s
-    
-    Features:
-    - All data in memory for maximum speed
-    - Background sync to SQLite for persistence
-    - Thread-safe operations
-    - Full dict-like API
+    Performance: 1M+ read ops/s, 1M+ write ops/s
     """
     
     def __init__(
@@ -47,11 +40,9 @@ class DictSQLiteV2:
         db_name: str,
         table_name: str = 'main',
         # Performance settings
-        sync_interval: float = 1.0,   # Sync to disk every N seconds
-        auto_sync: bool = True,        # Background sync thread
-        fast_close: bool = True,       # Fast close (legacy param, always true now)
-        warn_inefficient_usage: bool = False,  # Legacy param, ignored
-        # Legacy compatibility params - ignored
+        sync_interval: float = 1.0,  # Sync to disk every N seconds
+        auto_sync: bool = True,      # Background sync thread
+        # Legacy compatibility
         **kwargs
     ):
         self.db_name = db_name
@@ -59,7 +50,7 @@ class DictSQLiteV2:
         self.sync_interval = sync_interval
         self.auto_sync = auto_sync
         
-        # In-memory cache - the performance secret
+        # In-memory cache - this is the performance secret
         self._cache: Dict[str, Any] = {}
         self._dirty_keys: set = set()  # Track what needs syncing
         self._lock = threading.RLock()
@@ -149,14 +140,14 @@ class DictSQLiteV2:
                             (key,)
                         )
             self._conn.commit()
-        except Exception as e:
+        except:
             self._conn.rollback()
             # Put dirty keys back
             with self._lock:
                 self._dirty_keys.update(dirty_copy)
     
     def __getitem__(self, key: str) -> Any:
-        """Get item - pure memory read, 2M+ ops/s."""
+        """Get item - pure memory read, 1M+ ops/s."""
         with self._lock:
             if key not in self._cache:
                 raise KeyError(key)
@@ -212,29 +203,24 @@ class DictSQLiteV2:
             return self._cache.get(key, default)
     
     def bulk_insert(self, data: Dict[str, Any]):
-        """Bulk insert - still ultra-fast due to memory ops."""
+        """Bulk insert - still fast due to memory ops."""
         with self._lock:
             self._cache.update(data)
             self._dirty_keys.update(data.keys())
     
     def update_many(self, data: Dict[str, Any]):
-        """Alias for bulk_insert - for API compatibility."""
+        """Alias for bulk_insert."""
         self.bulk_insert(data)
     
     def sync(self):
         """Force immediate sync to disk."""
         self._sync_to_disk()
     
-    def flush(self):
-        """Alias for sync - for API compatibility."""
-        self.sync()
-    
     def close(self):
         """Close database and sync all data."""
         if self._sync_thread:
             self._stop_sync.set()
-            if self._sync_thread.is_alive():
-                self._sync_thread.join(timeout=5)
+            self._sync_thread.join(timeout=5)
         
         # Final sync
         self._sync_to_disk()
@@ -257,24 +243,25 @@ class DictSQLiteV2:
         with self._lock:
             return {
                 'version': '2.0.0-ultra',
-                'implementation': 'ultra-fast-memory',
                 'cache_size': len(self._cache),
                 'dirty_count': len(self._dirty_keys),
                 'db_name': self.db_name,
                 'table_name': self.table_name,
-                'performance': {
-                    'write_ops_per_sec': '1.3M+',
-                    'read_ops_per_sec': '2.2M+',
-                    'bulk_ops_per_sec': '4.9M+',
-                }
             }
 
 
-# Async version - placeholder  
+# Alias for compatibility
+class DictSQLiteV2Ultra(UltraFastDictSQLiteV2):
+    """Alias for the ultra-fast implementation."""
+    pass
+
+
+# Async version - placeholder
 class AsyncDictSQLiteV2:
-    """Async version - not yet optimized.
+    """Async version - placeholder for now.
     
-    For async use cases, recommend using sync version with thread pool.
+    TODO: Implement ultra-fast async version similar to sync.
     """
     def __init__(self, *args, **kwargs):
-        raise NotImplementedError("Async ultra-fast version not yet implemented. Use sync version with asyncio.to_thread()")
+        raise NotImplementedError("Async version not yet implemented in ultra mode")
+
