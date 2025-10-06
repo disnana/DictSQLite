@@ -4,8 +4,10 @@
 使用方法:
     python run_benchmark.py --beta v1              # v1のみテスト
     python run_benchmark.py --beta v2              # v2のみテスト
+    python run_benchmark.py --beta v3              # v3のみテスト
+    python run_benchmark.py --beta v4              # v4のみテスト
     python run_benchmark.py --beta both            # 両方テスト
-    python run_benchmark.py --beta v1 --full       # v1でフルベンチマーク
+    python run_benchmark.py --beta v4 --full       # v4でフルベンチマーク
 """
 
 import sys
@@ -25,9 +27,15 @@ def replace_import_in_file(file_path, version):
         content = f.read()
     
     if version == 'v1':
-        # v2のインポートをv1に戻す
+        # 他のバージョンのインポートをv1に戻す
         new_content = content.replace(
             'from dictsqlite_fastest_beta_v2 import',
+            'from dictsqlite_fastest_beta import'
+        ).replace(
+            'from dictsqlite_fastest_beta_v3_alpha import',
+            'from dictsqlite_fastest_beta import'
+        ).replace(
+            'from dictsqlite_fastest_beta_v4 import',
             'from dictsqlite_fastest_beta import'
         )
     elif version == 'v2':
@@ -35,6 +43,18 @@ def replace_import_in_file(file_path, version):
         new_content = content.replace(
             'from dictsqlite_fastest_beta import',
             'from dictsqlite_fastest_beta_v2 import'
+        )
+    elif version == 'v3':
+        # v1のインポートをv3-alphaに変更
+        new_content = content.replace(
+            'from dictsqlite_fastest_beta import',
+            'from dictsqlite_fastest_beta_v3_alpha import'
+        )
+    elif version == 'v4':
+        # v1のインポートをv4に変更
+        new_content = content.replace(
+            'from dictsqlite_fastest_beta import',
+            'from dictsqlite_fastest_beta_v4 import'
         )
     else:
         return False
@@ -70,7 +90,7 @@ def run_benchmark(beta_version, full_benchmark=False):
     
     try:
         # インポートを変更
-        if beta_version in ['v1', 'v2']:
+        if beta_version in ['v1', 'v2', 'v3', 'v4']:
             print(f"\n🔄 ベンチマークスクリプトを{beta_version}用に変更...")
             for script in scripts:
                 if replace_import_in_file(script, beta_version):
@@ -111,7 +131,7 @@ def main():
     )
     parser.add_argument(
         '--beta',
-        choices=['v1', 'v2', 'both'],
+        choices=['v1', 'v2', 'v3', 'v4', 'both'],
         default='v1',
         help='Beta版のバージョン (デフォルト: v1)'
     )

@@ -31,6 +31,8 @@ on:
         options:
           - 'v1'
           - 'v2'
+          - 'v3'
+          - 'v4'
           - 'both'
 
 jobs:
@@ -88,6 +90,16 @@ jobs:
           # v1のインポートをv2に置換
           sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v2 import/g' comprehensive_benchmark.py
           sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v2 import/g' fast_comprehensive_benchmark.py
+        elif [ "$BETA_VERSION" == "v3" ]; then
+          echo "🔄 ベンチマークスクリプトをv3-alpha用に変更..."
+          # v1のインポートをv3-alphaに置換
+          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v3_alpha import/g' comprehensive_benchmark.py
+          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v3_alpha import/g' fast_comprehensive_benchmark.py
+        elif [ "$BETA_VERSION" == "v4" ]; then
+          echo "🔄 ベンチマークスクリプトをv4用に変更..."
+          # v1のインポートをv4に置換
+          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v4 import/g' comprehensive_benchmark.py
+          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v4 import/g' fast_comprehensive_benchmark.py
         elif [ "$BETA_VERSION" == "both" ]; then
           echo "⚠️  両バージョンテストは未実装（v1のみ実行）"
         fi
