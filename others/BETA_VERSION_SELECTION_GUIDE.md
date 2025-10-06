@@ -2,9 +2,11 @@
 
 ## 概要
 
-DictSQLite-Fastest Beta版には2つのバージョンがあります：
+DictSQLite-Fastest Beta版には複数のバージョンがあります：
 - **v1**: 既存の安定版（ThreadPoolExecutor）
 - **v2**: 新版（aiosqlite + 内部バッチ処理、デッドロック修正済み）
+- **v3**: v3-alpha版（拡張機能とパフォーマンス改善）
+- **v4**: v4版（最新のパフォーマンス最適化）
 
 ## GitHub Actionsでの選択方法
 
@@ -14,6 +16,8 @@ DictSQLite-Fastest Beta版には2つのバージョンがあります：
 4. **Beta版のバージョン選択**で以下から選択：
    - `v1`: Beta v1のみテスト（既存版）
    - `v2`: Beta v2のみテスト（新版）
+   - `v3`: Beta v3-alphaのみテスト（拡張版）
+   - `v4`: Beta v4のみテスト（最新版）
    - `both`: 両方テスト（未実装）
 
 5. オプション：フル機能ベンチマークを実行するか選択
@@ -24,6 +28,13 @@ DictSQLite-Fastest Beta版には2つのバージョンがあります：
 ```yaml
 フル機能ベンチマークを実行: false
 Beta版のバージョン選択: v2
+```
+
+### 例: v4でテストする場合
+
+```yaml
+フル機能ベンチマークを実行: false
+Beta版のバージョン選択: v4
 ```
 
 ## ローカルでの選択方法
@@ -37,11 +48,17 @@ python others/benchmark/run_benchmark.py --beta v1
 # v2のみテスト（高速ベンチマーク）
 python others/benchmark/run_benchmark.py --beta v2
 
+# v3のみテスト（高速ベンチマーク）
+python others/benchmark/run_benchmark.py --beta v3
+
+# v4のみテスト（高速ベンチマーク）
+python others/benchmark/run_benchmark.py --beta v4
+
 # 両方テスト
 python others/benchmark/run_benchmark.py --beta both
 
-# v2でフルベンチマーク
-python others/benchmark/run_benchmark.py --beta v2 --full
+# v4でフルベンチマーク
+python others/benchmark/run_benchmark.py --beta v4 --full
 ```
 
 **メリット:**
