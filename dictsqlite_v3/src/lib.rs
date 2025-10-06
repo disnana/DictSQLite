@@ -1,8 +1,7 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use dashmap::DashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 mod storage;
@@ -26,7 +25,7 @@ pub struct DictSQLiteV3 {
     hot_tier: Arc<DashMap<String, Vec<u8>>>,
     
     /// Storage engine managing warm and cold tiers
-    storage: Arc<RwLock<StorageEngine>>,
+    storage: Arc<Mutex<StorageEngine>>,
     
     /// Configuration
     config: Config,
@@ -76,7 +75,7 @@ impl DictSQLiteV3 {
             config.num_shards,
         ));
         
-        let storage = Arc::new(RwLock::new(
+        let storage = Arc::new(Mutex::new(
             StorageEngine::new(&db_path, &config)
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?
         ));
@@ -130,7 +129,7 @@ impl DictSQLiteV3 {
     }
     
     /// Get all keys
-    fn keys(&self, py: Python) -> PyResult<Vec<String>> {
+    fn keys(&self, _py: Python) -> PyResult<Vec<String>> {
         let keys: Vec<String> = self.hot_tier
             .iter()
             .map(|entry| entry.key().clone())

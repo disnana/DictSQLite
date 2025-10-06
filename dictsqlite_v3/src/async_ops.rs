@@ -20,8 +20,8 @@ pub struct AsyncDictSQLite {
 #[pymethods]
 impl AsyncDictSQLite {
     #[new]
-    #[pyo3(signature = (db_path, capacity=1_000_000))]
-    fn new(db_path: String, capacity: usize) -> PyResult<Self> {
+    #[pyo3(signature = (_db_path, capacity=1_000_000))]
+    fn new(_db_path: String, capacity: usize) -> PyResult<Self> {
         let runtime = Runtime::new()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
         

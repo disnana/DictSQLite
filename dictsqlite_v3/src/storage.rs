@@ -1,7 +1,6 @@
 use rusqlite::{Connection, params};
 use std::collections::HashMap;
-use std::sync::Arc;
-use parking_lot::RwLock;
+use std::sync::{Arc, Mutex};
 use anyhow::Result;
 
 use crate::Config;
@@ -19,11 +18,11 @@ pub enum MemoryTier {
 
 /// Storage engine managing warm and cold tiers
 pub struct StorageEngine {
-    /// SQLite connection for cold tier
-    cold_conn: Connection,
+    /// SQLite connection for cold tier (wrapped in Mutex for thread safety)
+    cold_conn: Arc<Mutex<Connection>>,
     
     /// Warm tier: In-memory cache with eventual persistence
-    warm_cache: Arc<RwLock<HashMap<String, Vec<u8>>>>,
+    warm_cache: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     
     /// Configuration
     config: Config,
@@ -67,12 +66,12 @@ impl StorageEngine {
             [],
         )?;
         
-        let warm_cache = Arc::new(RwLock::new(
+        let warm_cache = Arc::new(Mutex::new(
             HashMap::with_capacity(config.warm_tier_size / 1024)
         ));
         
         Ok(StorageEngine {
-            cold_conn,
+            cold_conn: Arc::new(Mutex::new(cold_conn)),
             warm_cache,
             config: config.clone(),
             db_path: db_path.to_string(),
@@ -83,43 +82,54 @@ impl StorageEngine {
     pub fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
         // Check warm tier first
         {
-            let warm = self.warm_cache.read();
+            let warm = self.warm_cache.lock().unwrap();
             if let Some(value) = warm.get(key) {
                 return Ok(Some(value.clone()));
             }
         }
         
         // Check cold tier (SQLite)
-        let mut stmt = self.cold_conn.prepare_cached(
-            "SELECT value FROM kv_store WHERE key = ?1"
-        )?;
+        let value_opt = {
+            let conn = self.cold_conn.lock().unwrap();
+            let mut stmt = conn.prepare_cached(
+                "SELECT value FROM kv_store WHERE key = ?1"
+            )?;
+            
+            let result = stmt.query_row(params![key], |row| {
+                row.get::<_, Vec<u8>>(0)
+            });
+            
+            match result {
+                Ok(value) => Some(value),
+                Err(rusqlite::Error::QueryReturnedNoRows) => None,
+                Err(e) => return Err(e.into()),
+            }
+        };
         
-        let result = stmt.query_row(params![key], |row| {
-            row.get::<_, Vec<u8>>(0)
-        });
-        
-        match result {
-            Ok(value) => {
-                // Update access count for tiering
-                self.cold_conn.execute(
+        if let Some(value) = value_opt {
+            // Update access count for tiering
+            {
+                let conn = self.cold_conn.lock().unwrap();
+                conn.execute(
                     "UPDATE kv_store SET access_count = access_count + 1, 
                      last_access = strftime('%s', 'now') WHERE key = ?1",
                     params![key],
                 )?;
-                
-                // Promote to warm tier if frequently accessed
-                self.promote_to_warm(key, &value)?;
-                
-                Ok(Some(value))
-            },
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e.into()),
+            }
+            
+            // Promote to warm tier if frequently accessed
+            self.promote_to_warm(key, &value)?;
+            
+            Ok(Some(value))
+        } else {
+            Ok(None)
         }
     }
     
     /// Set value in cold tier
     pub fn set(&mut self, key: &str, value: &[u8]) -> Result<()> {
-        self.cold_conn.execute(
+        let conn = self.cold_conn.lock().unwrap();
+        conn.execute(
             "INSERT OR REPLACE INTO kv_store (key, value, tier, last_access) 
              VALUES (?1, ?2, 2, strftime('%s', 'now'))",
             params![key, value],
@@ -129,7 +139,8 @@ impl StorageEngine {
     
     /// Bulk insert to cold tier (optimized transaction)
     pub fn bulk_insert(&mut self, items: &HashMap<String, Vec<u8>>) -> Result<()> {
-        let tx = self.cold_conn.transaction()?;
+        let mut conn = self.cold_conn.lock().unwrap();
+        let tx = conn.transaction()?;
         
         {
             let mut stmt = tx.prepare_cached(
@@ -148,7 +159,7 @@ impl StorageEngine {
     
     /// Promote key to warm tier based on access patterns
     fn promote_to_warm(&self, key: &str, value: &[u8]) -> Result<()> {
-        let mut warm = self.warm_cache.write();
+        let mut warm = self.warm_cache.lock().unwrap();
         
         // Check warm tier size limit
         let current_size: usize = warm.values().map(|v| v.len()).sum();
@@ -161,34 +172,48 @@ impl StorageEngine {
     
     /// Evict items from warm tier to cold tier
     pub fn evict_warm_tier(&mut self) -> Result<usize> {
-        let mut warm = self.warm_cache.write();
-        let count = warm.len();
+        // Get all items from warm tier
+        let items = {
+            let mut warm = self.warm_cache.lock().unwrap();
+            let items: HashMap<String, Vec<u8>> = warm.drain().collect();
+            items
+        };
+        
+        let count = items.len();
         
         // Write all warm tier items to cold tier
-        for (key, value) in warm.iter() {
-            self.set(key, value)?;
+        if !items.is_empty() {
+            let conn = self.cold_conn.lock().unwrap();
+            for (key, value) in items.iter() {
+                conn.execute(
+                    "INSERT OR REPLACE INTO kv_store (key, value, tier, last_access) 
+                     VALUES (?1, ?2, 2, strftime('%s', 'now'))",
+                    params![key, value],
+                )?;
+            }
         }
         
-        warm.clear();
         Ok(count)
     }
     
     /// Get all keys from cold tier
     pub fn keys(&self) -> Result<Vec<String>> {
-        let mut stmt = self.cold_conn.prepare("SELECT key FROM kv_store")?;
-        let keys: Result<Vec<String>> = stmt
+        let conn = self.cold_conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT key FROM kv_store")?;
+        let keys: Result<Vec<String>, _> = stmt
             .query_map([], |row| row.get(0))?
             .collect();
-        Ok(keys?)
+        keys.map_err(|e| e.into())
     }
     
     /// Delete key from all tiers
     pub fn delete(&mut self, key: &str) -> Result<()> {
         // Remove from warm tier
-        self.warm_cache.write().remove(key);
+        self.warm_cache.lock().unwrap().remove(key);
         
         // Remove from cold tier
-        self.cold_conn.execute(
+        let conn = self.cold_conn.lock().unwrap();
+        conn.execute(
             "DELETE FROM kv_store WHERE key = ?1",
             params![key],
         )?;
@@ -198,22 +223,26 @@ impl StorageEngine {
     
     /// Clear all tiers
     pub fn clear(&mut self) -> Result<()> {
-        self.warm_cache.write().clear();
-        self.cold_conn.execute("DELETE FROM kv_store", [])?;
+        self.warm_cache.lock().unwrap().clear();
+        let conn = self.cold_conn.lock().unwrap();
+        conn.execute("DELETE FROM kv_store", [])?;
         Ok(())
     }
     
     /// Get storage statistics
     pub fn stats(&self) -> StorageStats {
-        let warm = self.warm_cache.read();
+        let warm = self.warm_cache.lock().unwrap();
         let warm_size: usize = warm.values().map(|v| v.len()).sum();
+        
+        let conn = self.cold_conn.lock().unwrap();
+        let cold_tier_entries = conn
+            .query_row("SELECT COUNT(*) FROM kv_store", [], |row| row.get(0))
+            .unwrap_or(0);
         
         StorageStats {
             warm_tier_entries: warm.len(),
             warm_tier_bytes: warm_size,
-            cold_tier_entries: self.cold_conn
-                .query_row("SELECT COUNT(*) FROM kv_store", [], |row| row.get(0))
-                .unwrap_or(0),
+            cold_tier_entries,
         }
     }
 }
