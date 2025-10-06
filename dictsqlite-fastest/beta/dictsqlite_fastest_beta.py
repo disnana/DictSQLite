@@ -138,6 +138,20 @@ class LRUCache:
                 for _ in range(overflow):
                     self.cache.popitem(last=False)
     
+    def bulk_put_fast(self, items: dict) -> None:
+        """複数のアイテムを一括でキャッシュに追加（最高速版 - LRU更新なし）.
+        
+        Args:
+            items: 追加するアイテムの辞書
+        """
+        # ロックなしでシンプルキャッシュに一括追加
+        self.simple_cache.update(items)
+        
+        # 容量制限チェック
+        if len(self.simple_cache) > self.capacity * 1.2:
+            items_list = list(self.simple_cache.items())
+            self.simple_cache = dict(items_list[-self.capacity:])
+    
     def remove(self, key: str) -> None:
         """キャッシュからキーを削除.
         
@@ -146,6 +160,15 @@ class LRUCache:
         """
         with self.lock:
             self.cache.pop(key, None)
+    
+    def remove_fast(self, key: str) -> None:
+        """キャッシュからキーを削除（高速版）.
+        
+        Args:
+            key: 削除するキー
+        """
+        # ロックなしでシンプルキャッシュから削除
+        self.simple_cache.pop(key, None)
     
     def clear(self) -> None:
         """キャッシュをクリア."""
@@ -580,8 +603,11 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         # ゼロコストテーブル存在確認
         self._ensure_table_exists()
         
-        # キャッシュを更新
-        self._cache.put(key, value)
+        # キャッシュを更新（fast_modeに応じて適切なメソッドを使用）
+        if self.fast_mode:
+            self._cache.put_fast(key, value)
+        else:
+            self._cache.put(key, value)
         
         if self.memory_only:
             # メモリオンリーモードでは直接書き込み
@@ -599,8 +625,11 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         Args:
             key: 削除するキー
         """
-        # キャッシュから削除
-        self._cache.remove(key)
+        # キャッシュから削除（fast_modeに応じて適切なメソッドを使用）
+        if self.fast_mode:
+            self._cache.remove_fast(key)
+        else:
+            self._cache.remove(key)
         
         if self.memory_only:
             # メモリオンリーモードでは直接削除
@@ -843,15 +872,21 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         # バルク取得を使用して効率的に読み込み
         try:
             values = super().bulk_get(keys_to_fetch)
-            # キャッシュに追加
-            for key, value in values.items():
-                self._cache.put(key, value)
+            # キャッシュに追加（fast_modeに応じて選択）
+            if self.fast_mode:
+                self._cache.bulk_put_fast(values)
+            else:
+                for key, value in values.items():
+                    self._cache.put(key, value)
         except Exception:
             # エラーが発生した場合は個別に取得
             for key in keys_to_fetch:
                 try:
                     value = super().__getitem__(key)
-                    self._cache.put(key, value)
+                    if self.fast_mode:
+                        self._cache.put_fast(key, value)
+                    else:
+                        self._cache.put(key, value)
                 except KeyError:
                     pass  # 存在しないキーは無視
     
@@ -903,8 +938,11 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
         if self.memory_only:
             # メモリオンリーモードでは直接書き込み（バッファなし）
             super().bulk_insert(items)
-            # 書き込み後にキャッシュを一括更新（高速化）
-            self._cache.bulk_put(items)
+            # 書き込み後にキャッシュを一括更新（高速化、fast_modeに応じて選択）
+            if self.fast_mode:
+                self._cache.bulk_put_fast(items)
+            else:
+                self._cache.bulk_put(items)
         else:
             # 大きなバルク操作（100件以上）の場合は直接書き込み
             # これによりバルク処理の速度を維持
@@ -922,11 +960,17 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
                 with self._stats_lock:
                     self._stats['disk_writes'] += len(items)
                 
-                # 書き込み後にキャッシュを一括更新（高速化）
-                self._cache.bulk_put(items)
+                # 書き込み後にキャッシュを一括更新（高速化、fast_modeに応じて選択）
+                if self.fast_mode:
+                    self._cache.bulk_put_fast(items)
+                else:
+                    self._cache.bulk_put(items)
             else:
                 # 小さいバルク操作（<100件）はバッファに追加して遅延書き込み
-                self._cache.bulk_put(items)
+                if self.fast_mode:
+                    self._cache.bulk_put_fast(items)
+                else:
+                    self._cache.bulk_put(items)
                 for key, value in items.items():
                     self._write_buffer.add(key, value)
                 
@@ -962,9 +1006,12 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
             disk_values = super().bulk_get(missing_keys)
             result.update(disk_values)
             
-            # 取得した値をキャッシュに追加
-            for key, value in disk_values.items():
-                self._cache.put(key, value)
+            # 取得した値をキャッシュに追加（fast_modeに応じて選択）
+            if self.fast_mode:
+                self._cache.bulk_put_fast(disk_values)
+            else:
+                for key, value in disk_values.items():
+                    self._cache.put(key, value)
         
         return result
     
@@ -1014,14 +1061,20 @@ class DictSQLiteFastestBeta(DictSQLiteFastest):
                             
                             # 1000件ごとにバッチでキャッシュに追加（効率化）
                             if count % 1000 == 0:
-                                self._cache.bulk_put(items)
+                                if self.fast_mode:
+                                    self._cache.bulk_put_fast(items)
+                                else:
+                                    self._cache.bulk_put(items)
                                 items = {}
                         except Exception:
                             pass  # デシリアライズエラーは無視
                     
                     # 残りをキャッシュに追加
                     if items:
-                        self._cache.bulk_put(items)
+                        if self.fast_mode:
+                            self._cache.bulk_put_fast(items)
+                        else:
+                            self._cache.bulk_put(items)
                     
                     with self._stats_lock:
                         self._stats['auto_preloads'] += count
