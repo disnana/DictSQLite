@@ -19,6 +19,11 @@ class DictSQLiteV3:
     High-performance DictSQLite v3.0 with dict-like interface
     
     Targets 100M+ ops/sec with lock-free concurrent hashmap
+    
+    Compatible with DictSQLite v1/v2 API:
+    - Dict-like operations: `db['key'] = 'value'`, `db.get('key')`, etc.
+    - Context manager support: `with DictSQLiteV3(...) as db:`
+    - Iteration: `for key in db.keys():`
     """
     
     def __init__(self, db_path, hot_capacity=1_000_000, enable_async=True):
@@ -37,6 +42,7 @@ class DictSQLiteV3:
             )
         
         self._db = _NativeDictSQLiteV3(db_path, hot_capacity, enable_async)
+        self._closed = False
     
     def __getitem__(self, key):
         """Get value by key"""
@@ -77,6 +83,51 @@ class DictSQLiteV3:
         """Get all keys"""
         return self._db.keys()
     
+    def values(self):
+        """Get all values"""
+        return [self._db.get(k) for k in self.keys()]
+    
+    def items(self):
+        """Get all items as (key, value) tuples"""
+        return [(k, self._db.get(k)) for k in self.keys()]
+    
+    def update(self, other=None, **kwargs):
+        """Update from dict or kwargs"""
+        if other is not None:
+            if hasattr(other, 'items'):
+                for key, value in other.items():
+                    self[key] = value
+            else:
+                for key, value in other:
+                    self[key] = value
+        for key, value in kwargs.items():
+            self[key] = value
+    
+    def setdefault(self, key, default=None):
+        """Set default if key doesn't exist"""
+        if key not in self:
+            self[key] = default
+        return self[key]
+    
+    def pop(self, key, *default):
+        """Remove and return value"""
+        try:
+            value = self[key]
+            del self[key]
+            return value
+        except KeyError:
+            if default:
+                return default[0]
+            raise
+    
+    def __iter__(self):
+        """Iterate over keys"""
+        return iter(self.keys())
+    
+    def __repr__(self):
+        """String representation"""
+        return f"<DictSQLiteV3 at {id(self):x} with {len(self)} entries>"
+    
     def clear(self):
         """Clear all data"""
         self._db.clear()
@@ -104,6 +155,29 @@ class DictSQLiteV3:
     def flush(self):
         """Flush hot tier to storage"""
         self._db.flush()
+    
+    def close(self):
+        """Close database and flush all data"""
+        if not self._closed:
+            self.flush()
+            self._closed = True
+    
+    def __enter__(self):
+        """Context manager entry"""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensure data is flushed"""
+        self.close()
+        return False
+    
+    def __del__(self):
+        """Destructor - ensure data is flushed"""
+        if not self._closed:
+            try:
+                self.close()
+            except:
+                pass
 
 
 class AsyncDictSQLite:

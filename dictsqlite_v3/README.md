@@ -55,6 +55,33 @@ maturin build --release
 pip install target/wheels/*.whl
 ```
 
+## Testing
+
+### Run Compatibility Tests
+
+```bash
+# Install test dependencies
+pip install pytest
+
+# Run all tests
+cd dictsqlite_v3
+pytest tests/test_v3_compatibility.py -v
+
+# Run specific test class
+pytest tests/test_v3_compatibility.py::TestDictSQLiteV3Compatibility -v
+
+# Run with performance output
+pytest tests/test_v3_compatibility.py::TestDictSQLiteV3Performance -v -s
+```
+
+### Build and Test Script
+
+```bash
+cd dictsqlite_v3
+./build.sh  # Builds and optionally installs
+pytest tests/ -v  # Run all tests
+```
+
 ## Usage
 
 ### Basic Usage
@@ -82,6 +109,44 @@ db.bulk_insert(items)
 # Performance statistics
 stats = db.stats()
 print(f"Hot tier: {stats['hot_tier_size']} entries")
+
+db.close()
+```
+
+### Context Manager Support (v1 Compatible)
+
+```python
+# Using with statement
+with DictSQLiteV3("mydb.db") as db:
+    db["key1"] = b"value1"
+    db["key2"] = b"value2"
+    print(db["key1"])
+# Automatically flushed and closed
+```
+
+### Dict-like Operations (v1 Compatible)
+
+```python
+db = DictSQLiteV3("mydb.db")
+
+# Dict methods
+db.get("key", "default")
+db.setdefault("key", b"value")
+db.update({"k1": b"v1", "k2": b"v2"})
+value = db.pop("key")
+
+# Iteration
+for key in db.keys():
+    print(key, db[key])
+
+for key, value in db.items():
+    print(key, value)
+
+# Length and membership
+print(len(db))
+print("key" in db)
+
+db.close()
 ```
 
 ### Async API

@@ -70,10 +70,10 @@ db = DictSQLiteV3(
 )
 
 # 高速書き込み（ロックフリー）
-db.set("key1", b"value1")
+db["key1"] = b"value1"
 
 # 高速読み込み（ロックフリー）
-value = db.get("key1")
+value = db["key1"]
 
 # バルクインサート（最適化済み）
 items = {f"key_{i}": f"value_{i}".encode() for i in range(100_000)}
@@ -82,6 +82,44 @@ db.bulk_insert(items)
 # パフォーマンス統計
 stats = db.stats()
 print(f"Hot tier: {stats['hot_tier_size']} entries")
+
+db.close()
+```
+
+### With文のサポート（v1互換）
+
+```python
+# コンテキストマネージャーでの使用
+with DictSQLiteV3("mydb.db") as db:
+    db["key1"] = b"value1"
+    db["key2"] = b"value2"
+    print(db["key1"])
+# 自動的にフラッシュされてクローズされます
+```
+
+### 辞書のような操作（v1互換）
+
+```python
+db = DictSQLiteV3("mydb.db")
+
+# 辞書メソッド
+db.get("key", "default")
+db.setdefault("key", b"value")
+db.update({"k1": b"v1", "k2": b"v2"})
+value = db.pop("key")
+
+# イテレーション
+for key in db.keys():
+    print(key, db[key])
+
+for key, value in db.items():
+    print(key, value)
+
+# 長さとメンバーシップ
+print(len(db))
+print("key" in db)
+
+db.close()
 ```
 
 ### 非同期API
