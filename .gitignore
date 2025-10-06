@@ -21,9 +21,10 @@ coverage.xml
 *.cover
 HACKATHON_PRESENTATION_PLAN.md
 
-# Rust build artifacts
-dictsqlite_native/target/
-dictsqlite_native/Cargo.lock
+# DictSQLite v3.0 Rust build artifacts
+dictsqlite_v3/target/
+dictsqlite_v3/Cargo.lock
+dictsqlite_v3/__pycache__/
 *.so
 *.pyd
 *.dylib

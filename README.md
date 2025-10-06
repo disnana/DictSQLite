@@ -20,7 +20,6 @@ DictSQLite provides a Pythonic, dictionary-like interface for SQLite databases, 
 - **Transaction Control**: Simple context manager for handling database transactions.
 - **Built-in Encryption**: Secure your data with optional AES encryption.
 - **Cross-process/thread Safety**: Uses `portalocker` to ensure data integrity.
-- **High Performance**: Optional Rust native extension for 10-100x speedup (see [NATIVE_EXTENSION.md](NATIVE_EXTENSION.md)).
 - **Lightweight & Zero-dependency**: Besides `portalocker` and `cryptography`, it's pure Python.
 
 ## 🚀 Getting Started
@@ -95,26 +94,6 @@ For detailed usage, API reference, and advanced topics, please refer to our offi
 
 - [**English Documentation**](./documents/english.md)
 - [**Japanese Documentation**](./documents/japanese.md)
-
-## ⚡ Performance Optimization
-
-DictSQLite now supports an optional **native Rust extension** for significantly improved performance:
-
-- 🚀 **10-100x faster** than pure Python implementation
-- ✅ **Full API compatibility** - no code changes needed
-- 🔄 **Automatic fallback** to pure Python if native extension unavailable
-- 🔒 **Memory safe** - built with Rust's safety guarantees
-
-To use the native extension:
-```bash
-# Install Rust from https://rustup.rs/
-# Then build the extension:
-./build_native.sh
-```
-
-For more details, see:
-- [**Native Extension Guide (English)**](./NATIVE_EXTENSION.md)
-- [**Native Extension Guide (Japanese)**](./NATIVE_EXTENSION_JP.md)
 
 ## 🤝 Contributing
 
