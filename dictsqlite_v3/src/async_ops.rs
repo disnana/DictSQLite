@@ -20,12 +20,16 @@ pub struct AsyncDictSQLite {
 #[pymethods]
 impl AsyncDictSQLite {
     #[new]
-    #[pyo3(signature = (_db_path, capacity=1_000_000))]
-    fn new(_db_path: String, capacity: usize) -> PyResult<Self> {
+    #[pyo3(signature = (db_path, capacity=1_000_000))]
+    fn new(db_path: String, capacity: usize) -> PyResult<Self> {
         let runtime = Runtime::new()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
         
         let cache = Arc::new(DashMap::with_capacity(capacity));
+        
+        // For now, AsyncDictSQLite is pure in-memory
+        // TODO: Add async persistence support
+        let _ = db_path; // Silence unused warning
         
         Ok(AsyncDictSQLite {
             cache,
