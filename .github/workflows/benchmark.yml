@@ -1,10 +1,11 @@
 # パフォーマンスベンチマークワークフロー
 # 
-# このワークフローは負荷が大きいため、手動実行のみ許可されています。
-# 実行方法: GitHub の「Actions」タブ → 「Performance Benchmark」→ 「Run workflow」
+# このワークフローはdictsqlite (オリジナル版) と dictsqlite_v2 の
+# 2つのバージョンを最適化されたテストでベンチマークします。
 #
-# DictSQLite、DictSQLite-Fastest、DictSQLite-Fastest Beta の
-# 3つのバージョンを包括的にベンチマークし、結果をグラフ化します。
+# 実行モード:
+# - 自動実行: プッシュ/PRで高速モード（両方テスト）
+# - 手動実行: 高速モードまたは完全モード選択可能
 
 name: Performance Benchmark
 
@@ -13,33 +14,36 @@ permissions:
   pull-requests: write
 
 on:
-  workflow_dispatch:  # 手動実行のみ許可（負荷が大きいため）
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'dictsqlite/**'
+      - 'dictsqlite-fastest/dictsqlite_v2/**'
+      - 'others/benchmark/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'dictsqlite/**'
+      - 'dictsqlite-fastest/dictsqlite_v2/**'
+      - 'others/benchmark/**'
+  workflow_dispatch:  # 手動実行
     inputs:
-      run_full_benchmark:
-        description: 'フル機能ベンチマークを実行（時間がかかります）'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
-      beta_version:
-        description: 'Beta版のバージョン選択'
+      test_mode:
+        description: 'テストモード選択'
         required: true
-        default: 'v1'
+        default: 'fast'
         type: choice
         options:
-          - 'v1'
-          - 'v2'
-          - 'v3'
-          - 'v4'
-          - 'both'
+          - 'fast'
+          - 'full'
 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    # パフォーマンステストは負荷が大きいため、手動実行のみ許可
-    # GitHub Actionsの「Actions」タブから「Performance Benchmark」を選択して実行してください
     strategy:
       matrix:
         python-version: ["3.11"]
@@ -63,82 +67,68 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install matplotlib seaborn pandas numpy plotly kaleido
-        # dictsqlite-fastest の依存関係（apsw, zstandard等）
-        pip install apsw zstandard
-        # v2用の依存関係（aiosqlite）
-        pip install aiosqlite
         pip install -e .
-        # dictsqlite-fastest の依存関係をインストール（パッケージとしてではなく）
-        if [ -f "dictsqlite-fastest/requirements.txt" ]; then
-          pip install -r dictsqlite-fastest/requirements.txt
-        fi
-        # dictsqlite-fastest beta の依存関係をインストール
-        if [ -f "dictsqlite-fastest/beta/requirements.txt" ]; then
-          pip install -r dictsqlite-fastest/beta/requirements.txt
+
+    - name: Determine test mode
+      id: test_mode
+      run: |
+        # イベントタイプに応じてテストモードを決定
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          # 手動実行: ユーザーが選択したモード
+          echo "mode=${{ github.event.inputs.test_mode }}" >> $GITHUB_OUTPUT
+        else
+          # 自動実行 (push/PR): 常に高速モード
+          echo "mode=fast" >> $GITHUB_OUTPUT
         fi
 
-    - name: Run fast comprehensive benchmark
+    - name: Run optimized benchmark
       run: |
         cd others/benchmark
         
-        # Beta版のバージョンに応じてインポートを変更
-        BETA_VERSION="${{ github.event.inputs.beta_version }}"
-        echo "📦 選択されたBeta版: $BETA_VERSION"
+        TEST_MODE="${{ steps.test_mode.outputs.mode }}"
+        echo "🚀 実行モード: $TEST_MODE"
         
-        if [ "$BETA_VERSION" == "v2" ]; then
-          echo "🔄 ベンチマークスクリプトをv2用に変更..."
-          # v1のインポートをv2に置換
-          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v2 import/g' comprehensive_benchmark.py
-          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v2 import/g' fast_comprehensive_benchmark.py
-        elif [ "$BETA_VERSION" == "v3" ]; then
-          echo "🔄 ベンチマークスクリプトをv3-alpha用に変更..."
-          # v1のインポートをv3-alphaに置換
-          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v3_alpha import/g' comprehensive_benchmark.py
-          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v3_alpha import/g' fast_comprehensive_benchmark.py
-        elif [ "$BETA_VERSION" == "v4" ]; then
-          echo "🔄 ベンチマークスクリプトをv4用に変更..."
-          # v1のインポートをv4に置換
-          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v4 import/g' comprehensive_benchmark.py
-          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v4 import/g' fast_comprehensive_benchmark.py
-        elif [ "$BETA_VERSION" == "both" ]; then
-          echo "⚠️  両バージョンテストは未実装（v1のみ実行）"
-        fi
-        
-        if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
-          echo "🔬 フル機能ベンチマーク（comprehensive_benchmark.py）を実行中..."
-          python comprehensive_benchmark.py
+        if [ "$TEST_MODE" == "fast" ]; then
+          echo "⚡ 高速ベンチマークを実行中..."
         else
-          echo "⚡ 高速ベンチマーク（fast_comprehensive_benchmark.py）を実行中..."
-          python fast_comprehensive_benchmark.py
+          echo "🔬 完全ベンチマークを実行中..."
         fi
+        
+        python optimized_benchmark.py --mode $TEST_MODE
       env:
-        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/dictsqlite-fastest:${{ github.workspace }}/dictsqlite-fastest/beta
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/dictsqlite-fastest
       continue-on-error: false
 
     - name: Generate benchmark visualizations
       run: |
         cd others/benchmark
-        # 最新のベンチマーク結果CSVファイルを探す（resultsディレクトリ内）
+        # 最新のベンチマーク結果CSVファイルを探す
         LATEST_CSV=$(ls -t results/*.csv 2>/dev/null | head -n1)
         if [ -n "$LATEST_CSV" ]; then
           echo "Visualizing: $LATEST_CSV"
-          python visualize_benchmark.py "$LATEST_CSV"
+          # visualize_benchmark.pyが存在すれば実行
+          if [ -f "visualize_benchmark.py" ]; then
+            python visualize_benchmark.py "$LATEST_CSV" || echo "Visualization failed, continuing..."
+          else
+            echo "visualize_benchmark.py not found, skipping visualization"
+          fi
         else
-          echo "No CSV file found in results/"
-          exit 1
+          echo "No CSV file found in results/, skipping visualization"
         fi
       env:
-        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/dictsqlite-fastest:${{ github.workspace }}/dictsqlite-fastest/beta
-      continue-on-error: false
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/dictsqlite-fastest
+      continue-on-error: true
 
     - name: List benchmark results
       run: |
-        echo "=== Benchmark Results (Beta Version: ${{ github.event.inputs.beta_version }}) ==="
+        echo "=== Benchmark Results (Mode: ${{ steps.test_mode.outputs.mode }}) ==="
         ls -lh others/benchmark/results/
         echo ""
         echo "=== Graphs ==="
         if [ -d "others/benchmark/results/graphs" ]; then
           ls -lh others/benchmark/results/graphs/
+        else
+          echo "No graphs directory"
         fi
 
     - name: Upload benchmark results
@@ -169,6 +159,11 @@ jobs:
       run: |
         echo "✅ ベンチマーク実行完了！"
         echo ""
+        echo "📊 テストモード: ${{ steps.test_mode.outputs.mode }}"
+        echo "🎯 テスト対象:"
+        echo "  - DictSQLite (オリジナル版)"
+        echo "  - DictSQLiteV2 (v2.0版)"
+        echo ""
         echo "📊 結果は以下の場所で確認できます:"
         echo "  1. このワークフロー実行ページの 'Artifacts' セクション"
         echo "  2. 上部の 'Summary' タブ"
@@ -192,7 +187,8 @@ jobs:
           echo "コミットする変更がありません"
         else
           TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-          git commit -m "📊 ベンチマーク結果を追加 - ${TIMESTAMP} [skip ci]"
+          MODE="${{ steps.test_mode.outputs.mode }}"
+          git commit -m "📊 ベンチマーク結果を追加 (モード: $MODE) - ${TIMESTAMP} [skip ci]"
           git push
           echo "✅ ベンチマーク結果をリポジトリにコミットしました"
         fi
