@@ -1124,6 +1124,23 @@ class DictSQLiteFastest:
             result = self.db._execute_fetchone(stmt, (key,))
             return result is not None
 
+        def get(self, key, default=None):
+            """辞書のget()メソッド実装
+            
+            キーが存在する場合は対応する値を返し、存在しない場合はdefaultを返します。
+            
+            Args:
+                key: 取得するキー
+                default: キーが存在しない場合のデフォルト値（デフォルト: None）
+                
+            Returns:
+                キーに対応する値、または存在しない場合はdefault
+            """
+            try:
+                return self.__getitem__(key)
+            except KeyError:
+                return default
+
         def __repr__(self):
             return f"{dict(self)}"
 
@@ -1258,6 +1275,22 @@ class DictSQLiteFastest:
         else:
             # Direct key access for v1
             return DictSQLiteFastest.TableProxy(self, self.table_name)[key]
+
+    def get(self, key, default=None):
+        """辞書のget()メソッド実装
+        
+        キーが存在する場合は対応する値を返し、存在しない場合はdefaultを返します。
+        
+        Args:
+            key: 取得するキー
+            default: キーが存在しない場合のデフォルト値（デフォルト: None）
+            
+        Returns:
+            キーに対応する値、または存在しない場合はdefault
+        """
+        # TableProxyのget()に処理を委譲
+        proxy = DictSQLiteFastest.TableProxy(self, self.table_name)
+        return proxy.get(key, default)
 
     def __setitem__(self, key, value):
         DictSQLiteFastest.TableProxy(self, self.table_name)[key] = value
