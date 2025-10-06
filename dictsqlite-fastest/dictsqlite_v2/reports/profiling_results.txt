@@ -1,0 +1,102 @@
+DictSQLite-v2.0 Profiling Results
+================================================================================
+
+
+================================================================================
+Write Operations
+================================================================================
+         19385 function calls (19376 primitive calls) in 0.027 seconds
+
+   Ordered by: cumulative time
+   List reduced from 172 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.027    0.027 auto_profiler.py:23(profile_write_operations)
+        4    0.000    0.000    0.027    0.007 {built-in method posix.unlink}
+        1    0.000    0.000    0.027    0.027 threading.py:1016(_bootstrap)
+        1    0.000    0.000    0.021    0.021 threading.py:1056(_bootstrap_inner)
+        1    0.000    0.000    0.021    0.021 threading.py:999(run)
+        1    0.000    0.000    0.021    0.021 dictsqlite_fastest_beta_v2.py:485(_background_flush_worker)
+      2/1    0.000    0.000    0.021    0.021 threading.py:637(wait)
+      2/1    0.000    0.000    0.021    0.021 threading.py:323(wait)
+      500    0.001    0.000    0.019    0.000 dictsqlite_fastest_beta_v2.py:422(__setitem__)
+      501    0.001    0.000    0.017    0.000 dictsqlite_fastest_beta_v2.py:447(_flush_write_buffer)
+      500    0.002    0.000    0.014    0.000 main.py:1448(bulk_insert)
+     1507    0.014    0.000    0.014    0.000 {method 'execute' of 'apsw.Cursor' objects}
+        1    0.000    0.000    0.005    0.005 main.py:480(__init__)
+        1    0.000    0.000    0.004    0.004 main.py:637(_initialize_database)
+       20    0.002    0.000    0.002    0.000 {method 'pragma' of 'apsw.Connection' objects}
+        2    0.001    0.001    0.001    0.001 {method 'close' of 'apsw.Connection' objects}
+        1    0.000    0.000    0.001    0.001 core.py:98(close)
+        1    0.000    0.000    0.001    0.001 main.py:1236(close)
+      501    0.001    0.000    0.001    0.000 dictsqlite_fastest_beta_v2.py:232(get_pending)
+      500    0.000    0.000    0.001    0.000 dictsqlite_fastest_beta_v2.py:186(add)
+
+
+
+
+================================================================================
+Read Operations
+================================================================================
+         47736 function calls (47700 primitive calls) in 0.047 seconds
+
+   Ordered by: cumulative time
+   List reduced from 188 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        2    0.000    0.000    0.068    0.034 threading.py:1016(_bootstrap)
+        1    0.000    0.000    0.047    0.047 auto_profiler.py:44(profile_read_operations)
+        3    0.000    0.000    0.046    0.015 {built-in method posix.unlink}
+        2    0.000    0.000    0.041    0.021 threading.py:1056(_bootstrap_inner)
+        2    0.000    0.000    0.041    0.021 threading.py:999(run)
+        2    0.000    0.000    0.027    0.013 main.py:480(__init__)
+     1004    0.000    0.000    0.023    0.000 main.py:692(_get_connection)
+        2    0.000    0.000    0.020    0.010 dictsqlite_fastest_beta_v2.py:485(_background_flush_worker)
+      4/2    0.000    0.000    0.020    0.010 threading.py:637(wait)
+      4/2    0.000    0.000    0.020    0.010 threading.py:323(wait)
+      500    0.001    0.000    0.019    0.000 dictsqlite_fastest_beta_v2.py:422(__setitem__)
+      500    0.001    0.000    0.019    0.000 dictsqlite_fastest_beta_v2.py:361(__getitem__)
+      502    0.001    0.000    0.016    0.000 dictsqlite_fastest_beta_v2.py:447(_flush_write_buffer)
+      500    0.000    0.000    0.016    0.000 main.py:1271(__getitem__)
+      500    0.000    0.000    0.016    0.000 main.py:1080(__getitem__)
+      500    0.002    0.000    0.014    0.000 main.py:1031(get_raw_value)
+      500    0.002    0.000    0.014    0.000 main.py:1448(bulk_insert)
+     2012    0.014    0.000    0.014    0.000 {method 'execute' of 'apsw.Cursor' objects}
+      500    0.001    0.000    0.004    0.000 __init__.py:299(loads)
+      500    0.001    0.000    0.003    0.000 safe_pickle.py:172(safe_loads)
+
+
+
+
+================================================================================
+Bulk Operations
+================================================================================
+         2805 function calls (2796 primitive calls) in 0.008 seconds
+
+   Ordered by: cumulative time
+   List reduced from 142 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.008    0.008 auto_profiler.py:69(profile_bulk_operations)
+        3    0.000    0.000    0.008    0.003 {built-in method posix.unlink}
+        1    0.000    0.000    0.008    0.008 threading.py:1016(_bootstrap)
+        1    0.000    0.000    0.004    0.004 main.py:480(__init__)
+        1    0.000    0.000    0.003    0.003 threading.py:1056(_bootstrap_inner)
+        1    0.000    0.000    0.003    0.003 threading.py:999(run)
+        1    0.000    0.000    0.003    0.003 dictsqlite_fastest_beta_v2.py:485(_background_flush_worker)
+      2/1    0.000    0.000    0.003    0.003 threading.py:637(wait)
+      2/1    0.000    0.000    0.003    0.003 threading.py:323(wait)
+        1    0.000    0.000    0.003    0.003 main.py:637(_initialize_database)
+      509    0.003    0.000    0.003    0.000 {method 'execute' of 'apsw.Cursor' objects}
+       20    0.002    0.000    0.002    0.000 {method 'pragma' of 'apsw.Connection' objects}
+        1    0.000    0.000    0.002    0.002 main.py:1448(bulk_insert)
+        2    0.001    0.001    0.001    0.001 {method 'close' of 'apsw.Connection' objects}
+        1    0.000    0.000    0.001    0.001 core.py:98(close)
+        1    0.000    0.000    0.001    0.001 main.py:1236(close)
+        1    0.000    0.000    0.001    0.001 main.py:1653(optimize_database)
+        3    0.000    0.000    0.000    0.000 main.py:692(_get_connection)
+        1    0.000    0.000    0.000    0.000 main.py:709(_optimize_single_connection)
+      500    0.000    0.000    0.000    0.000 {built-in method _pickle.dumps}
+
+
+

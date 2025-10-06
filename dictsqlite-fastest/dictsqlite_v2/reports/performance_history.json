@@ -10,5 +10,17 @@
       "version": "2.0.0",
       "test": "initial"
     }
+  },
+  {
+    "timestamp": "2025-10-06T13:06:47.908627",
+    "benchmarks": {
+      "write_ops": 269679.6717884615,
+      "read_ops": 57374.64414817169,
+      "bulk_write_ops": 455645.6316394787
+    },
+    "metadata": {
+      "version": "2.0.0",
+      "test": "initial"
+    }
   }
 ]
