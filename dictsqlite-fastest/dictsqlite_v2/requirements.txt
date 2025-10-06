@@ -1,0 +1,18 @@
+# DictSQLite-v2.0 Requirements
+
+# Core dependencies
+apsw>=3.40.0.0
+aiosqlite>=0.19.0
+
+# Testing
+pytest>=7.4.0
+pytest-benchmark>=4.0.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+
+# Performance monitoring
+psutil>=5.9.0
+
+# Parent package dependencies
+portalocker>=3.1.1
+cryptography>=45.0.5
