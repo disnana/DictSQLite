@@ -22,10 +22,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          python -m venv env/
+          source env/bin/activate
           pip install -r requirements.txt
 
       - name: Run pip-audit
         uses: pypa/gh-action-pip-audit@v1.1.0
         with:
-          arguments: -r requirements.txt  # ← ここだけ追加！
+          virtual-environment: env/
+          inputs: requirements.txt
           fail-on: vulnerability          # ← 任意（脆弱性あればジョブ失敗）
