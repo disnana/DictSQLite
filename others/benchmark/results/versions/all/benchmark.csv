@@ -1,0 +1,7 @@
+Test,Version,Time (s),OPS
+Write Test (100),original,0.5,200
+Write Test (100),fastest,0.3,333
+Write Test (100),beta,0.2,500
+Read Test (100),original,0.4,250
+Read Test (100),fastest,0.25,400
+Read Test (100),beta,0.15,667

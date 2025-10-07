@@ -85,6 +85,9 @@ jobs:
         BETA_VERSION="${{ github.event.inputs.beta_version }}"
         echo "📦 選択されたBeta版: $BETA_VERSION"
         
+        # BETA_VERSIONを環境変数としてエクスポート（バージョン管理システムで使用）
+        export BETA_VERSION
+        
         if [ "$BETA_VERSION" == "all" ]; then
           echo "🔬 全バージョン (v1, v2, v3, v4) の比較ベンチマークを実行..."
           python run_benchmark.py --beta all
@@ -136,20 +139,16 @@ jobs:
         fi
       env:
         PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta
+        BETA_VERSION: ${{ github.event.inputs.beta_version }}
       continue-on-error: false
 
-    - name: Generate benchmark visualizations
+    # グラフはベンチマーク実行時に自動生成されるため、このステップは不要
+    
+    - name: Generate version comparison
       run: |
         cd others/benchmark
-        # 最新のベンチマーク結果CSVファイルを探す（resultsディレクトリ内）
-        LATEST_CSV=$(ls -t results/*.csv 2>/dev/null | head -n1)
-        if [ -n "$LATEST_CSV" ]; then
-          echo "Visualizing: $LATEST_CSV"
-          python visualize_benchmark.py "$LATEST_CSV"
-        else
-          echo "⚠️  No CSV file found in results/"
-          echo "Benchmark may not have generated CSV output. Skipping visualization."
-        fi
+        echo "📊 バージョン間比較を生成中..."
+        python compare_versions.py || echo "⚠️ バージョン比較の生成に失敗しました（初回実行の場合は正常）"
       env:
         PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta
       continue-on-error: true
@@ -159,9 +158,25 @@ jobs:
         echo "=== Benchmark Results (Beta Version: ${{ github.event.inputs.beta_version }}) ==="
         ls -lh others/benchmark/results/
         echo ""
-        echo "=== Graphs ==="
-        if [ -d "others/benchmark/results/graphs" ]; then
-          ls -lh others/benchmark/results/graphs/
+        echo "=== Version-specific Results ==="
+        if [ -d "others/benchmark/results/versions" ]; then
+          ls -lh others/benchmark/results/versions/
+          echo ""
+          echo "=== Files in Version Directory ==="
+          VERSION_DIR="others/benchmark/results/versions/${{ github.event.inputs.beta_version }}"
+          if [ -d "$VERSION_DIR" ]; then
+            ls -lh "$VERSION_DIR"/
+            if [ -d "$VERSION_DIR/graphs" ]; then
+              echo ""
+              echo "=== Graphs in Version Directory ==="
+              ls -lh "$VERSION_DIR/graphs/"
+            fi
+          fi
+        fi
+        echo ""
+        echo "=== Version Comparisons ==="
+        if [ -d "others/benchmark/results/comparisons" ]; then
+          ls -lh others/benchmark/results/comparisons/
         fi
 
     - name: Upload benchmark results
@@ -175,6 +190,8 @@ jobs:
           others/benchmark/results/*.md
           others/benchmark/results/graphs/*.png
           others/benchmark/results/graphs/*.html
+          others/benchmark/results/versions/**/*
+          others/benchmark/results/comparisons/**/*
         retention-days: 90
 
     - name: Create benchmark summary

@@ -2,6 +2,32 @@
 
 3つのバージョン(DictSQLite、DictSQLite-Fastest、DictSQLite-Fastest Beta)を徹底的に比較するベンチマークツールです。
 
+## 🆕 バージョン管理システム
+
+**新機能**: ベンチマーク結果をバージョンごとに固定名で保存・管理するシステムを追加しました。
+
+詳細は [VERSION_MANAGEMENT.md](VERSION_MANAGEMENT.md) を参照してください。
+
+### 主な機能
+- ✅ バージョン固定名での結果保存（例: `v1.8.9_v1.0.0_v0.1.0-beta`）
+- ✅ 同じバージョンの結果の上書き許可
+- ✅ 複数バージョン間の詳細比較（`compare_versions.py`）
+- ✅ 自動的な履歴管理（`version_history.json`）
+- ✅ GitHub Actions との連携
+
+### クイックスタート
+
+```bash
+# ベンチマーク実行（結果は自動的にバージョン管理される）
+python fast_comprehensive_benchmark.py
+
+# バージョン間比較レポート生成
+python compare_versions.py
+
+# バージョン管理システムのテスト
+python test_version_manager.py
+```
+
 ## 📊 作成されたベンチマークツール
 
 ### 1. `comprehensive_benchmark.py` (フル機能版)

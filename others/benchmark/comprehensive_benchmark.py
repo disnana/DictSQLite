@@ -61,6 +61,14 @@ from dictsqlite.main import DictSQLite
 from dictsqlite_fastest.main import DictSQLiteFastest, AsyncDictSQLiteFastest
 from dictsqlite_fastest_beta import DictSQLiteFastestBeta, AsyncDictSQLiteFastestBeta
 
+# バージョン管理システムのインポート
+try:
+    from version_manager import VersionManager
+    VERSION_MANAGER_AVAILABLE = True
+except ImportError:
+    VERSION_MANAGER_AVAILABLE = False
+    print("⚠ version_manager.pyが見つかりません。バージョン管理機能は無効化されます。")
+
 
 # =====================================================================
 # ユーティリティ関数
@@ -111,10 +119,11 @@ def calculate_stats(times: List[float]) -> Dict[str, float]:
 class ComprehensiveBenchmark:
     """包括的ベンチマークマネージャー"""
     
-    def __init__(self, output_dir: str = None):
+    def __init__(self, output_dir: str = None, use_version_manager: bool = True):
         """
         Args:
             output_dir: 結果を保存するディレクトリ（デフォルト: /others/benchmark/results）
+            use_version_manager: バージョン管理システムを使用するか
         """
         if output_dir is None:
             output_dir = str(BASE_DIR / "results")
@@ -128,7 +137,20 @@ class ComprehensiveBenchmark:
         # タイムスタンプ
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # ログファイル
+        # Beta版のバージョンを環境変数から取得
+        beta_version = os.getenv('BETA_VERSION', None)
+        
+        # バージョン管理システム
+        self.use_version_manager = use_version_manager and VERSION_MANAGER_AVAILABLE
+        if self.use_version_manager:
+            self.version_manager = VersionManager(self.output_dir, beta_version=beta_version)
+            self.version_string = self.version_manager.get_version_string()
+            print(f"✓ バージョン管理システム有効: {self.version_string}")
+        else:
+            self.version_manager = None
+            self.version_string = None
+        
+        # ログファイル（タイムスタンプ付き - 一時ファイル）
         self.log_file = self.output_dir / f"benchmark_{self.timestamp}.log"
         self.csv_file = self.output_dir / f"benchmark_{self.timestamp}.csv"
         self.json_file = self.output_dir / f"benchmark_{self.timestamp}.json"
@@ -167,8 +189,9 @@ class ComprehensiveBenchmark:
         for _ in range(warmup):
             try:
                 func()
-            except Exception:
-                pass
+            except Exception as e:  # nosec B112 - Warmup errors are expected and non-critical
+                # Warmup時のエラーは無視（初回実行での初期化エラー等）
+                continue
         
         # 測定
         times = []
@@ -519,6 +542,84 @@ class ComprehensiveBenchmark:
         
         # メモリ解放
         gc.collect()
+    
+    def save_to_version_manager(self):
+        """バージョン管理システムを使用して結果を保存"""
+        if not self.use_version_manager or not self.version_manager:
+            print("⚠ バージョン管理システムが有効化されていません")
+            return
+        
+        print("\n" + "=" * 80)
+        print("バージョン管理システムを使用して結果を保存中...")
+        print("=" * 80)
+        
+        # CSV内容を読み込み
+        csv_content = None
+        if self.csv_file.exists():
+            with open(self.csv_file, 'r', encoding='utf-8') as f:
+                csv_content = f.read()
+        
+        # JSON内容を読み込み
+        json_content = None
+        if self.json_file.exists():
+            with open(self.json_file, 'r', encoding='utf-8') as f:
+                json_content = json.load(f)
+        
+        # サマリー内容を読み込み
+        summary_content = None
+        if self.summary_file.exists():
+            with open(self.summary_file, 'r', encoding='utf-8') as f:
+                summary_content = f.read()
+        
+        # ログ内容を読み込み
+        log_content = None
+        if self.log_file.exists():
+            with open(self.log_file, 'r', encoding='utf-8') as f:
+                log_content = f.read()
+        
+        # バージョン管理システムに保存
+        saved_files = self.version_manager.save_benchmark_result(
+            csv_content=csv_content,
+            json_content=json_content,
+            summary_content=summary_content,
+            log_content=log_content,
+            version_string=self.version_string
+        )
+        
+        print(f"\n✓ バージョン {self.version_string} の結果を保存しました")
+        print(f"  保存先: {self.version_manager.version_results_dir / self.version_string}")
+        
+        # グラフ生成を実行（バージョン固有のディレクトリに直接生成）
+        self._generate_benchmark_graphs(saved_files)
+        
+        return saved_files
+    
+    def _generate_benchmark_graphs(self, saved_files: Dict[str, Path]):
+        """ベンチマーク結果グラフを生成"""
+        if 'csv' not in saved_files:
+            print("⚠ CSVファイルがないため、グラフ生成をスキップ")
+            return
+        
+        try:
+            print("\n" + "=" * 80)
+            print("ベンチマークグラフ生成中...")
+            print("=" * 80)
+            
+            from generate_graphs import BenchmarkGraphGenerator
+            
+            generator = BenchmarkGraphGenerator(
+                csv_path=saved_files['csv'],
+                version_type=self.version_string
+            )
+            generator.generate_all_graphs()
+            
+            print("\n✓ グラフ生成完了")
+        except ImportError as e:
+            print(f"⚠ グラフ生成モジュールのインポートに失敗: {e}")
+        except Exception as e:
+            print(f"⚠ グラフ生成中にエラーが発生: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 # =====================================================================
@@ -1461,8 +1562,9 @@ def main():
                 old_logs_size_kb += old_file.stat().st_size / 1024
                 old_file.unlink()
                 old_logs_count += 1
-            except Exception:
-                pass
+            except (OSError, PermissionError) as e:  # nosec B112 - File deletion errors are non-critical
+                # ファイル削除エラーは無視（使用中、権限不足等）
+                continue
         
         if old_logs_count > 0:
             print(f"✓ 古いログ/CSV/JSON削除: {old_logs_count}個 ({old_logs_size_kb:.1f} KB)")
@@ -1524,6 +1626,15 @@ def main():
                 import traceback
                 traceback.print_exc()
         
+        # ===== バージョン管理システムへの保存 =====
+        if benchmark.use_version_manager:
+            try:
+                benchmark.save_to_version_manager()
+            except Exception as e:
+                print(f"⚠ バージョン管理システムへの保存中にエラーが発生: {e}")
+                import traceback
+                traceback.print_exc()
+        
         # ===== 結果表示 =====
         print("\n" + "="*80)
         print("ベンチマーク完了!")
@@ -1533,6 +1644,13 @@ def main():
         print(f"  - CSV: {benchmark.csv_file.name}")
         print(f"  - JSON: {benchmark.json_file.name}")
         print(f"  - サマリー: {benchmark.summary_file.name}")
+        
+        # バージョン管理情報を表示
+        if benchmark.use_version_manager:
+            print(f"\nバージョン管理システム:")
+            print(f"  - バージョン: {benchmark.version_string}")
+            version_dir = benchmark.version_manager.version_results_dir / benchmark.version_string
+            print(f"  - 保存先: {version_dir.relative_to(benchmark.output_dir.parent)}/")
         
         # グラフディレクトリの情報を簡潔に表示
         graph_dir = benchmark.output_dir / "graphs"
