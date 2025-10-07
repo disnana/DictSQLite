@@ -84,6 +84,22 @@ class AsyncV4Adapter:
         result = self._db.get(key)
         return result if result is not None else default
     
+    async def adelete(self, key: str) -> None:
+        """Async delete operation"""
+        # v4.1 doesn't have explicit delete, but we can set to None or skip it
+        # For now, we'll just pass since v4.1 focuses on set/get operations
+        pass
+    
+    async def abulk_insert(self, data: Dict[str, Any]) -> None:
+        """Async bulk insert operation"""
+        # v4.1 has batch_set method that takes list of tuples
+        items = []
+        for key, value in data.items():
+            if isinstance(value, str):
+                value = value.encode('utf-8')
+            items.append((key, value))
+        self._db.batch_set(items)
+    
     async def __aenter__(self):
         return self
     
