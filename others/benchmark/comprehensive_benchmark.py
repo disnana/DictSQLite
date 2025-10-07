@@ -596,7 +596,37 @@ class ComprehensiveBenchmark:
         print(f"\n✓ バージョン {self.version_string} の結果を保存しました")
         print(f"  保存先: {self.version_manager.version_results_dir / self.version_string}")
         
+        # グラフ生成を実行
+        self._generate_benchmark_graphs(saved_files)
+        
         return saved_files
+    
+    def _generate_benchmark_graphs(self, saved_files: Dict[str, Path]):
+        """ベンチマーク結果グラフを生成"""
+        if 'csv' not in saved_files:
+            print("⚠ CSVファイルがないため、グラフ生成をスキップ")
+            return
+        
+        try:
+            print("\n" + "=" * 80)
+            print("ベンチマークグラフ生成中...")
+            print("=" * 80)
+            
+            from generate_graphs import BenchmarkGraphGenerator
+            
+            generator = BenchmarkGraphGenerator(
+                csv_path=saved_files['csv'],
+                version_type=self.version_string
+            )
+            generator.generate_all_graphs()
+            
+            print("\n✓ グラフ生成完了")
+        except ImportError as e:
+            print(f"⚠ グラフ生成モジュールのインポートに失敗: {e}")
+        except Exception as e:
+            print(f"⚠ グラフ生成中にエラーが発生: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 # =====================================================================
