@@ -344,6 +344,11 @@ db.close()
 - [BETA_ASYNC_PERFORMANCE_FIX.md](../BETA_ASYNC_PERFORMANCE_FIX.md) - Beta版の実証
 - [DEVELOPER_GUIDE_JP.md](./DEVELOPER_GUIDE_JP.md) - 開発者向け詳細ガイド
 
+### 機能拡張ガイド
+
+- [JSON_MODE_TABLE_SUPPORT_FEASIBILITY_JP.md](./JSON_MODE_TABLE_SUPPORT_FEASIBILITY_JP.md) - JSONモード・テーブルサポート実装可能性調査
+- [ISSUE_RESPONSE_JSON_TABLE_SUPPORT_JP.md](./ISSUE_RESPONSE_JSON_TABLE_SUPPORT_JP.md) - JSONモード・テーブルサポートに関する回答まとめ
+
 ---
 
 ## 📝 変更履歴
