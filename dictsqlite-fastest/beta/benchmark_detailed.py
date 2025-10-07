@@ -1,9 +1,10 @@
-"""Detailed benchmark: Optimization-specific tests for v1, v2, and v3
+"""Detailed benchmark: Optimization-specific tests for v1, v2, v3, and v4
 
 Tests specific optimization features of each version:
 - v1: Memory budget, cache efficiency, ThreadPoolExecutor
 - v2: Batching, aiosqlite performance 
 - v3: Connection pool scaling, prefetch patterns, adaptive batching
+- v4: Ultra-fast cache, lock-free operations, minimal overhead
 """
 
 import asyncio
@@ -20,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from dictsqlite_fastest_beta import AsyncDictSQLiteFastestBeta as AsyncV1
 from dictsqlite_fastest_beta_v2 import AsyncDictSQLiteFastestBeta as AsyncV2
 from dictsqlite_fastest_beta_v3_alpha import AsyncDictSQLiteFastestBetaV3 as AsyncV3
+from dictsqlite_fastest_beta_v4_final import AsyncDictSQLiteFastestBetaV4Final as AsyncV4
 
 
 async def test_v1_cache_efficiency(db_path: str):
@@ -193,7 +195,108 @@ async def test_v3_prefetch_patterns(db_path: str):
         print(f"    Prefetch hits: {prefetch_random.get('prefetch_hits', 0)}")
 
 
-async def test_concurrent_stress(db_path_v1: str, db_path_v2: str, db_path_v3: str):
+async def test_v4_ultra_fast_cache(db_path: str):
+    """Test v4's ultra-fast cache performance."""
+    print("\n" + "="*70)
+    print("v4: Ultra-Fast Cache Performance Test")
+    print("="*70)
+    
+    async with AsyncV4(
+        db_path,
+        cache_max_size=5000,
+        enable_stats=True,
+        pool_size=8,
+        auto_preload=False
+    ) as db:
+        # Populate data
+        print("Populating 2000 items...")
+        for i in range(2000):
+            await db.aset(f'cache_key_{i}', {'id': i, 'data': f'value_{i}'})
+        
+        # Test cache hit performance
+        print("Testing cache performance (1000 reads, repeated)...")
+        
+        # First pass - populate cache
+        for i in range(500):
+            await db.aget(f'cache_key_{i}')
+        
+        # Second pass - measure cache hit performance
+        start = time.time()
+        for i in range(500):
+            await db.aget(f'cache_key_{i}')
+        cache_hit_time = time.time() - start
+        cache_hit_ops = 500 / cache_hit_time
+        
+        # Third pass - measure cache miss performance
+        start = time.time()
+        for i in range(500, 1000):
+            await db.aget(f'cache_key_{i}')
+        cache_miss_time = time.time() - start
+        cache_miss_ops = 500 / cache_miss_time
+        
+        print(f"\nResults:")
+        print(f"  Cache hit:  {cache_hit_time:.3f}s ({cache_hit_ops:>8.0f} ops/sec)")
+        print(f"  Cache miss: {cache_miss_time:.3f}s ({cache_miss_ops:>8.0f} ops/sec)")
+        print(f"  Cache speedup: {cache_hit_ops/cache_miss_ops:.2f}x")
+        
+        # Print cache statistics
+        if hasattr(db, '_cache'):
+            cache_size = len(db._cache)
+            print(f"  Cache size: {cache_size} items")
+
+
+async def test_v4_minimal_overhead(db_path: str):
+    """Test v4's minimal overhead in operations."""
+    print("\n" + "="*70)
+    print("v4: Minimal Overhead Test")
+    print("="*70)
+    
+    async with AsyncV4(
+        db_path,
+        cache_max_size=10000,
+        enable_stats=True,
+        pool_size=10,
+        auto_preload=False
+    ) as db:
+        # Populate data
+        print("Populating 1000 items...")
+        for i in range(1000):
+            await db.aset(f'overhead_key_{i}', f'value_{i}')
+        
+        # Test rapid sequential operations
+        print("Testing rapid sequential operations (5000 ops)...")
+        start = time.time()
+        for i in range(5000):
+            key = f'overhead_key_{i % 1000}'
+            await db.aget(key)
+        elapsed = time.time() - start
+        ops_per_sec = 5000 / elapsed
+        
+        print(f"\nResults:")
+        print(f"  Time: {elapsed:.3f}s")
+        print(f"  Throughput: {ops_per_sec:>10.0f} ops/sec")
+        print(f"  Overhead per op: {elapsed/5000*1000:.3f} ms")
+        
+        # Test concurrent operations with minimal locking
+        print("\nTesting concurrent operations (12 tasks, 1000 ops total)...")
+        
+        async def concurrent_batch(start_idx, count):
+            for i in range(count):
+                key = f'overhead_key_{(start_idx + i) % 1000}'
+                await db.aget(key)
+        
+        start = time.time()
+        tasks = [concurrent_batch(i * 100, 100) for i in range(10)]
+        await asyncio.gather(*tasks)
+        elapsed = time.time() - start
+        concurrent_ops_per_sec = 1000 / elapsed
+        
+        print(f"  Time: {elapsed:.3f}s")
+        print(f"  Throughput: {concurrent_ops_per_sec:>10.0f} ops/sec")
+        print(f"  Speedup vs sequential: {concurrent_ops_per_sec/ops_per_sec:.2f}x")
+
+
+async def test_concurrent_stress(db_path_v1: str, db_path_v2: str, db_path_v3: str, db_path_v4: str):
     """Stress test with high concurrency for all versions."""
     print("\n" + "="*70)
     print("Concurrent Stress Test (All Versions)")
@@ -239,10 +342,20 @@ async def test_concurrent_stress(db_path_v1: str, db_path_v2: str, db_path_v3: s
     ) as db_v3:
         v3_ops = await stress_test(db_v3, "v3", 1000, 16)
     
+    async with AsyncV4(
+        db_path_v4,
+        cache_max_size=10000,
+        enable_stats=True,
+        pool_size=16,
+        auto_preload=False
+    ) as db_v4:
+        v4_ops = await stress_test(db_v4, "v4", 1000, 16)
+    
     print(f"\nComparison:")
-    print(f"  v1: {v1_ops:.0f} ops/sec (baseline)")
-    print(f"  v2: {v2_ops:.0f} ops/sec ({v2_ops/v1_ops:.2f}x)")
-    print(f"  v3: {v3_ops:.0f} ops/sec ({v3_ops/v1_ops:.2f}x)")
+    print(f"  v1: {v1_ops:>10.0f} ops/sec (baseline)")
+    print(f"  v2: {v2_ops:>10.0f} ops/sec ({v2_ops/v1_ops:>5.2f}x)")
+    print(f"  v3: {v3_ops:>10.0f} ops/sec ({v3_ops/v1_ops:>5.2f}x)")
+    print(f"  v4: {v4_ops:>10.0f} ops/sec ({v4_ops/v1_ops:>5.2f}x)")
 
 
 async def main():
@@ -253,7 +366,7 @@ async def main():
     
     # Create temp files
     temp_files = []
-    for i in range(6):
+    for i in range(9):  # Updated to 9 for v4 tests
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f'_test{i}.db')
         temp_files.append(tmp.name)
         tmp.close()
@@ -269,8 +382,12 @@ async def main():
         await test_v3_connection_pool_scaling(temp_files[2])
         await test_v3_prefetch_patterns(temp_files[3])
         
+        # v4 tests
+        await test_v4_ultra_fast_cache(temp_files[4])
+        await test_v4_minimal_overhead(temp_files[5])
+        
         # Stress test
-        await test_concurrent_stress(temp_files[4], temp_files[5], temp_files[5])
+        await test_concurrent_stress(temp_files[6], temp_files[7], temp_files[8], temp_files[8])
         
         print("\n" + "="*70)
         print("✅ All detailed benchmarks completed!")

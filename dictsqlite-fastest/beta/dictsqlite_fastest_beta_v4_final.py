@@ -304,7 +304,7 @@ class AsyncDictSQLiteFastestBetaV4Final:
         # Update cache immediately (zero-copy)
         self._cache.set(key, value)
         
-        # Write to DB without commit (WAL handles it)
+        # Write to DB with commit for data safety
         await self._ensure_initialized()
         conn = await self._available_connections.get()
         try:
@@ -313,7 +313,8 @@ class AsyncDictSQLiteFastestBetaV4Final:
                 f'INSERT OR REPLACE INTO {self.table_name} (key, value) VALUES (?, ?)',
                 (key, value_str)
             )
-            # No commit - WAL mode handles this efficiently
+            # Commit to ensure data persistence (WAL mode makes this fast)
+            await conn.commit()
         finally:
             await self._available_connections.put(conn)
     
