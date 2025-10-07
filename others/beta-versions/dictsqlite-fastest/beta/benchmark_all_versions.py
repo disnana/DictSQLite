@@ -12,14 +12,18 @@ import os
 import sys
 import tempfile
 import time
+import importlib.util
 from pathlib import Path
 from typing import Dict, Tuple, Any, List
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Add v4.1 to path
-v4_1_path = Path(__file__).parent.parent.parent.parent / 'beta-versions' / 'dictsqlite_v4.1'
+# Add v4.1 to path - it's in others/beta-versions/dictsqlite_v4.1
+# Script is in: others/beta-versions/dictsqlite-fastest/beta/benchmark_all_versions.py
+# parent = beta/, parent.parent = dictsqlite-fastest/, parent.parent.parent = beta-versions/
+# So: parent.parent.parent / 'dictsqlite_v4.1' = beta-versions/dictsqlite_v4.1/
+v4_1_path = Path(__file__).parent.parent.parent / 'dictsqlite_v4.1'
 sys.path.insert(0, str(v4_1_path))
 
 from dictsqlite_fastest_beta import AsyncDictSQLiteFastestBeta as AsyncV1
@@ -28,10 +32,24 @@ from dictsqlite_fastest_beta_v3_alpha import AsyncDictSQLiteFastestBetaV3 as Asy
 
 # Import Rust v4.1
 try:
-    from dictsqlite_v4 import AsyncDictSQLite as _RustAsyncV4
-    RUST_V4_AVAILABLE = True
-except ImportError:
-    print("⚠️ Warning: Rust v4.1 not available. Please build it:")
+    # v4.1 directory name has a dot, so we need to use importlib
+    v4_1_init = v4_1_path / '__init__.py'
+    if not v4_1_init.exists():
+        raise ImportError(f"v4.1 __init__.py not found at {v4_1_init}")
+    
+    spec = importlib.util.spec_from_file_location("dictsqlite_v4_1_module", str(v4_1_init))
+    dictsqlite_v4_1 = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(dictsqlite_v4_1)
+    
+    if hasattr(dictsqlite_v4_1, 'AsyncDictSQLite'):
+        _RustAsyncV4 = dictsqlite_v4_1.AsyncDictSQLite
+        RUST_V4_AVAILABLE = True
+        print(f"✓ Rust v4.1 loaded successfully from {v4_1_path}")
+    else:
+        raise ImportError("AsyncDictSQLite not available in dictsqlite_v4.1 package")
+except (ImportError, AttributeError) as e:
+    print(f"⚠️ Warning: Rust v4.1 not available: {e}")
+    print("   Please build it:")
     print("   cd others/beta-versions/dictsqlite_v4.1 && maturin develop --release")
     _RustAsyncV4 = None
     RUST_V4_AVAILABLE = False
