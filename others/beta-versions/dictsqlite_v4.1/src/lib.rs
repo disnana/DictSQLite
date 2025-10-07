@@ -5,6 +5,8 @@ use dashmap::DashMap;
 use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+use lru::LruCache;
+use std::num::NonZeroUsize;
 
 mod storage;
 mod cache;
@@ -44,10 +46,11 @@ impl FromStr for PersistMode {
     }
 }
 
-/// High-performance DictSQLite v4.0 implementation with enhanced security
+/// High-performance DictSQLite v4.1 implementation with enhanced security
 /// 
 /// Architecture:
 /// - Lock-free concurrent hashmap for hot tier (100M+ ops/sec)
+/// - LRU eviction for memory management
 /// - Memory-mapped warm tier for frequently accessed data
 /// - SQLite cold tier for persistence
 /// - Async support for I/O operations
@@ -57,6 +60,9 @@ impl FromStr for PersistMode {
 pub struct DictSQLiteV4 {
     /// Hot tier: Lock-free concurrent hashmap (in-memory)
     hot_tier: Arc<DashMap<String, Vec<u8>>>,
+    
+    /// LRU tracker for eviction (protects insertion order)
+    access_tracker: Arc<Mutex<LruCache<String, ()>>>,
     
     /// Storage engine managing warm and cold tiers
     storage: Arc<Mutex<Option<StorageEngine>>>,
@@ -139,6 +145,11 @@ impl DictSQLiteV4 {
             config.num_shards,
         ));
         
+        // Initialize LRU tracker for eviction
+        let access_tracker = Arc::new(Mutex::new(
+            LruCache::new(NonZeroUsize::new(config.hot_tier_capacity).unwrap())
+        ));
+        
         // Only create storage if not in pure memory mode
         let storage = if config.persist_mode == PersistMode::Memory {
             Arc::new(Mutex::new(None))
@@ -179,6 +190,7 @@ impl DictSQLiteV4 {
         
         Ok(DictSQLiteV4 {
             hot_tier,
+            access_tracker,
             storage,
             config,
             crypto,
@@ -188,6 +200,9 @@ impl DictSQLiteV4 {
     
     /// Get value by key (lock-free read from hot tier)
     fn get(&self, key: String, py: Python) -> PyResult<Option<PyObject>> {
+        // Track access for LRU
+        self.access_tracker.lock().unwrap().put(key.clone(), ());
+        
         // Try hot tier first (lock-free read)
         if let Some(value) = self.hot_tier.get(&key) {
             // Decrypt if encryption is enabled
@@ -245,6 +260,9 @@ impl DictSQLiteV4 {
         
         self.hot_tier.insert(key.clone(), data.clone());
         
+        // Track access for LRU
+        self.access_tracker.lock().unwrap().put(key.clone(), ());
+        
         // Persist immediately if WriteThrough mode
         if self.config.persist_mode == PersistMode::WriteThrough {
             let mut storage_guard = self.storage.lock().unwrap();
@@ -256,7 +274,29 @@ impl DictSQLiteV4 {
         
         // Check if we need to evict to warm tier
         if self.hot_tier.len() > self.config.hot_tier_capacity {
-            // TODO: Implement LRU eviction to warm tier
+            self.evict_to_warm_tier()?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Evict least recently used item to warm tier (storage)
+    fn evict_to_warm_tier(&self) -> PyResult<()> {
+        let mut tracker = self.access_tracker.lock().unwrap();
+        
+        // Find LRU entry
+        if let Some((evict_key, _)) = tracker.pop_lru() {
+            // Remove from hot tier
+            if let Some((_, value)) = self.hot_tier.remove(&evict_key) {
+                // Write to storage if not in memory mode
+                if self.config.persist_mode != PersistMode::Memory {
+                    let mut storage_guard = self.storage.lock().unwrap();
+                    if let Some(ref mut storage) = *storage_guard {
+                        storage.set(&evict_key, &value)
+                            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+                    }
+                }
+            }
         }
         
         Ok(())
