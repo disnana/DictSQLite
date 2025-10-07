@@ -32,13 +32,27 @@ BENCHMARK_DIR = REPO_ROOT / 'others' / 'benchmark'
 sys.path.insert(0, str(BENCHMARK_DIR))
 
 # Import versions
-from dictsqlite.main import DictSQLite  # Original (sync only)
-from dictsqlite_fastest_beta_v2 import AsyncDictSQLiteFastestBeta as AsyncBetaV2
+try:
+    from dictsqlite.main import DictSQLite  # Original (sync only)
+    ORIGINAL_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠ DictSQLite (Original) not available: {e}")
+    DictSQLite = None
+    ORIGINAL_AVAILABLE = False
+
+try:
+    from dictsqlite_fastest_beta_v2 import AsyncDictSQLiteFastestBeta as AsyncBetaV2
+    BETA_V2_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠ dictsqlite-fastest Beta v2 not available: {e}")
+    AsyncBetaV2 = None
+    BETA_V2_AVAILABLE = False
+
 try:
     from dictsqlite_v4 import AsyncDictSQLite as AsyncV4_1  # v4.1 async
     V4_1_AVAILABLE = True
-except ImportError:
-    print("⚠ dictsqlite_v4.1 native extension not available. Please build it first.")
+except ImportError as e:
+    print(f"⚠ dictsqlite_v4.1 native extension not available: {e}")
     AsyncV4_1 = None
     V4_1_AVAILABLE = False
 
@@ -189,6 +203,18 @@ async def benchmark_mixed_operations(db, count: int) -> Tuple[float, float]:
 
 def run_original_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
     """Run benchmark for Original DictSQLite (sync)."""
+    if not ORIGINAL_AVAILABLE:
+        print(f"\n{'='*70}")
+        print(f"Skipping: Original DictSQLite (not available)")
+        print(f"{'='*70}")
+        return {
+            'basic_write': (0, 0),
+            'basic_read': (0, 0),
+            'concurrent_read': (0, 0),
+            'bulk_insert': (0, 0),
+            'mixed_ops': (0, 0)
+        }
+    
     print(f"\n{'='*70}")
     print(f"Benchmarking: Original DictSQLite (sqlite3-based)")
     print(f"{'='*70}")
@@ -225,6 +251,18 @@ def run_original_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
 
 async def run_beta_v2_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
     """Run benchmark for Beta v2 with optimized settings."""
+    if not BETA_V2_AVAILABLE:
+        print(f"\n{'='*70}")
+        print(f"Skipping: dictsqlite-fastest Beta v2 (not available)")
+        print(f"{'='*70}")
+        return {
+            'basic_write': (0, 0),
+            'basic_read': (0, 0),
+            'concurrent_read': (0, 0),
+            'bulk_insert': (0, 0),
+            'mixed_ops': (0, 0)
+        }
+    
     print(f"\n{'='*70}")
     print(f"Benchmarking: dictsqlite-fastest Beta v2 (aiosqlite + batching)")
     print(f"{'='*70}")
@@ -357,10 +395,32 @@ async def main():
     print("DictSQLite Comprehensive Benchmark")
     print("Original vs Beta v2 vs v4.1")
     print("=" * 70)
-    print("\nThis benchmark tests:")
-    print("  - DictSQLite (Original): Standard sqlite3-based")
-    print("  - dictsqlite-fastest Beta v2: Async high-performance")
-    print("  - dictsqlite_v4.1: Rust-based ultra-fast")
+    
+    # Check if at least one version is available
+    if not any([ORIGINAL_AVAILABLE, BETA_V2_AVAILABLE, V4_1_AVAILABLE]):
+        print("\n❌ ERROR: No versions available to benchmark!")
+        print("Please install at least one of:")
+        print("  - DictSQLite (Original): pip install -e .")
+        print("  - dictsqlite-fastest Beta v2: Requires APSW")
+        print("  - dictsqlite_v4.1: Build with: cd others/beta-versions/dictsqlite_v4.1 && ./build.sh")
+        return 1
+    
+    print("\nAvailable versions:")
+    if ORIGINAL_AVAILABLE:
+        print("  ✓ DictSQLite (Original): Standard sqlite3-based")
+    else:
+        print("  ✗ DictSQLite (Original): Not available")
+    
+    if BETA_V2_AVAILABLE:
+        print("  ✓ dictsqlite-fastest Beta v2: Async high-performance")
+    else:
+        print("  ✗ dictsqlite-fastest Beta v2: Not available")
+    
+    if V4_1_AVAILABLE:
+        print("  ✓ dictsqlite_v4.1: Rust-based ultra-fast")
+    else:
+        print("  ✗ dictsqlite_v4.1: Not available")
+    
     print("\nTest operations:")
     print("  - Basic operations (write, read)")
     print("  - Concurrent operations (async versions only)")
@@ -434,33 +494,52 @@ async def main():
         # Calculate averages (excluding concurrent_read for Original as it's async-only)
         sync_test_names = ['basic_write', 'basic_read', 'bulk_insert', 'mixed_ops']
         
-        original_avg = sum(original_results[name][1] for name in sync_test_names) / len(sync_test_names)
-        beta_v2_avg = sum(beta_v2_results[name][1] for name in sync_test_names) / len(sync_test_names)
-        v4_1_avg = sum(v4_1_results[name][1] for name in sync_test_names if V4_1_AVAILABLE) / len(sync_test_names) if V4_1_AVAILABLE else 0
+        # Only calculate averages for available versions
+        original_avg = sum(original_results[name][1] for name in sync_test_names) / len(sync_test_names) if ORIGINAL_AVAILABLE else 0
+        beta_v2_avg = sum(beta_v2_results[name][1] for name in sync_test_names) / len(sync_test_names) if BETA_V2_AVAILABLE else 0
+        v4_1_avg = sum(v4_1_results[name][1] for name in sync_test_names) / len(sync_test_names) if V4_1_AVAILABLE else 0
         
         print(f"\nAverage throughput (ops/sec) - sync operations only:")
-        print(f"  Original:  {original_avg:>10.0f}")
-        print(f"  Beta v2:   {beta_v2_avg:>10.0f} ({beta_v2_avg/original_avg:>5.2f}x vs Original)")
+        if ORIGINAL_AVAILABLE:
+            print(f"  Original:  {original_avg:>10.0f}")
+        if BETA_V2_AVAILABLE:
+            baseline_avg = original_avg if original_avg > 0 else beta_v2_avg
+            if baseline_avg > 0:
+                print(f"  Beta v2:   {beta_v2_avg:>10.0f} ({beta_v2_avg/baseline_avg:>5.2f}x vs baseline)")
+            else:
+                print(f"  Beta v2:   {beta_v2_avg:>10.0f}")
         if V4_1_AVAILABLE and v4_1_avg > 0:
-            print(f"  v4.1:      {v4_1_avg:>10.0f} ({v4_1_avg/original_avg:>5.2f}x vs Original)")
+            baseline_avg = original_avg if original_avg > 0 else (beta_v2_avg if beta_v2_avg > 0 else v4_1_avg)
+            if baseline_avg > 0 and baseline_avg != v4_1_avg:
+                print(f"  v4.1:      {v4_1_avg:>10.0f} ({v4_1_avg/baseline_avg:>5.2f}x vs baseline)")
+            else:
+                print(f"  v4.1:      {v4_1_avg:>10.0f}")
         
         # Determine winner
         print(f"\n{'='*70}")
         print("Summary")
         print(f"{'='*70}")
         
-        versions = [('Original', original_avg), ('Beta v2', beta_v2_avg)]
+        versions = []
+        if ORIGINAL_AVAILABLE and original_avg > 0:
+            versions.append(('Original', original_avg))
+        if BETA_V2_AVAILABLE and beta_v2_avg > 0:
+            versions.append(('Beta v2', beta_v2_avg))
         if V4_1_AVAILABLE and v4_1_avg > 0:
             versions.append(('v4.1', v4_1_avg))
         
-        sorted_versions = sorted(versions, key=lambda x: x[1], reverse=True)
-        winner = sorted_versions[0]
-        
-        print(f"\n🏆 Winner: {winner[0]} ({winner[1]:.0f} ops/sec)")
-        print(f"\nPerformance ranking:")
-        for i, (name, ops) in enumerate(sorted_versions, 1):
-            vs_baseline = ((ops / original_avg) - 1) * 100
-            print(f"  {i}. {name}: {ops:>10.0f} ops/sec ({vs_baseline:+.1f}% vs Original)")
+        if not versions:
+            print("\n⚠ No successful benchmarks to compare")
+        else:
+            sorted_versions = sorted(versions, key=lambda x: x[1], reverse=True)
+            winner = sorted_versions[0]
+            
+            print(f"\n🏆 Winner: {winner[0]} ({winner[1]:.0f} ops/sec)")
+            print(f"\nPerformance ranking:")
+            baseline_for_comparison = sorted_versions[-1][1]  # Use slowest as baseline
+            for i, (name, ops) in enumerate(sorted_versions, 1):
+                vs_baseline = ((ops / baseline_for_comparison) - 1) * 100
+                print(f"  {i}. {name}: {ops:>10.0f} ops/sec ({vs_baseline:+.1f}% vs baseline)")
         
         print(f"\n{'='*70}")
         print("✅ Benchmark completed successfully!")
