@@ -1,4 +1,16 @@
-Version,Test,OPS,Duration(s),Result
-original,Test 1,2000,0.5,成功
-fastest,Test 1,5000,0.2,成功
-beta,Test 1,4000,0.25,成功
+Version,Test,OPS,Time (s),Result
+original,Basic Write (300 items),3722.9753239836677,0.0805807113647461,成功
+fastest,Basic Write (300 items),5711.872316086684,0.05252218246459961,成功
+beta,Basic Write (300 items),816.7179431259688,0.3673238754272461,成功
+original,Basic Read (300 items),611711.8133203695,0.0004904270172119141,成功
+fastest,Basic Read (300 items),1353001.2903225806,0.00022172927856445312,成功
+beta,Basic Read (300 items),1143901.0909090908,0.00026226043701171875,成功
+original,"Concurrent Read (600 items, 8 concurrent)",17755.79716791432,0.03379178047180176,成功
+fastest,"Concurrent Read (600 items, 8 concurrent)",7909.577614412467,0.07585740089416504,成功
+beta,"Concurrent Read (600 items, 8 concurrent)",10882.471427150585,0.05513453483581543,成功
+original,Bulk Insert (500 items),256218.93708002442,0.001951456069946289,成功
+fastest,Bulk Insert (500 items),339015.8422243776,0.0014748573303222656,成功
+beta,Bulk Insert (500 items),17814.444199045207,0.02806711196899414,成功
+original,Mixed Operations (400 items),6991.52626424687,0.057212114334106445,成功
+fastest,Mixed Operations (400 items),131287.39337976367,0.003046751022338867,成功
+beta,Mixed Operations (400 items),1202.5721250853874,0.33262038230895996,成功
