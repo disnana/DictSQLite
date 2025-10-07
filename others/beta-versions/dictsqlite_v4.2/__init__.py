@@ -72,7 +72,7 @@ class DictSQLiteV4:
     
     def __getitem__(self, key):
         """Get value by key"""
-        result = self._db.get(str(key))
+        result = self._db.get(str(key), None)
         if result is None:
             raise KeyError(key)
         return result
@@ -100,10 +100,15 @@ class DictSQLiteV4:
     
     def get(self, key, default=None):
         """Get value with default"""
-        try:
-            return self[key]
-        except KeyError:
-            return default
+        # Convert default to bytes if needed
+        if default is not None:
+            if isinstance(default, str):
+                default = default.encode('utf-8')
+            elif not isinstance(default, bytes):
+                import pickle
+                default = pickle.dumps(default)
+        
+        return self._db.get(str(key), default)
     
     def keys(self):
         """Get all keys"""
@@ -111,11 +116,11 @@ class DictSQLiteV4:
     
     def values(self):
         """Get all values"""
-        return [self._db.get(k) for k in self.keys()]
+        return [self._db.get(k, None) for k in self.keys()]
     
     def items(self):
         """Get all items as (key, value) tuples"""
-        return [(k, self._db.get(k)) for k in self.keys()]
+        return [(k, self._db.get(k, None)) for k in self.keys()]
     
     def update(self, other=None, **kwargs):
         """Update from dict or kwargs"""
