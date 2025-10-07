@@ -2,114 +2,23 @@
 
 Compares performance of all four versions with optimized configurations.
 Tests basic operations, concurrent operations, and version-specific optimizations.
-
-v4 uses Rust-based DictSQLite v4.1 for maximum performance.
 """
 
 import asyncio
-import csv
 import os
 import sys
 import tempfile
 import time
-import importlib.util
 from pathlib import Path
-from typing import Dict, Tuple, Any, List
+from typing import Dict, Tuple, Any
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Add v4.1 to path - it's in others/beta-versions/dictsqlite_v4.1
-# Script is in: others/beta-versions/dictsqlite-fastest/beta/benchmark_all_versions.py
-# parent = beta/, parent.parent = dictsqlite-fastest/, parent.parent.parent = beta-versions/
-# So: parent.parent.parent / 'dictsqlite_v4.1' = beta-versions/dictsqlite_v4.1/
-v4_1_path = Path(__file__).parent.parent.parent / 'dictsqlite_v4.1'
-sys.path.insert(0, str(v4_1_path))
-
 from dictsqlite_fastest_beta import AsyncDictSQLiteFastestBeta as AsyncV1
 from dictsqlite_fastest_beta_v2 import AsyncDictSQLiteFastestBeta as AsyncV2
 from dictsqlite_fastest_beta_v3_alpha import AsyncDictSQLiteFastestBetaV3 as AsyncV3
-
-# Import Rust v4.1
-try:
-    # v4.1 directory name has a dot, so we need to use importlib
-    v4_1_init = v4_1_path / '__init__.py'
-    if not v4_1_init.exists():
-        raise ImportError(f"v4.1 __init__.py not found at {v4_1_init}")
-    
-    spec = importlib.util.spec_from_file_location("dictsqlite_v4_1_module", str(v4_1_init))
-    dictsqlite_v4_1 = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(dictsqlite_v4_1)
-    
-    # Check if the native extension is actually available
-    if hasattr(dictsqlite_v4_1, 'is_native_available') and dictsqlite_v4_1.is_native_available():
-        if hasattr(dictsqlite_v4_1, 'AsyncDictSQLite'):
-            _RustAsyncV4 = dictsqlite_v4_1.AsyncDictSQLite
-            RUST_V4_AVAILABLE = True
-            print(f"✓ Rust v4.1 with native extension loaded successfully")
-        else:
-            raise ImportError("AsyncDictSQLite not available in dictsqlite_v4.1 package")
-    else:
-        # Package loaded but native extension not available
-        print(f"⚠️ dictsqlite_v4.1 package loaded but native extension not built")
-        print("   Please build it:")
-        print("   cd others/beta-versions/dictsqlite_v4.1 && maturin develop --release")
-        raise ImportError("Native extension not available")
-except (ImportError, AttributeError) as e:
-    print(f"⚠️ Warning: Rust v4.1 not available: {e}")
-    _RustAsyncV4 = None
-    RUST_V4_AVAILABLE = False
-
-
-class AsyncV4Adapter:
-    """Adapter to make Rust v4.1 AsyncDictSQLite compatible with benchmark interface"""
-    
-    def __init__(self, db_path, **kwargs):
-        if not RUST_V4_AVAILABLE:
-            raise RuntimeError("Rust v4.1 is not available. Cannot run v4 benchmark.")
-        # v4.1 uses simpler interface
-        capacity = kwargs.get('cache_max_size', kwargs.get('capacity', 1_000_000))
-        self._db = _RustAsyncV4(db_path, capacity=capacity)
-    
-    async def aset(self, key: str, value: Any) -> None:
-        """Async set operation"""
-        if isinstance(value, str):
-            value = value.encode('utf-8')
-        # v4.1 AsyncDictSQLite has .set() method, not .set_async()
-        self._db.set(key, value)
-    
-    async def aget(self, key: str, default: Any = None) -> Any:
-        """Async get operation"""
-        # v4.1 AsyncDictSQLite has .get() method, not .get_async()
-        result = self._db.get(key)
-        return result if result is not None else default
-    
-    async def adelete(self, key: str) -> None:
-        """Async delete operation"""
-        # v4.1 doesn't have explicit delete, but we can set to None or skip it
-        # For now, we'll just pass since v4.1 focuses on set/get operations
-        pass
-    
-    async def abulk_insert(self, data: Dict[str, Any]) -> None:
-        """Async bulk insert operation"""
-        # v4.1 has batch_set method that takes list of tuples
-        items = []
-        for key, value in data.items():
-            if isinstance(value, str):
-                value = value.encode('utf-8')
-            items.append((key, value))
-        self._db.batch_set(items)
-    
-    async def __aenter__(self):
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        # Rust v4.1 handles cleanup automatically
-        pass
-
-
-# Use the adapter for v4
-AsyncV4 = AsyncV4Adapter
+from dictsqlite_fastest_beta_v4_final import AsyncDictSQLiteFastestBetaV4Final as AsyncV4
 
 
 class BenchmarkResult:
@@ -346,28 +255,20 @@ async def run_v3_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
 
 
 async def run_v4_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
-    """Run benchmark for v4 (Rust v4.1) with optimized settings."""
+    """Run benchmark for v4 with optimized settings."""
     print(f"\n{'='*70}")
-    print(f"Benchmarking: v4 (Rust v4.1 - Lock-free 100M+ ops/sec)")
+    print(f"Benchmarking: v4 (Ultra-optimized cache + connection pool)")
     print(f"{'='*70}")
-    
-    if not RUST_V4_AVAILABLE:
-        print("⚠️ Rust v4.1 not available, skipping v4 benchmark")
-        # Return dummy results
-        return {
-            'basic_write': (0.0, 0.0),
-            'basic_read': (0.0, 0.0),
-            'concurrent_read': (0.0, 0.0),
-            'bulk_insert': (0.0, 0.0),
-            'mixed_ops': (0.0, 0.0)
-        }
     
     results = {}
     
-    # v4.1 Rust version - simpler configuration, maximum performance
+    # v4 has maximum performance optimizations
     async with AsyncV4(
         db_path,
-        capacity=1_000_000
+        cache_max_size=10000,
+        enable_stats=True,
+        pool_size=8,
+        auto_preload=False
     ) as db:
         # Basic operations
         print("\n1. Basic Write (300 items)...")
@@ -395,8 +296,11 @@ async def run_v4_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
         results['mixed_ops'] = (elapsed, ops)
         print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        # v4.1 doesn't expose detailed stats in the same way
-        print(f"\n✓ Rust v4.1 completed - High-performance lock-free hashmap")
+        # Print v4 statistics
+        if hasattr(db, '_stats') and hasattr(db._stats, 'get_stats'):
+            stats = db._stats.get_stats()
+            print(f"\nv4 Statistics:")
+            print(f"  Operations: {stats}")
     
     return results
 
@@ -507,9 +411,6 @@ async def main():
         print("✅ Benchmark completed successfully!")
         print(f"{'='*70}")
         
-        # Save results to CSV and generate graphs
-        save_results_and_generate_graphs(results)
-        
     finally:
         # Cleanup
         for path in [v1_path, v2_path, v3_path, v4_path]:
@@ -517,70 +418,6 @@ async def main():
                 os.unlink(path)
     
     return 0
-
-
-def save_results_and_generate_graphs(results: List['BenchmarkResult']):
-    """Save benchmark results to CSV in the expected format and generate graphs."""
-    # Determine output directory
-    benchmark_dir = Path(__file__).parent.parent.parent.parent / 'benchmark'
-    results_dir = benchmark_dir / 'results' / 'versions' / 'all'
-    results_dir.mkdir(parents=True, exist_ok=True)
-    
-    csv_path = results_dir / 'benchmark.csv'
-    
-    print(f"\n{'='*70}")
-    print(f"Saving results to: {csv_path}")
-    print(f"{'='*70}")
-    
-    # Write CSV in Long format (compatible with generate_graphs.py)
-    csv_rows = []
-    for result in results:
-        # Add rows for each version
-        csv_rows.append({
-            'Version': 'original',
-            'Test': result.name,
-            'OPS': result.v1_ops,
-            'Time (s)': result.v1_time,
-            'Result': '成功'
-        })
-        csv_rows.append({
-            'Version': 'fastest',
-            'Test': result.name,
-            'OPS': result.v2_ops,
-            'Time (s)': result.v2_time,
-            'Result': '成功'
-        })
-        csv_rows.append({
-            'Version': 'beta',
-            'Test': result.name,
-            'OPS': result.v4_ops,  # Use v4 as beta
-            'Time (s)': result.v4_time,
-            'Result': '成功'
-        })
-    
-    # Write CSV file
-    with open(csv_path, 'w', newline='', encoding='utf-8') as f:
-        if csv_rows:
-            writer = csv.DictWriter(f, fieldnames=['Version', 'Test', 'OPS', 'Time (s)', 'Result'])
-            writer.writeheader()
-            writer.writerows(csv_rows)
-    
-    print(f"✓ CSV saved: {csv_path}")
-    
-    # Generate graphs
-    try:
-        print(f"\nGenerating graphs...")
-        sys.path.insert(0, str(benchmark_dir))
-        from generate_graphs import BenchmarkGraphGenerator
-        
-        generator = BenchmarkGraphGenerator(csv_path, version_type='all')
-        generator.generate_all_graphs()
-        
-        print(f"✓ Graphs generated successfully")
-    except Exception as e:
-        print(f"⚠ Graph generation failed: {e}")
-        import traceback
-        traceback.print_exc()
 
 
 if __name__ == "__main__":
