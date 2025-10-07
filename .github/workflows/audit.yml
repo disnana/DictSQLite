@@ -21,6 +21,6 @@ jobs:
       - uses: actions-rust-lang/audit@v1
         name: Audit Rust Dependencies
         with:
-          workingDirectory: ./dictsqlite_v4.1
+          workingDirectory: ./others/beta-versions/dictsqlite_v4.1
           # 必要に応じて無視するアドバイザリを指定
           # ignore: RUSTSEC-2020-0036
