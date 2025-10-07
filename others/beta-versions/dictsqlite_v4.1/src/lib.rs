@@ -345,6 +345,116 @@ impl DictSQLiteV4 {
         Ok(keys)
     }
     
+    /// Get all items as (key, value) tuples (dict-compatible)
+    fn items(&self, py: Python) -> PyResult<Vec<(String, PyObject)>> {
+        let items: Vec<(String, PyObject)> = self.hot_tier.iter()
+            .map(|entry| {
+                let value = if let Some(ref crypto) = self.crypto {
+                    crypto.decrypt(entry.value()).unwrap_or_else(|_| entry.value().clone())
+                } else {
+                    entry.value().clone()
+                };
+                (entry.key().clone(), PyBytes::new(py, &value).into())
+            })
+            .collect();
+        Ok(items)
+    }
+    
+    /// Get all values (dict-compatible)
+    fn values(&self, py: Python) -> PyResult<Vec<PyObject>> {
+        let values: Vec<PyObject> = self.hot_tier.iter()
+            .map(|entry| {
+                let value = if let Some(ref crypto) = self.crypto {
+                    crypto.decrypt(entry.value()).unwrap_or_else(|_| entry.value().clone())
+                } else {
+                    entry.value().clone()
+                };
+                PyBytes::new(py, &value).into()
+            })
+            .collect();
+        Ok(values)
+    }
+    
+    /// Update from dict (dict-compatible alias for bulk_insert)
+    fn update(&self, items: Bound<'_, PyDict>) -> PyResult<()> {
+        self.bulk_insert(items)
+    }
+    
+    /// Pop with optional default (dict-compatible)
+    #[pyo3(signature = (key, default=None))]
+    fn pop(&self, key: String, default: Option<Vec<u8>>, py: Python) -> PyResult<PyObject> {
+        // Track that we're removing this
+        self.access_tracker.lock().unwrap().pop(&key);
+        
+        if let Some((_, value)) = self.hot_tier.remove(&key) {
+            let data = if let Some(ref crypto) = self.crypto {
+                crypto.decrypt(&value)
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?
+            } else {
+                value
+            };
+            return Ok(PyBytes::new(py, &data).into());
+        }
+        
+        // Also try to remove from storage if it exists there
+        if self.config.persist_mode != PersistMode::Memory {
+            let mut storage_guard = self.storage.lock().unwrap();
+            if let Some(ref mut storage) = *storage_guard {
+                if let Ok(Some(value)) = storage.get(&key) {
+                    // Delete from storage
+                    let _ = storage.delete(&key);
+                    let data = if let Some(ref crypto) = self.crypto {
+                        crypto.decrypt(&value)
+                            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?
+                    } else {
+                        value
+                    };
+                    return Ok(PyBytes::new(py, &data).into());
+                }
+            }
+        }
+        
+        Ok(default.map(|v| PyBytes::new(py, &v).into())
+            .unwrap_or_else(|| py.None()))
+    }
+    
+    /// Setdefault - get value or set and return default (dict-compatible)
+    fn setdefault(&self, key: String, default: Vec<u8>, py: Python) -> PyResult<PyObject> {
+        // Check if key exists
+        if let Some(value) = self.hot_tier.get(&key) {
+            let data = if let Some(ref crypto) = self.crypto {
+                crypto.decrypt(&value)
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?
+            } else {
+                value.clone()
+            };
+            return Ok(PyBytes::new(py, &data).into());
+        }
+        
+        // Not in hot tier, check storage
+        if self.config.persist_mode != PersistMode::Memory {
+            let storage_guard = self.storage.lock().unwrap();
+            if let Some(ref storage) = *storage_guard {
+                if let Ok(Some(value)) = storage.get(&key) {
+                    let data = if let Some(ref crypto) = self.crypto {
+                        crypto.decrypt(&value)
+                            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?
+                    } else {
+                        value.clone()
+                    };
+                    drop(storage_guard);
+                    // Promote to hot tier
+                    self.hot_tier.insert(key, value);
+                    return Ok(PyBytes::new(py, &data).into());
+                }
+            }
+        }
+        
+        // Key doesn't exist, set the default
+        self.set(key.clone(), default.clone())?;
+        Ok(PyBytes::new(py, &default).into())
+    }
+    
     /// Get number of items in hot tier
     fn len(&self) -> PyResult<usize> {
         Ok(self.hot_tier.len())
