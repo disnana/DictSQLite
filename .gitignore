@@ -49,6 +49,9 @@ others/benchmark/results/graphs/
 others/benchmark/results/desktop.ini
 
 # Version-specific benchmark results - KEEP THESE
+!others/
+!others/benchmark/
+!others/benchmark/results/
 !others/benchmark/results/versions/
 !others/benchmark/results/comparisons/
 !others/benchmark/results/version_history.json
