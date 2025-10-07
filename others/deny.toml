@@ -1,0 +1,36 @@
+# others/deny.toml
+[advisories]
+# crates.io のセキュリティアドバイザリをチェック
+vulnerability = "deny" # 見つけたらエラーにする
+
+[bans]
+# 二重依存やバージョン違いを禁止
+multiple-versions = "warn"
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Boost",
+    "Unlicense",
+]
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-3.0",
+    "LGPL-2.1",
+    "LGPL-3.0",
+    "SSPL-1.0",
+    "Elastic-2.0",
+    "Commons-Clause",
+    "Proprietary",
+]
+
+[sources]
+# crates.io以外のソースを禁止する
+unknown-registry = "deny"
+unknown-git = "deny"
