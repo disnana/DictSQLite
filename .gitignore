@@ -29,6 +29,16 @@ dictsqlite_v3/__pycache__/
 *.pyd
 *.dylib
 
+# DictSQLite v4.0 Rust build artifacts
+dictsqlite_v4/target/
+dictsqlite_v4/Cargo.lock
+dictsqlite_v4/__pycache__/
+
+# DictSQLite v4.1 Rust build artifacts
+dictsqlite_v4.1/target/
+dictsqlite_v4.1/Cargo.lock
+dictsqlite_v4.1/__pycache__/
+
 # Benchmark results (keep summary only)
 others/benchmark/results/*.csv
 others/benchmark/results/*.json
