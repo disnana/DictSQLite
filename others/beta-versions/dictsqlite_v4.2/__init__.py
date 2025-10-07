@@ -38,7 +38,8 @@ class DictSQLiteV4:
         persist_mode="writethrough",
         encryption_password=None,
         enable_safe_pickle=False,
-        safe_pickle_allowed_modules=None
+        safe_pickle_allowed_modules=None,
+        encoding='utf-8'
     ):
         """
         Initialize DictSQLite v4.0
@@ -52,6 +53,8 @@ class DictSQLiteV4:
             enable_safe_pickle: Enable Safe Pickle validation (optional)
             safe_pickle_allowed_modules: List of module prefixes to allow in Safe Pickle (optional)
                                         Example: ["myapp", "mylib"] to allow myapp.* and mylib.*
+            encoding: Character encoding for string conversion (default: 'utf-8')
+                     Strings are automatically encoded using this encoding
         """
         if not _NATIVE_AVAILABLE:
             raise RuntimeError(
@@ -59,6 +62,7 @@ class DictSQLiteV4:
                 "Please build it using: cd dictsqlite_v4 && maturin build --release"
             )
         
+        self._encoding = encoding
         self._db = _NativeDictSQLiteV4(
             db_path, 
             hot_capacity, 
@@ -78,9 +82,9 @@ class DictSQLiteV4:
         return result
     
     def __setitem__(self, key, value):
-        """Set value for key"""
+        """Set value for key - automatically converts strings and objects"""
         if isinstance(value, str):
-            value = value.encode('utf-8')
+            value = value.encode(self._encoding)
         elif not isinstance(value, bytes):
             import pickle
             value = pickle.dumps(value)
@@ -103,7 +107,7 @@ class DictSQLiteV4:
         # Convert default to bytes if needed
         if default is not None:
             if isinstance(default, str):
-                default = default.encode('utf-8')
+                default = default.encode(self._encoding)
             elif not isinstance(default, bytes):
                 import pickle
                 default = pickle.dumps(default)
@@ -164,14 +168,14 @@ class DictSQLiteV4:
         self._db.clear()
     
     def bulk_insert(self, items):
-        """Bulk insert items (optimized)"""
+        """Bulk insert items (optimized) - automatically converts strings and objects"""
         if isinstance(items, dict):
             items = items.items()
         
         prepared = {}
         for key, value in items:
             if isinstance(value, str):
-                value = value.encode('utf-8')
+                value = value.encode(self._encoding)
             elif not isinstance(value, bytes):
                 import pickle
                 value = pickle.dumps(value)

@@ -80,8 +80,8 @@ Python → Rust (PyO3) → SQLiteファイル
 
 | 機能 | v1.8.8 | v4.2 |
 |-----|--------|------|
-| **基本操作** | `db['key'] = value` | `db['key'] = value` (bytes) |
-| **データ型** | 自動pickle変換 | bytes中心、pickle手動 |
+| **基本操作** | `db['key'] = value` | `db['key'] = value` (文字列自動変換) |
+| **データ型** | 自動pickle変換 | 文字列は自動UTF-8変換、オブジェクトは自動pickle |
 | **暗号化** | オプション機能 | ネイティブサポート (AES-256-GCM) |
 | **非同期** | 非サポート | AsyncDictSQLite クラス |
 | **キャッシュ** | なし | LRUホットティア |
@@ -103,11 +103,21 @@ Python → Rust (PyO3) → SQLiteファイル
 
 ### API互換性
 
-⚠️ **API互換性は限定的です:**
+✅ **高いAPI互換性:**
 
-- 基本的な辞書ライクAPI（`db['key']`）は使用可能
-- データ型の扱いが異なる（v4.2はbytes中心）
-- 一部のメソッドが追加/変更されている
+- 基本的な辞書ライクAPI（`db['key']`）は完全互換
+- 文字列は自動的にUTF-8エンコード（手動エンコード不要）
+- オブジェクトは自動的にpickle化（v1.8.8と同様）
+- 読み込み時はbytes型が返る（必要に応じてdecode）
+
+**エンコーディングのカスタマイズ:**
+```python
+# デフォルトはUTF-8
+db = DictSQLiteV4('app.db')
+
+# カスタムエンコーディング（例：Shift-JIS）
+db = DictSQLiteV4('app.db', encoding='shift-jis')
+```
 
 ---
 
@@ -187,14 +197,8 @@ with open('export_data.pkl', 'rb') as f:
 new_db = DictSQLiteV4('new_database.db')
 
 for key, value in import_data.items():
-    # v4.2ではbytes型で保存
-    if isinstance(value, str):
-        new_db[key] = value.encode('utf-8')
-    elif isinstance(value, bytes):
-        new_db[key] = value
-    else:
-        # その他のオブジェクトはpickle化
-        new_db[key] = pickle.dumps(value)
+    # v4.2は文字列、bytes、オブジェクトをすべて自動処理
+    new_db[key] = value  # 文字列は自動UTF-8変換、オブジェクトは自動pickle化
 
 new_db.close()
 print(f"移行完了: {len(import_data)} アイテム")
@@ -229,12 +233,8 @@ new_db = DictSQLiteV4(
 )
 
 for key, value in import_data.items():
-    if isinstance(value, str):
-        new_db[key] = value.encode('utf-8')
-    elif isinstance(value, bytes):
-        new_db[key] = value
-    else:
-        new_db[key] = pickle.dumps(value)
+    # v4.2は自動的に型を変換
+    new_db[key] = value  # 文字列、bytes、オブジェクトすべて対応
 
 new_db.close()
 print(f"暗号化移行完了: {len(import_data)} アイテム")
@@ -262,8 +262,8 @@ print(f"暗号化移行完了: {len(import_data)} アイテム")
 
 | 操作 | v1.8.8 | v4.2 |
 |-----|--------|------|
-| **書き込み** | `db['key'] = 'value'` | `db['key'] = b'value'` または `db['key'] = 'value'.encode()` |
-| **読み込み** | `value = db['key']` (自動型変換) | `value = db['key']` (bytes) → `value.decode()` |
+| **書き込み** | `db['key'] = 'value'` | `db['key'] = 'value'` (文字列は自動UTF-8変換) |
+| **読み込み** | `value = db['key']` (自動型変換) | `value = db['key']` (bytes) → 必要に応じて`value.decode()` |
 | **削除** | `del db['key']` | `del db['key']` |
 | **存在確認** | `'key' in db` | `'key' in db` |
 | **キー取得** | `db.keys()` | `list(db.keys())` |
@@ -330,30 +330,30 @@ db.close()
 
 ```python
 from dictsqlite_v4 import DictSQLiteV4
-import pickle
 
 # 初期化（テーブル名は指定不可）
 db = DictSQLiteV4('users.db')
 
-# 文字列を保存（bytes型に変換が必要）
-db['user:alice'] = b'Alice Smith'
-# または
-db['user:bob'] = 'Bob Jones'.encode('utf-8')
+# 文字列を保存（自動的にUTF-8エンコードされる）
+db['user:alice'] = 'Alice Smith'  # 自動変換
+db['user:bob'] = 'Bob Jones'
 
 # 読み込み（bytes型が返る）
 alice_bytes = db['user:alice']
 alice = alice_bytes.decode('utf-8')
 print(f"Alice: {alice}")  # Alice: Alice Smith
 
-# 辞書を保存（pickle化が必要）
-db['config'] = pickle.dumps({'theme': 'dark', 'lang': 'ja'})
-# 読み込み（unpickleが必要）
-config_bytes = db['config']
-config = pickle.loads(config_bytes)
+# 辞書を保存（自動的にpickle化される）
+db['config'] = {'theme': 'dark', 'lang': 'ja'}  # 自動pickle化
+# 読み込み（bytes型が返るので、必要に応じてunpickle）
+import pickle
+config = pickle.loads(db['config'])
 print(f"Theme: {config['theme']}")  # Theme: dark
 
 db.close()
 ```
+
+**注**: v4.2のPythonラッパーは文字列とオブジェクトを自動変換します。手動でエンコードやpickle化する必要はありません。
 
 ### 例2: 暗号化の使用
 
@@ -423,11 +423,10 @@ print(loaded_user.name)
 db.close()
 ```
 
-#### v4.2 への移行
+#### v4.2への移行
 
 ```python
 from dictsqlite_v4 import DictSQLiteV4
-import pickle
 
 # Safe Pickle設定（パラメータ名が変更）
 db = DictSQLiteV4(
@@ -436,18 +435,20 @@ db = DictSQLiteV4(
     safe_pickle_allowed_modules=['myapp', 'mylib']
 )
 
-# オブジェクトを保存（pickle化が必要）
+# オブジェクトを保存（自動的にpickle化される）
 from myapp.models import User
 user = User(name='Alice', age=30)
-db['user:alice'] = pickle.dumps(user)
+db['user:alice'] = user  # 自動pickle化
 
 # 読み込み（Safe Pickleで検証される）
 loaded_user_bytes = db['user:alice']
-loaded_user = pickle.loads(loaded_user_bytes)  # Safe Pickleは内部で適用
+loaded_user = pickle.loads(loaded_user_bytes)
 print(loaded_user.name)
 
 db.close()
 ```
+
+**注**: オブジェクトは自動的にpickle化されます。手動pickle化は不要です。
 
 ### 例4: 一括操作
 
@@ -700,20 +701,28 @@ with DictSQLiteV4('safe.db', buffer_size=500) as db:
 
 ## ❓ よくある移行問題と解決策
 
-### 問題1: 型エラー - "expected bytes, got str"
+### 問題1: 型エラー - 自動変換について
 
-**エラー:**
+**質問:**
 ```python
-db['key'] = 'value'
-# TypeError: expected bytes, got str
+db['key'] = 'value'  # これは動作しますか？
 ```
 
-**解決策:**
+**回答:**
+はい、v4.2のPythonラッパーは文字列を自動的にUTF-8エンコードします。
+
 ```python
-# 文字列をbytesに変換
-db['key'] = 'value'.encode('utf-8')
-# または
-db['key'] = b'value'
+# すべて有効な書き方
+db['key'] = 'value'              # 自動UTF-8エンコード
+db['key'] = 'value'.encode()     # 明示的エンコード（どちらでもOK）
+db['key'] = b'value'             # bytes直接指定
+```
+
+読み込み時はbytes型が返されるため、必要に応じてデコードします：
+
+```python
+value_bytes = db['key']
+value = value_bytes.decode('utf-8')  # 文字列に変換
 ```
 
 ### 問題2: 読み込み時にbytes型が返る
@@ -731,11 +740,12 @@ value_bytes = db['key']
 value = value_bytes.decode('utf-8')
 print(value)  # 'value' （str型）
 
-# または辞書に保存する場合
-import pickle
-db['data'] = pickle.dumps({'key': 'value'})
-data = pickle.loads(db['data'])
+# または辞書に保存する場合（自動pickle化される）
+db['data'] = {'key': 'value'}  # 自動でpickle化
+data = pickle.loads(db['data'])  # unpickleして取得
 ```
+
+**注**: 書き込みは自動変換されますが、読み込みはbytes型なので必要に応じてデコードが必要です。
 
 ### 問題3: テーブル名を指定できない
 
@@ -744,16 +754,11 @@ data = pickle.loads(db['data'])
 db = DictSQLite('app.db', table_name='users')
 ```
 
-**v4.2（テーブル名は固定）:**
+**v4.2（自動変換）:**
 ```python
-# 異なるテーブルは異なるDBファイルで管理
-db_users = DictSQLiteV4('app_users.db')
-db_posts = DictSQLiteV4('app_posts.db')
-
-# またはキープレフィックスで管理
 db = DictSQLiteV4('app.db')
-db['users:alice'] = b'...'
-db['posts:1'] = b'...'
+db['users:alice'] = 'Alice data'  # 自動UTF-8エンコード
+db['posts:1'] = 'Post content'
 ```
 
 ### 問題4: JSON モードがない
@@ -764,24 +769,26 @@ db = DictSQLite('data.db', storage_mode='json')
 db['config'] = {'theme': 'dark'}
 ```
 
-**v4.2（pickle使用）:**
+**v4.2（自動変換使用）:**
 ```python
-import pickle
-import json
-
 db = DictSQLiteV4('data.db')
 
-# JSON文字列として保存
+# 方法1: 辞書を直接保存（自動pickle化）
 config = {'theme': 'dark'}
-db['config'] = json.dumps(config).encode('utf-8')
+db['config'] = config  # 自動でpickle化される
+
+# 読み込み
+import pickle
+config = pickle.loads(db['config'])
+
+# 方法2: JSON文字列として保存
+import json
+config = {'theme': 'dark'}
+db['config'] = json.dumps(config)  # 自動でUTF-8エンコード
 
 # 読み込み
 config_str = db['config'].decode('utf-8')
 config = json.loads(config_str)
-
-# またはpickle使用（推奨）
-db['config'] = pickle.dumps({'theme': 'dark'})
-config = pickle.loads(db['config'])
 ```
 
 ### 問題5: ビルドエラー
