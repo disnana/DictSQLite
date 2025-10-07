@@ -54,11 +54,15 @@ impl AsyncDictSQLite {
             capacity, num_shards,
         ));
 
-        // Create config
-        let mut config = Config::default();
-        config.hot_tier_capacity = capacity;
-        config.persist_mode = PersistMode::from_str(persist_mode)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e))?;
+        // Create config with custom values
+        let persist_mode_parsed = PersistMode::from_str(persist_mode)
+            .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+        
+        let config = Config {
+            hot_tier_capacity: capacity,
+            persist_mode: persist_mode_parsed,
+            ..Default::default()
+        };
 
         // Initialize storage engine
         let storage = if config.persist_mode == PersistMode::Memory {

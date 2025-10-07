@@ -160,6 +160,7 @@ impl SafePicklePolicy {
 }
 
 /// Pickle データの検証
+#[derive(Default)]
 pub struct SafePickleValidator {
     policy: SafePicklePolicy,
 }
@@ -168,13 +169,6 @@ impl SafePickleValidator {
     /// 新しいバリデータを作成
     pub fn new(policy: SafePicklePolicy) -> Self {
         SafePickleValidator { policy }
-    }
-
-    /// デフォルトポリシーでバリデータを作成
-    pub fn default() -> Self {
-        SafePickleValidator {
-            policy: SafePicklePolicy::default(),
-        }
     }
 
     /// Pickleデータを検証（基本的な検証のみ、詳細はPython側で実施）
