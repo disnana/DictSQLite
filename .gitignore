@@ -39,21 +39,21 @@ others/beta-versionsdictsqlite_v4.1/target/
 others/beta-versionsdictsqlite_v4.1/Cargo.lock
 others/beta-versionsdictsqlite_v4.1/__pycache__/
 
-# Benchmark results (keep summary only)
-# Temporary benchmark files (with timestamp) - exclude
+# Benchmark results (keep version-specific results)
+# Temporary benchmark files (with timestamp) - exclude from results/ root only
 others/benchmark/results/benchmark_*.csv
 others/benchmark/results/benchmark_*.json
 others/benchmark/results/benchmark_*.log
 others/benchmark/results/summary_*.md
+# Old graphs directory (non-versioned) - exclude
 others/benchmark/results/graphs/
 others/benchmark/results/desktop.ini
 
-# Version-specific benchmark results - KEEP THESE
-!others/
-!others/benchmark/
-!others/benchmark/results/
+# Version-specific benchmark results - KEEP THESE (all files in versions/)
 !others/benchmark/results/versions/
+!others/benchmark/results/versions/**
 !others/benchmark/results/comparisons/
+!others/benchmark/results/comparisons/**
 !others/benchmark/results/version_history.json
 !others/benchmark/results/VERSION_INDEX.md
 !others/benchmark/results/BENCHMARK_SUMMARY.md
