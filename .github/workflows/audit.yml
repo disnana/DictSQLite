@@ -1,0 +1,26 @@
+name: Security Audit
+
+on:
+  push:
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+  schedule:
+    - cron: '0 0 * * *'  # 毎日実行
+  workflow_dispatch:
+
+jobs:
+  security-audit:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions-rust-lang/audit@v1
+        name: Audit Rust Dependencies
+        with:
+          workingDirectory: ./dictsqlite_v4.1
+          # 必要に応じて無視するアドバイザリを指定
+          # ignore: RUSTSEC-2020-0036
