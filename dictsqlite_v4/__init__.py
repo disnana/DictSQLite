@@ -1,47 +1,69 @@
 """
-DictSQLite v3.0 Python Wrapper
+DictSQLite v4.0 Python Wrapper
 
-High-performance wrapper providing dict-like interface
+High-performance wrapper with enhanced security features
 """
 
 try:
-    from dictsqlite_v3 import DictSQLiteV3 as _NativeDictSQLiteV3
-    from dictsqlite_v3 import AsyncDictSQLite as _NativeAsyncDictSQLite
+    from dictsqlite_v4 import DictSQLiteV4 as _NativeDictSQLiteV4
+    from dictsqlite_v4 import AsyncDictSQLite as _NativeAsyncDictSQLite
     _NATIVE_AVAILABLE = True
 except ImportError:
     _NATIVE_AVAILABLE = False
-    _NativeDictSQLiteV3 = None
+    _NativeDictSQLiteV4 = None
     _NativeAsyncDictSQLite = None
 
 
-class DictSQLiteV3:
+class DictSQLiteV4:
     """
-    High-performance DictSQLite v3.0 with dict-like interface
+    High-performance DictSQLite v4.0 with security features
     
-    Targets 100M+ ops/sec with lock-free concurrent hashmap
+    Features:
+    - 100M+ ops/sec with lock-free concurrent hashmap
+    - Optional AES-256-GCM encryption
+    - Optional Safe Pickle validation
+    - SQL injection protection
     
-    Compatible with DictSQLite v1/v2 API:
+    Compatible with DictSQLite v1/v2/v3 API:
     - Dict-like operations: `db['key'] = 'value'`, `db.get('key')`, etc.
-    - Context manager support: `with DictSQLiteV3(...) as db:`
+    - Context manager support: `with DictSQLiteV4(...) as db:`
     - Iteration: `for key in db.keys():`
     """
     
-    def __init__(self, db_path, hot_capacity=1_000_000, enable_async=True):
+    def __init__(
+        self, 
+        db_path, 
+        hot_capacity=1_000_000, 
+        enable_async=True,
+        persist_mode="writethrough",
+        encryption_password=None,
+        enable_safe_pickle=False
+    ):
         """
-        Initialize DictSQLite v3.0
+        Initialize DictSQLite v4.0
         
         Args:
             db_path: Path to database file
             hot_capacity: Maximum entries in hot tier (in-memory)
             enable_async: Enable async background flush
+            persist_mode: "memory", "lazy", or "writethrough"
+            encryption_password: Password for AES-256-GCM encryption (optional)
+            enable_safe_pickle: Enable Safe Pickle validation (optional)
         """
         if not _NATIVE_AVAILABLE:
             raise RuntimeError(
-                "DictSQLite v3.0 native extension not available. "
-                "Please build it using: cd dictsqlite_v3 && maturin develop --release"
+                "DictSQLite v4.0 native extension not available. "
+                "Please build it using: cd dictsqlite_v4 && maturin build --release"
             )
         
-        self._db = _NativeDictSQLiteV3(db_path, hot_capacity, enable_async)
+        self._db = _NativeDictSQLiteV4(
+            db_path, 
+            hot_capacity, 
+            enable_async,
+            persist_mode,
+            encryption_password,
+            enable_safe_pickle
+        )
         self._closed = False
     
     def __getitem__(self, key):
@@ -126,7 +148,7 @@ class DictSQLiteV3:
     
     def __repr__(self):
         """String representation"""
-        return f"<DictSQLiteV3 at {id(self):x} with {len(self)} entries>"
+        return f"<DictSQLiteV4 at {id(self):x} with {len(self)} entries>"
     
     def clear(self):
         """Clear all data"""
@@ -182,7 +204,7 @@ class DictSQLiteV3:
 
 class AsyncDictSQLite:
     """
-    Async version of DictSQLite v3.0 for high-concurrency scenarios
+    Async version of DictSQLite v4.0 for high-concurrency scenarios
     """
     
     def __init__(self, db_path, capacity=1_000_000):
@@ -195,8 +217,8 @@ class AsyncDictSQLite:
         """
         if not _NATIVE_AVAILABLE:
             raise RuntimeError(
-                "DictSQLite v3.0 native extension not available. "
-                "Please build it using: cd dictsqlite_v3 && maturin develop --release"
+                "DictSQLite v4.0 native extension not available. "
+                "Please build it using: cd dictsqlite_v4 && maturin build --release"
             )
         
         self._db = _NativeAsyncDictSQLite(db_path, capacity)
@@ -243,7 +265,7 @@ def is_native_available():
 
 
 __all__ = [
-    'DictSQLiteV3',
+    'DictSQLiteV4',
     'AsyncDictSQLite',
     'is_native_available',
 ]
