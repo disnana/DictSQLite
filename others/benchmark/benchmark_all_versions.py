@@ -9,16 +9,31 @@ import os
 import sys
 import tempfile
 import time
+import csv
 from pathlib import Path
 from typing import Dict, Tuple, Any
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Add paths for dictsqlite-fastest beta versions (deprecated but kept for compatibility)
+REPO_ROOT = Path(__file__).parent.parent.parent
+BETA_DIR = REPO_ROOT / 'others' / 'beta-versions' / 'dictsqlite-fastest' / 'beta'
+sys.path.insert(0, str(BETA_DIR))
+
+# Add benchmark directory to path for VersionManager
+BENCHMARK_DIR = REPO_ROOT / 'others' / 'benchmark'
+sys.path.insert(0, str(BENCHMARK_DIR))
 
 from dictsqlite_fastest_beta import AsyncDictSQLiteFastestBeta as AsyncV1
 from dictsqlite_fastest_beta_v2 import AsyncDictSQLiteFastestBeta as AsyncV2
 from dictsqlite_fastest_beta_v3_alpha import AsyncDictSQLiteFastestBetaV3 as AsyncV3
 from dictsqlite_fastest_beta_v4_final import AsyncDictSQLiteFastestBetaV4Final as AsyncV4
+
+# Import VersionManager
+try:
+    from version_manager import VersionManager
+    VERSION_MANAGER_AVAILABLE = True
+except ImportError:
+    print("⚠ VersionManagerが利用できません。結果は保存されません。")
+    VERSION_MANAGER_AVAILABLE = False
 
 
 class BenchmarkResult:
@@ -305,6 +320,44 @@ async def run_v4_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
     return results
 
 
+def save_version_results(version_name: str, results_dict: Dict[str, Tuple[float, float]], test_labels: list):
+    """Save benchmark results for a specific version to VersionManager.
+    
+    Args:
+        version_name: Version identifier (v1, v2, v3, v4)
+        results_dict: Dictionary mapping test_name to (elapsed_time, ops_per_sec)
+        test_labels: List of human-readable test labels
+    """
+    if not VERSION_MANAGER_AVAILABLE:
+        return
+    
+    # Create VersionManager with explicit beta_version
+    vm = VersionManager(beta_version=version_name)
+    
+    # Generate CSV content
+    csv_lines = []
+    csv_lines.append("Test Name,Operation Count,Original Time (s),Original OPS,Fastest Time (s),Fastest OPS,Beta Time (s),Beta OPS,Speedup (Fastest/Original),Speedup (Beta/Original),Speedup (Beta/Fastest)")
+    
+    test_names = ['basic_write', 'basic_read', 'concurrent_read', 'bulk_insert', 'mixed_ops']
+    operation_counts = [300, 300, 600, 500, 400]
+    
+    for test_name, label, op_count in zip(test_names, test_labels, operation_counts):
+        elapsed, ops = results_dict[test_name]
+        # For all-versions benchmark, we only have one implementation per run
+        # So we'll put the current version in the "Beta OPS" column
+        csv_lines.append(f"{label},{op_count},N/A,N/A,N/A,N/A,{elapsed},{ops},N/A,N/A,N/A")
+    
+    csv_content = '\n'.join(csv_lines)
+    
+    # Save to version manager
+    saved_files = vm.save_benchmark_result(
+        csv_content=csv_content,
+        version_string=version_name
+    )
+    
+    print(f"\n✓ {version_name} の結果を保存しました: {saved_files.get('csv', 'N/A')}")
+
+
 async def main():
     """Main benchmark execution."""
     print("=" * 70)
@@ -330,23 +383,43 @@ async def main():
     with tempfile.NamedTemporaryFile(delete=False, suffix='_v4.db') as tmp:
         v4_path = tmp.name
     
+    # Define test labels early so they can be used in save_version_results
+    test_names = ['basic_write', 'basic_read', 'concurrent_read', 'bulk_insert', 'mixed_ops']
+    test_labels = [
+        'Basic Write (300 items)',
+        'Basic Read (300 items)',
+        'Concurrent Read (600 items, 8 concurrent)',
+        'Bulk Insert (500 items)',
+        'Mixed Operations (400 items)'
+    ]
+    
     try:
         # Run benchmarks
         v1_results = await run_v1_benchmark(v1_path)
+        
+        # Save v1 results
+        if VERSION_MANAGER_AVAILABLE:
+            save_version_results('v1', v1_results, test_labels)
+        
         v2_results = await run_v2_benchmark(v2_path)
+        
+        # Save v2 results
+        if VERSION_MANAGER_AVAILABLE:
+            save_version_results('v2', v2_results, test_labels)
+        
         v3_results = await run_v3_benchmark(v3_path)
+        
+        # Save v3 results
+        if VERSION_MANAGER_AVAILABLE:
+            save_version_results('v3', v3_results, test_labels)
+        
         v4_results = await run_v4_benchmark(v4_path)
         
-        # Create result objects
-        test_names = ['basic_write', 'basic_read', 'concurrent_read', 'bulk_insert', 'mixed_ops']
-        test_labels = [
-            'Basic Write (300 items)',
-            'Basic Read (300 items)',
-            'Concurrent Read (600 items, 8 concurrent)',
-            'Bulk Insert (500 items)',
-            'Mixed Operations (400 items)'
-        ]
+        # Save v4 results
+        if VERSION_MANAGER_AVAILABLE:
+            save_version_results('v4', v4_results, test_labels)
         
+        # Create result objects
         results = []
         for test_name, label in zip(test_names, test_labels):
             result = BenchmarkResult(label)

@@ -25,9 +25,28 @@ GitHub Actionsでパフォーマンスベンチマークを `--beta all` モー�
 
 ## 修正内容
 
-`others/beta-versions/dictsqlite-fastest/beta/benchmark_all_versions.py` を以下のように修正：
+### 1. ベンチマークファイルの移動
 
-### 1. VersionManagerのインポート追加
+GitHub Actionsで使用するベンチマーク関連ファイルを一箇所に集約するため、`benchmark_all_versions.py` を移動しました：
+
+- **移動元**: `others/beta-versions/dictsqlite-fastest/beta/benchmark_all_versions.py`
+- **移動先**: `others/benchmark/benchmark_all_versions.py`
+- **注**: dictsqlite-fastestは廃止されたため、元の場所にも元のファイルを保持
+
+### 2. パス参照の更新
+
+`others/benchmark/run_benchmark.py` を更新し、新しい場所のベンチマークスクリプトを参照：
+
+```python
+def run_all_versions_benchmark():
+    # 変更後: ベンチマークディレクトリ内を参照
+    benchmark_dir = Path(__file__).parent
+    script = benchmark_dir / 'benchmark_all_versions.py'
+```
+
+### 3. VersionManagerのインポート追加
+
+`others/benchmark/benchmark_all_versions.py` に以下を追加：
 
 ```python
 # Import VersionManager
@@ -39,7 +58,7 @@ except ImportError:
     VERSION_MANAGER_AVAILABLE = False
 ```
 
-### 2. 結果保存関数の追加
+### 4. 結果保存関数の追加
 
 ```python
 def save_version_results(version_name: str, results_dict: Dict[str, Tuple[float, float]], test_labels: list):
@@ -72,7 +91,7 @@ def save_version_results(version_name: str, results_dict: Dict[str, Tuple[float,
     print(f"\n✓ {version_name} の結果を保存しました: {saved_files.get('csv', 'N/A')}")
 ```
 
-### 3. 各バージョンのベンチマーク実行後に結果を保存
+### 5. 各バージョンのベンチマーク実行後に結果を保存
 
 ```python
 # Run benchmarks
@@ -135,7 +154,16 @@ if VERSION_MANAGER_AVAILABLE:
 
 ## 変更ファイル
 
-- `others/beta-versions/dictsqlite-fastest/beta/benchmark_all_versions.py`
-  - VersionManagerのインポート追加
-  - `save_version_results()` 関数追加
-  - `main()` 関数の修正（各バージョン実行後に結果保存）
+1. **`others/benchmark/benchmark_all_versions.py`** (新規作成・移動)
+   - `others/beta-versions/dictsqlite-fastest/beta/` から移動
+   - VersionManagerのインポート追加
+   - `save_version_results()` 関数追加
+   - `main()` 関数の修正（各バージョン実行後に結果保存）
+   - インポートパスの調整（新しい場所から動作するように）
+
+2. **`others/benchmark/run_benchmark.py`**
+   - `run_all_versions_benchmark()` のパス参照を更新
+   - 新しい場所の `benchmark_all_versions.py` を参照
+
+3. **`others/beta-versions/dictsqlite-fastest/beta/benchmark_all_versions.py`**
+   - 元のファイルを保持（dictsqlite-fastest廃止のため）
