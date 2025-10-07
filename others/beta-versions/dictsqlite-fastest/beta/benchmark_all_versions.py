@@ -445,28 +445,28 @@ def save_results_and_generate_graphs(results: List['BenchmarkResult']):
             'Version': 'original',
             'Test': result.name,
             'OPS': result.v1_ops,
-            'Duration(s)': result.v1_time,
+            'Time (s)': result.v1_time,
             'Result': '成功'
         })
         csv_rows.append({
             'Version': 'fastest',
             'Test': result.name,
             'OPS': result.v2_ops,
-            'Duration(s)': result.v2_time,
+            'Time (s)': result.v2_time,
             'Result': '成功'
         })
         csv_rows.append({
             'Version': 'beta',
             'Test': result.name,
             'OPS': result.v4_ops,  # Use v4 as beta
-            'Duration(s)': result.v4_time,
+            'Time (s)': result.v4_time,
             'Result': '成功'
         })
     
     # Write CSV file
     with open(csv_path, 'w', newline='', encoding='utf-8') as f:
         if csv_rows:
-            writer = csv.DictWriter(f, fieldnames=['Version', 'Test', 'OPS', 'Duration(s)', 'Result'])
+            writer = csv.DictWriter(f, fieldnames=['Version', 'Test', 'OPS', 'Time (s)', 'Result'])
             writer.writeheader()
             writer.writerows(csv_rows)
     
