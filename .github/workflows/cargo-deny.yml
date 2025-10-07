@@ -9,12 +9,13 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          # 任意でパラメータを指定できる
+          command: check
           log-level: warn
           manifest-path: ./Cargo.toml
-          command: check
+          config: others/deny.toml     # ← これを追加！
           arguments: --all-features
-          # credentials: を指定してプライベート依存も扱うなら
           # credentials: https://${{ secrets.GITHUB_USER }}:${{ secrets.GITHUB_PAT }}@github.com
