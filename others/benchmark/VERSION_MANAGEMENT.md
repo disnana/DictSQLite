@@ -18,17 +18,20 @@
 ```
 others/benchmark/results/
 ├── versions/                          # バージョンごとの結果
-│   ├── v1.8.9_v1.0.0_v0.1.0-beta/    # バージョン固有ディレクトリ
-│   │   ├── benchmark_v1.8.9_v1.0.0_v0.1.0-beta.csv
-│   │   ├── benchmark_v1.8.9_v1.0.0_v0.1.0-beta.json
-│   │   ├── summary_v1.8.9_v1.0.0_v0.1.0-beta.md
-│   │   ├── benchmark_v1.8.9_v1.0.0_v0.1.0-beta.log
-│   │   └── graphs/                    # バージョン固有のグラフ
-│   │       ├── ops_comparison.png
-│   │       ├── time_comparison.png
-│   │       └── ...
-│   └── v1.8.10_v1.0.1_v0.1.1-beta/   # 次のバージョン
-│       └── ...
+│   ├── v1/                           # Beta版 v1 の結果
+│   │   ├── benchmark.csv             # CSV結果（固定ファイル名）
+│   │   ├── benchmark.json            # JSON結果（固定ファイル名）
+│   │   ├── summary.md                # サマリー（固定ファイル名）
+│   │   ├── benchmark.log             # ログ（固定ファイル名）
+│   │   └── graphs/                   # グラフ（PNG画像）
+│   ├── v2/                           # Beta版 v2 の結果
+│   │   └── ...（同じ構造）
+│   ├── v3/                           # Beta版 v3 の結果
+│   │   └── ...（同じ構造）
+│   ├── v4/                           # Beta版 v4 の結果
+│   │   └── ...（同じ構造）
+│   └── all/                          # 全バージョン比較の結果
+│       └── ...（同じ構造）
 ├── comparisons/                       # バージョン間比較
 │   ├── comparison_20241207_120000.md
 │   ├── version_comparison_20241207_120000.png
@@ -44,7 +47,31 @@ others/benchmark/results/
 
 ## バージョン命名規則
 
-バージョン文字列は以下の形式で生成されます：
+### GitHub Actions での実行時
+
+GitHub Actions でベンチマークを実行する場合、Beta版のバージョン選択に応じて以下のフォルダ名が使用されます：
+
+- **v1 を選択** → `results/versions/v1/`
+- **v2 を選択** → `results/versions/v2/`
+- **v3 を選択** → `results/versions/v3/`
+- **v4 を選択** → `results/versions/v4/`
+- **all を選択** → `results/versions/all/`
+
+### ローカルでの実行時
+
+環境変数 `BETA_VERSION` を設定することで、同様の動作が可能です：
+
+```bash
+# v1 として保存
+export BETA_VERSION=v1
+python fast_comprehensive_benchmark.py
+
+# all として保存
+export BETA_VERSION=all
+python comprehensive_benchmark.py
+```
+
+環境変数が設定されていない場合は、従来通りの詳細バージョン文字列が使用されます：
 
 ```
 v{original}_v{fastest}_v{beta}
@@ -58,6 +85,18 @@ v{original}_v{fastest}_v{beta}
 - **original**: `dictsqlite/main.py` の `__version__`
 - **fastest**: `others/beta-versions/dictsqlite-fastest/dictsqlite_fastest/__init__.py` の `__version__`
 - **beta**: `others/beta-versions/dictsqlite-fastest/beta/__init__.py` の `__version__`
+
+## ファイル命名規則
+
+すべてのバージョンで**固定ファイル名**を使用し、上書き形式で保存されます：
+
+- `benchmark.csv` - ベンチマーク結果CSV
+- `benchmark.json` - ベンチマーク結果JSON
+- `summary.md` - サマリーレポート
+- `benchmark.log` - 実行ログ
+- `graphs/` - グラフディレクトリ
+
+同じバージョンで再実行すると、既存のファイルが自動的に上書きされます。
 
 ## 使い方
 

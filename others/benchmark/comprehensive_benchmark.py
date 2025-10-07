@@ -137,10 +137,13 @@ class ComprehensiveBenchmark:
         # タイムスタンプ
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
+        # Beta版のバージョンを環境変数から取得
+        beta_version = os.getenv('BETA_VERSION', None)
+        
         # バージョン管理システム
         self.use_version_manager = use_version_manager and VERSION_MANAGER_AVAILABLE
         if self.use_version_manager:
-            self.version_manager = VersionManager(self.output_dir)
+            self.version_manager = VersionManager(self.output_dir, beta_version=beta_version)
             self.version_string = self.version_manager.get_version_string()
             print(f"✓ バージョン管理システム有効: {self.version_string}")
         else:

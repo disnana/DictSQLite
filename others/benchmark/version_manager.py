@@ -25,16 +25,20 @@ sys.path.insert(0, str(REPO_ROOT / 'others' / 'beta-versions' / 'dictsqlite-fast
 class VersionManager:
     """ベンチマーク結果のバージョン管理クラス"""
     
-    def __init__(self, results_dir: Path = None):
+    def __init__(self, results_dir: Path = None, beta_version: str = None):
         """
         Args:
             results_dir: 結果を保存するディレクトリ（デフォルト: others/benchmark/results）
+            beta_version: Beta版のバージョン指定 (v1, v2, v3, v4, all)
         """
         if results_dir is None:
             results_dir = BASE_DIR / "results"
         
         self.results_dir = Path(results_dir)
         self.results_dir.mkdir(exist_ok=True)
+        
+        # Beta版のバージョン指定
+        self.beta_version = beta_version
         
         # バージョンごとの結果ディレクトリ
         self.version_results_dir = self.results_dir / "versions"
@@ -149,9 +153,22 @@ class VersionManager:
         return versions
     
     def get_version_string(self) -> str:
-        """複合バージョン文字列を生成（例: v1.8.9_v1.0.0_v0.1.0-beta）"""
-        versions = self.get_version_info()
-        return f"v{versions['original']}_v{versions['fastest']}_v{versions['beta']}"
+        """バージョン文字列を生成
+        
+        beta_versionが指定されている場合:
+          - 'all' → 'all'
+          - 'v1', 'v2', 'v3', 'v4' → そのまま使用
+        
+        beta_versionが未指定の場合:
+          - 従来通り詳細バージョン文字列を生成 (v1.8.9_v1.0.0_v0.1.0-beta)
+        """
+        if self.beta_version:
+            # Beta版バージョンが指定されている場合はそれを使用
+            return self.beta_version
+        else:
+            # 従来通りの詳細バージョン文字列
+            versions = self.get_version_info()
+            return f"v{versions['original']}_v{versions['fastest']}_v{versions['beta']}"
     
     def get_version_paths(self, version_string: str = None) -> Dict[str, Path]:
         """バージョン固有のファイルパスを取得
@@ -168,12 +185,13 @@ class VersionManager:
         version_dir = self.version_results_dir / version_string
         version_dir.mkdir(exist_ok=True)
         
+        # 固定ファイル名を使用（上書き形式）
         return {
             'dir': version_dir,
-            'csv': version_dir / f"benchmark_{version_string}.csv",
-            'json': version_dir / f"benchmark_{version_string}.json",
-            'summary': version_dir / f"summary_{version_string}.md",
-            'log': version_dir / f"benchmark_{version_string}.log",
+            'csv': version_dir / "benchmark.csv",
+            'json': version_dir / "benchmark.json",
+            'summary': version_dir / "summary.md",
+            'log': version_dir / "benchmark.log",
             'graphs_dir': version_dir / "graphs"
         }
     

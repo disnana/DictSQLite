@@ -85,6 +85,9 @@ jobs:
         BETA_VERSION="${{ github.event.inputs.beta_version }}"
         echo "📦 選択されたBeta版: $BETA_VERSION"
         
+        # BETA_VERSIONを環境変数としてエクスポート（バージョン管理システムで使用）
+        export BETA_VERSION
+        
         if [ "$BETA_VERSION" == "all" ]; then
           echo "🔬 全バージョン (v1, v2, v3, v4) の比較ベンチマークを実行..."
           python run_benchmark.py --beta all
@@ -136,6 +139,7 @@ jobs:
         fi
       env:
         PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta
+        BETA_VERSION: ${{ github.event.inputs.beta_version }}
       continue-on-error: false
 
     - name: Generate benchmark visualizations
