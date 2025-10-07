@@ -591,4 +591,14 @@ async def main():
 
 
 if __name__ == "__main__":
+    # Clean up any cached bytecode to ensure we're running the latest version
+    import pathlib
+    pycache_dir = pathlib.Path(__file__).parent / '__pycache__'
+    if pycache_dir.exists():
+        import shutil
+        try:
+            shutil.rmtree(pycache_dir)
+        except:
+            pass
+    
     sys.exit(asyncio.run(main()))
