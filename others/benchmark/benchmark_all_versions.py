@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import csv
+import importlib.util
 from pathlib import Path
 from typing import Dict, Tuple, Any
 
@@ -49,10 +50,15 @@ except ImportError as e:
     BETA_V2_AVAILABLE = False
 
 try:
-    from dictsqlite_v4 import AsyncDictSQLite as AsyncV4_1  # v4.1 async
+    # Load v4.1 AsyncDictSQLite from __init__.py using importlib
+    spec = importlib.util.spec_from_file_location("dictsqlite_v4_1_pkg", V4_1_DIR / "__init__.py")
+    dictsqlite_v4_1_pkg = importlib.util.module_from_spec(spec)
+    sys.modules['dictsqlite_v4_1_pkg'] = dictsqlite_v4_1_pkg
+    spec.loader.exec_module(dictsqlite_v4_1_pkg)
+    AsyncV4_1 = dictsqlite_v4_1_pkg.AsyncDictSQLite
     V4_1_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠ dictsqlite_v4.1 native extension not available: {e}")
+except Exception as e:
+    print(f"⚠ dictsqlite_v4.1 not available: {e}")
     AsyncV4_1 = None
     V4_1_AVAILABLE = False
 
