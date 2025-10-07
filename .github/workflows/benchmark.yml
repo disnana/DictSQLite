@@ -142,21 +142,7 @@ jobs:
         BETA_VERSION: ${{ github.event.inputs.beta_version }}
       continue-on-error: false
 
-    - name: Generate benchmark visualizations
-      run: |
-        cd others/benchmark
-        # 最新のベンチマーク結果CSVファイルを探す（resultsディレクトリ内）
-        LATEST_CSV=$(ls -t results/*.csv 2>/dev/null | head -n1)
-        if [ -n "$LATEST_CSV" ]; then
-          echo "Visualizing: $LATEST_CSV"
-          python visualize_benchmark.py "$LATEST_CSV"
-        else
-          echo "⚠️  No CSV file found in results/"
-          echo "Benchmark may not have generated CSV output. Skipping visualization."
-        fi
-      env:
-        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta
-      continue-on-error: true
+    # グラフはベンチマーク実行時に自動生成されるため、このステップは不要
     
     - name: Generate version comparison
       run: |
@@ -175,11 +161,17 @@ jobs:
         echo "=== Version-specific Results ==="
         if [ -d "others/benchmark/results/versions" ]; then
           ls -lh others/benchmark/results/versions/
-        fi
-        echo ""
-        echo "=== Graphs ==="
-        if [ -d "others/benchmark/results/graphs" ]; then
-          ls -lh others/benchmark/results/graphs/
+          echo ""
+          echo "=== Files in Version Directory ==="
+          VERSION_DIR="others/benchmark/results/versions/${{ github.event.inputs.beta_version }}"
+          if [ -d "$VERSION_DIR" ]; then
+            ls -lh "$VERSION_DIR"/
+            if [ -d "$VERSION_DIR/graphs" ]; then
+              echo ""
+              echo "=== Graphs in Version Directory ==="
+              ls -lh "$VERSION_DIR/graphs/"
+            fi
+          fi
         fi
         echo ""
         echo "=== Version Comparisons ==="
