@@ -37,9 +37,10 @@ except ImportError:
 class PerformanceTestSuite:
     """Comprehensive performance test suite for v4.2"""
     
-    def __init__(self, iterations: int = 3, output_json: bool = True):
+    def __init__(self, iterations: int = 3, output_json: bool = True, output_filename: str = "performance_results.json"):
         self.iterations = iterations
         self.output_json = output_json
+        self.output_filename = output_filename
         self.results: Dict[str, Any] = {
             'version': '4.2.0',
             'timestamp': datetime.now().isoformat(),
@@ -493,12 +494,12 @@ class PerformanceTestSuite:
                 ratio = ops / baseline
                 print(f"   {name}: {self.format_ops(ops)} ({ratio:.2f}x vs baseline)")
     
-    def save_results(self, filename: str = "performance_results.json"):
+    def save_results(self):
         """Save results to JSON file"""
         if self.output_json:
-            with open(filename, 'w') as f:
+            with open(self.output_filename, 'w') as f:
                 json.dump(self.results, f, indent=2)
-            print(f"\n📄 Results saved to: {filename}")
+            print(f"\n📄 Results saved to: {self.output_filename}")
     
     def run_all(self):
         """Run all performance tests"""
@@ -569,7 +570,8 @@ def main():
     
     suite = PerformanceTestSuite(
         iterations=args.iterations,
-        output_json=not args.no_json
+        output_json=not args.no_json,
+        output_filename=args.output
     )
     
     return suite.run_all()

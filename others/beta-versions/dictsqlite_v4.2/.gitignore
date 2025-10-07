@@ -18,6 +18,7 @@ venv/
 .pytest_cache/
 .coverage
 htmlcov/
+performance_results*.json
 
 # IDEs
 .vscode/
