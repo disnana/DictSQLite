@@ -1,9 +1,12 @@
 # others/deny.toml
-version = "1"
 
-[vulnerability]
-# これで見つかったら fail する
-deny = ["*"] # 全てのアドバイザリを拒否
+# advisoriesセクション - 脆弱性チェック用
+[advisories]
+# 脆弱性は自動的にdenyされるため、deny = ["*"]は不要
+# 特定のアドバイザリを無視する場合は以下を使用:
+# ignore = [
+#     "RUSTSEC-0000-0000",
+# ]
 
 [bans]
 # 二重依存やバージョン違いを禁止
