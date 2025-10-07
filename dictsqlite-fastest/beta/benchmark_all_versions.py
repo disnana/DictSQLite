@@ -1,6 +1,6 @@
-"""Comprehensive benchmark: v1 vs v2 vs v3
+"""Comprehensive benchmark: v1 vs v2 vs v3 vs v4
 
-Compares performance of all three versions with optimized configurations.
+Compares performance of all four versions with optimized configurations.
 Tests basic operations, concurrent operations, and version-specific optimizations.
 """
 
@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from dictsqlite_fastest_beta import AsyncDictSQLiteFastestBeta as AsyncV1
 from dictsqlite_fastest_beta_v2 import AsyncDictSQLiteFastestBeta as AsyncV2
 from dictsqlite_fastest_beta_v3_alpha import AsyncDictSQLiteFastestBetaV3 as AsyncV3
+from dictsqlite_fastest_beta_v4_final import AsyncDictSQLiteFastestBetaV4Final as AsyncV4
 
 
 class BenchmarkResult:
@@ -28,9 +29,11 @@ class BenchmarkResult:
         self.v1_time = 0.0
         self.v2_time = 0.0
         self.v3_time = 0.0
+        self.v4_time = 0.0
         self.v1_ops = 0.0
         self.v2_ops = 0.0
         self.v3_ops = 0.0
+        self.v4_ops = 0.0
     
     def set_v1(self, elapsed: float, ops_per_sec: float):
         self.v1_time = elapsed
@@ -44,12 +47,17 @@ class BenchmarkResult:
         self.v3_time = elapsed
         self.v3_ops = ops_per_sec
     
+    def set_v4(self, elapsed: float, ops_per_sec: float):
+        self.v4_time = elapsed
+        self.v4_ops = ops_per_sec
+    
     def print_comparison(self):
         """Print comparison of all versions."""
         print(f"\n{self.name}:")
-        print(f"  v1: {self.v1_time:.3f}s ({self.v1_ops:.0f} ops/sec)")
-        print(f"  v2: {self.v2_time:.3f}s ({self.v2_ops:.0f} ops/sec) - {self.v2_ops/self.v1_ops:.2f}x vs v1")
-        print(f"  v3: {self.v3_time:.3f}s ({self.v3_ops:.0f} ops/sec) - {self.v3_ops/self.v1_ops:.2f}x vs v1")
+        print(f"  v1: {self.v1_time:.3f}s ({self.v1_ops:>8.0f} ops/sec)")
+        print(f"  v2: {self.v2_time:.3f}s ({self.v2_ops:>8.0f} ops/sec) - {self.v2_ops/self.v1_ops:>5.2f}x vs v1")
+        print(f"  v3: {self.v3_time:.3f}s ({self.v3_ops:>8.0f} ops/sec) - {self.v3_ops/self.v1_ops:>5.2f}x vs v1")
+        print(f"  v4: {self.v4_time:.3f}s ({self.v4_ops:>8.0f} ops/sec) - {self.v4_ops/self.v1_ops:>5.2f}x vs v1")
 
 
 async def benchmark_basic_write(db, count: int) -> Tuple[float, float]:
@@ -246,10 +254,61 @@ async def run_v3_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
     return results
 
 
+async def run_v4_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
+    """Run benchmark for v4 with optimized settings."""
+    print(f"\n{'='*70}")
+    print(f"Benchmarking: v4 (Ultra-optimized cache + connection pool)")
+    print(f"{'='*70}")
+    
+    results = {}
+    
+    # v4 has maximum performance optimizations
+    async with AsyncV4(
+        db_path,
+        cache_max_size=10000,
+        enable_stats=True,
+        pool_size=8,
+        auto_preload=False
+    ) as db:
+        # Basic operations
+        print("\n1. Basic Write (300 items)...")
+        elapsed, ops = await benchmark_basic_write(db, 300)
+        results['basic_write'] = (elapsed, ops)
+        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        
+        print("2. Basic Read (300 items)...")
+        elapsed, ops = await benchmark_basic_read(db, 300)
+        results['basic_read'] = (elapsed, ops)
+        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        
+        print("3. Concurrent Read (600 items, 8 concurrent)...")
+        elapsed, ops = await benchmark_concurrent_read(db, 600, 8)
+        results['concurrent_read'] = (elapsed, ops)
+        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        
+        print("4. Bulk Insert (500 items)...")
+        elapsed, ops = await benchmark_bulk_insert(db, 500)
+        results['bulk_insert'] = (elapsed, ops)
+        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        
+        print("5. Mixed Operations (400 items)...")
+        elapsed, ops = await benchmark_mixed_operations(db, 400)
+        results['mixed_ops'] = (elapsed, ops)
+        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        
+        # Print v4 statistics
+        if hasattr(db, '_stats') and hasattr(db._stats, 'get_stats'):
+            stats = db._stats.get_stats()
+            print(f"\nv4 Statistics:")
+            print(f"  Operations: {stats}")
+    
+    return results
+
+
 async def main():
     """Main benchmark execution."""
     print("=" * 70)
-    print("DictSQLite-Fastest: v1 vs v2 vs v3 Comprehensive Benchmark")
+    print("DictSQLite-Fastest: v1 vs v2 vs v3 vs v4 Comprehensive Benchmark")
     print("=" * 70)
     print("\nThis benchmark tests:")
     print("  - Basic operations (write, read)")
@@ -268,11 +327,15 @@ async def main():
     with tempfile.NamedTemporaryFile(delete=False, suffix='_v3.db') as tmp:
         v3_path = tmp.name
     
+    with tempfile.NamedTemporaryFile(delete=False, suffix='_v4.db') as tmp:
+        v4_path = tmp.name
+    
     try:
         # Run benchmarks
         v1_results = await run_v1_benchmark(v1_path)
         v2_results = await run_v2_benchmark(v2_path)
         v3_results = await run_v3_benchmark(v3_path)
+        v4_results = await run_v4_benchmark(v4_path)
         
         # Create result objects
         test_names = ['basic_write', 'basic_read', 'concurrent_read', 'bulk_insert', 'mixed_ops']
@@ -290,6 +353,7 @@ async def main():
             result.set_v1(*v1_results[test_name])
             result.set_v2(*v2_results[test_name])
             result.set_v3(*v3_results[test_name])
+            result.set_v4(*v4_results[test_name])
             results.append(result)
         
         # Print comparison summary
@@ -308,31 +372,40 @@ async def main():
         v1_avg = sum(r.v1_ops for r in results) / len(results)
         v2_avg = sum(r.v2_ops for r in results) / len(results)
         v3_avg = sum(r.v3_ops for r in results) / len(results)
+        v4_avg = sum(r.v4_ops for r in results) / len(results)
         
         print(f"\nAverage throughput (ops/sec):")
-        print(f"  v1: {v1_avg:.0f}")
-        print(f"  v2: {v2_avg:.0f} ({v2_avg/v1_avg:.2f}x vs v1)")
-        print(f"  v3: {v3_avg:.0f} ({v3_avg/v1_avg:.2f}x vs v1)")
+        print(f"  v1: {v1_avg:>10.0f}")
+        print(f"  v2: {v2_avg:>10.0f} ({v2_avg/v1_avg:>5.2f}x vs v1)")
+        print(f"  v3: {v3_avg:>10.0f} ({v3_avg/v1_avg:>5.2f}x vs v1)")
+        print(f"  v4: {v4_avg:>10.0f} ({v4_avg/v1_avg:>5.2f}x vs v1)")
         
         # Determine winner
         print(f"\n{'='*70}")
         print("Summary")
         print(f"{'='*70}")
         
-        if v3_avg > v2_avg and v3_avg > v1_avg:
-            improvement_vs_v1 = ((v3_avg / v1_avg) - 1) * 100
-            improvement_vs_v2 = ((v3_avg / v2_avg) - 1) * 100
-            print(f"✓ v3 is the fastest:")
-            print(f"  - {improvement_vs_v1:.1f}% faster than v1")
-            print(f"  - {improvement_vs_v2:.1f}% faster than v2")
-        elif v2_avg > v1_avg:
+        versions = [('v1', v1_avg), ('v2', v2_avg), ('v3', v3_avg), ('v4', v4_avg)]
+        sorted_versions = sorted(versions, key=lambda x: x[1], reverse=True)
+        winner = sorted_versions[0]
+        
+        print(f"\n🏆 Winner: {winner[0]} ({winner[1]:.0f} ops/sec)")
+        print(f"\nPerformance ranking:")
+        for i, (name, ops) in enumerate(sorted_versions, 1):
+            vs_baseline = ((ops / v1_avg) - 1) * 100
+            print(f"  {i}. {name}: {ops:>10.0f} ops/sec ({vs_baseline:+.1f}% vs v1)")
+        
+        # Show improvements
+        print(f"\nKey improvements:")
+        if v4_avg > v3_avg:
+            improvement = ((v4_avg / v3_avg) - 1) * 100
+            print(f"  ✓ v4 is {improvement:.1f}% faster than v3")
+        if v3_avg > v2_avg:
+            improvement = ((v3_avg / v2_avg) - 1) * 100
+            print(f"  ✓ v3 is {improvement:.1f}% faster than v2")
+        if v2_avg > v1_avg:
             improvement = ((v2_avg / v1_avg) - 1) * 100
-            print(f"✓ v2 is faster than v1 by {improvement:.1f}%")
-            if v3_avg < v2_avg:
-                regression = ((v2_avg / v3_avg) - 1) * 100
-                print(f"  Note: v3 is {regression:.1f}% slower than v2 with current settings")
-        else:
-            print(f"✓ v1 performs well as the baseline")
+            print(f"  ✓ v2 is {improvement:.1f}% faster than v1")
         
         print(f"\n{'='*70}")
         print("✅ Benchmark completed successfully!")
@@ -340,7 +413,7 @@ async def main():
         
     finally:
         # Cleanup
-        for path in [v1_path, v2_path, v3_path]:
+        for path in [v1_path, v2_path, v3_path, v4_path]:
             if os.path.exists(path):
                 os.unlink(path)
     

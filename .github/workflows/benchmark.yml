@@ -32,6 +32,7 @@ on:
           - 'v1'
           - 'v2'
           - 'v3'
+          - 'v4'
           - 'all'
 
 jobs:
@@ -85,7 +86,7 @@ jobs:
         echo "📦 選択されたBeta版: $BETA_VERSION"
         
         if [ "$BETA_VERSION" == "all" ]; then
-          echo "🔬 全バージョン (v1, v2, v3) の比較ベンチマークを実行..."
+          echo "🔬 全バージョン (v1, v2, v3, v4) の比較ベンチマークを実行..."
           python run_benchmark.py --beta all
         elif [ "$BETA_VERSION" == "v2" ]; then
           echo "🔄 ベンチマークスクリプトをv2用に変更..."
@@ -109,6 +110,18 @@ jobs:
             python comprehensive_benchmark.py
           else
             echo "⚡ 高速ベンチマーク (v3) を実行中..."
+            python fast_comprehensive_benchmark.py
+          fi
+        elif [ "$BETA_VERSION" == "v4" ]; then
+          echo "🔄 ベンチマークスクリプトをv4-final用に変更..."
+          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v4_final import/g' comprehensive_benchmark.py
+          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v4_final import/g' fast_comprehensive_benchmark.py
+          
+          if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
+            echo "🔬 フル機能ベンチマーク (v4) を実行中..."
+            python comprehensive_benchmark.py
+          else
+            echo "⚡ 高速ベンチマーク (v4) を実行中..."
             python fast_comprehensive_benchmark.py
           fi
         else

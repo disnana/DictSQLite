@@ -5,7 +5,8 @@
     python run_benchmark.py --beta v1              # v1のみテスト
     python run_benchmark.py --beta v2              # v2のみテスト
     python run_benchmark.py --beta v3              # v3のみテスト
-    python run_benchmark.py --beta all             # v1, v2, v3を全て比較
+    python run_benchmark.py --beta v4              # v4のみテスト
+    python run_benchmark.py --beta all             # v1, v2, v3, v4を全て比較
     python run_benchmark.py --beta all --full      # 全バージョンでフルベンチマーク
 """
 
@@ -33,6 +34,9 @@ def replace_import_in_file(file_path, version):
         ).replace(
             'from dictsqlite_fastest_beta_v3_alpha import',
             'from dictsqlite_fastest_beta import'
+        ).replace(
+            'from dictsqlite_fastest_beta_v4_final import',
+            'from dictsqlite_fastest_beta import'
         )
     elif version == 'v2':
         # v1のインポートをv2に変更
@@ -45,6 +49,12 @@ def replace_import_in_file(file_path, version):
         new_content = content.replace(
             'from dictsqlite_fastest_beta import',
             'from dictsqlite_fastest_beta_v3_alpha import'
+        )
+    elif version == 'v4':
+        # v1のインポートをv4-finalに変更
+        new_content = content.replace(
+            'from dictsqlite_fastest_beta import',
+            'from dictsqlite_fastest_beta_v4_final import'
         )
     else:
         return False
@@ -60,9 +70,9 @@ def replace_import_in_file(file_path, version):
 def run_benchmark(beta_version, full_benchmark=False):
     """ベンチマークを実行"""
     
-    # v4は切り捨て、v1, v2, v3のみサポート
-    if beta_version not in ['v1', 'v2', 'v3']:
-        print(f"\n❌ エラー: {beta_version} はサポートされていません。v1, v2, v3のみサポートされています。")
+    # v1, v2, v3, v4をサポート
+    if beta_version not in ['v1', 'v2', 'v3', 'v4']:
+        print(f"\n❌ エラー: {beta_version} はサポートされていません。v1, v2, v3, v4のみサポートされています。")
         return False
     
     # ベンチマークディレクトリに移動
@@ -85,7 +95,7 @@ def run_benchmark(beta_version, full_benchmark=False):
     
     try:
         # インポートを変更
-        if beta_version in ['v1', 'v2', 'v3']:
+        if beta_version in ['v1', 'v2', 'v3', 'v4']:
             print(f"\n🔄 ベンチマークスクリプトを{beta_version}用に変更...")
             for script in scripts:
                 if replace_import_in_file(script, beta_version):
@@ -121,7 +131,7 @@ def run_benchmark(beta_version, full_benchmark=False):
 
 
 def run_all_versions_benchmark():
-    """Run comprehensive benchmark comparing all versions (v1, v2, v3)."""
+    """Run comprehensive benchmark comparing all versions (v1, v2, v3, v4)."""
     
     # ベンチマークディレクトリに移動
     benchmark_dir = Path(__file__).parent.parent.parent / 'dictsqlite-fastest' / 'beta'
@@ -133,7 +143,7 @@ def run_all_versions_benchmark():
         print(f"\n❌ エラー: {script} が見つかりません")
         return False
     
-    print("\n🔬 v1, v2, v3 総合比較ベンチマークを実行中...")
+    print("\n🔬 v1, v2, v3, v4 総合比較ベンチマークを実行中...")
     print(f"スクリプト: {script}")
     
     result = subprocess.run(
@@ -155,7 +165,7 @@ def main():
     )
     parser.add_argument(
         '--beta',
-        choices=['v1', 'v2', 'v3', 'all'],
+        choices=['v1', 'v2', 'v3', 'v4', 'all'],
         default='v1',
         help='Beta版のバージョン (デフォルト: v1, all=全バージョン比較)'
     )
