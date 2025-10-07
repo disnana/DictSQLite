@@ -131,10 +131,10 @@ def run_benchmark(beta_version, full_benchmark=False):
 
 
 def run_all_versions_benchmark():
-    """Run comprehensive benchmark comparing all versions (v1, v2, v3, v4)."""
+    """Run comprehensive benchmark comparing Original, Beta v2, and v4.1."""
     
     # ベンチマークディレクトリに移動
-    benchmark_dir = Path(__file__).parent.parent.parent / 'others' / 'beta-versions' / 'dictsqlite-fastest' / 'beta'
+    benchmark_dir = Path(__file__).parent
     
     # 専用の比較ベンチマークを実行
     script = benchmark_dir / 'benchmark_all_versions.py'
@@ -143,7 +143,7 @@ def run_all_versions_benchmark():
         print(f"\n❌ エラー: {script} が見つかりません")
         return False
     
-    print("\n🔬 v1, v2, v3, v4 総合比較ベンチマークを実行中...")
+    print("\n🔬 Original, Beta v2, v4.1 総合比較ベンチマークを実行中...")
     print(f"スクリプト: {script}")
     
     result = subprocess.run(
@@ -185,7 +185,7 @@ def main():
     print("=" * 80)
     
     if args.beta == 'all':
-        print("\n📊 全バージョン (v1, v2, v3) の比較ベンチマークを実行...")
+        print("\n📊 全バージョン (Original, Beta v2, v4.1) の比較ベンチマークを実行...")
         success = run_all_versions_benchmark()
         return 0 if success else 1
     else:
