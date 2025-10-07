@@ -41,16 +41,22 @@ try:
     dictsqlite_v4_1 = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(dictsqlite_v4_1)
     
-    if hasattr(dictsqlite_v4_1, 'AsyncDictSQLite'):
-        _RustAsyncV4 = dictsqlite_v4_1.AsyncDictSQLite
-        RUST_V4_AVAILABLE = True
-        print(f"✓ Rust v4.1 loaded successfully from {v4_1_path}")
+    # Check if the native extension is actually available
+    if hasattr(dictsqlite_v4_1, 'is_native_available') and dictsqlite_v4_1.is_native_available():
+        if hasattr(dictsqlite_v4_1, 'AsyncDictSQLite'):
+            _RustAsyncV4 = dictsqlite_v4_1.AsyncDictSQLite
+            RUST_V4_AVAILABLE = True
+            print(f"✓ Rust v4.1 with native extension loaded successfully")
+        else:
+            raise ImportError("AsyncDictSQLite not available in dictsqlite_v4.1 package")
     else:
-        raise ImportError("AsyncDictSQLite not available in dictsqlite_v4.1 package")
+        # Package loaded but native extension not available
+        print(f"⚠️ dictsqlite_v4.1 package loaded but native extension not built")
+        print("   Please build it:")
+        print("   cd others/beta-versions/dictsqlite_v4.1 && maturin develop --release")
+        raise ImportError("Native extension not available")
 except (ImportError, AttributeError) as e:
     print(f"⚠️ Warning: Rust v4.1 not available: {e}")
-    print("   Please build it:")
-    print("   cd others/beta-versions/dictsqlite_v4.1 && maturin develop --release")
     _RustAsyncV4 = None
     RUST_V4_AVAILABLE = False
 
