@@ -17,6 +17,13 @@
           "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v1/benchmark.csv",
           "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v1/graphs"
         ]
+      },
+      {
+        "timestamp": "2025-10-07T12:24:28.143569",
+        "files": [
+          "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v1/benchmark.csv",
+          "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v1/graphs"
+        ]
       }
     ],
     "all": [
@@ -41,8 +48,33 @@
           "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v2/benchmark.log",
           "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v2/graphs"
         ]
+      },
+      {
+        "timestamp": "2025-10-07T12:24:28.144262",
+        "files": [
+          "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v2/benchmark.csv",
+          "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v2/graphs"
+        ]
+      }
+    ],
+    "v3": [
+      {
+        "timestamp": "2025-10-07T12:24:28.144878",
+        "files": [
+          "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v3/benchmark.csv",
+          "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v3/graphs"
+        ]
+      }
+    ],
+    "v4": [
+      {
+        "timestamp": "2025-10-07T12:24:28.145547",
+        "files": [
+          "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v4/benchmark.csv",
+          "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v4/graphs"
+        ]
       }
     ]
   },
-  "latest_run": "2025-10-07T12:20:40.299994"
+  "latest_run": "2025-10-07T12:24:28.145547"
 }
