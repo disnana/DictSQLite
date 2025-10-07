@@ -17,8 +17,8 @@ from pathlib import Path
 # モジュールパスの設定
 BASE_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(BASE_DIR))
-sys.path.insert(0, str(BASE_DIR / 'dictsqlite-fastest'))
-sys.path.insert(0, str(BASE_DIR / 'dictsqlite-fastest' / 'beta'))
+sys.path.insert(0, str(BASE_DIR / 'others' / 'beta-versions' / 'dictsqlite-fastest'))
+sys.path.insert(0, str(BASE_DIR / 'others' / 'beta-versions' / 'dictsqlite-fastest' / 'beta'))
 
 # インポート
 try:

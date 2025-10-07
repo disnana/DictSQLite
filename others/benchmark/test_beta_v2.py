@@ -13,7 +13,7 @@ if sys.platform == 'win32':
 
 # プロジェクトルートをパスに追加
 project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root / "dictsqlite-fastest" / "beta"))
+sys.path.insert(0, str(project_root / "others" / "beta-versions" / "dictsqlite-fastest" / "beta"))
 
 from dictsqlite_fastest_beta_v2 import DictSQLiteFastestBeta, AsyncDictSQLiteFastestBeta
 
