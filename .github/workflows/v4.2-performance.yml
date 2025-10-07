@@ -1,4 +1,6 @@
 name: DictSQLite v4.2 Performance Tests
+permissions:
+  contents: read
 
 on:
   push:
