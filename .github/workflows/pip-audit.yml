@@ -26,3 +26,6 @@ jobs:
 
       - name: Run pip-audit
         uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          arguments: -r requirements.txt  # ← ここだけ追加！
+          fail-on: vulnerability          # ← 任意（脆弱性あればジョブ失敗）
