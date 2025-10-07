@@ -100,9 +100,15 @@ class BenchmarkResult:
         print(f"\n{self.name}:")
         print(f"  Original: {self.original_time:.3f}s ({self.original_ops:>8.0f} ops/sec)")
         if self.beta_v2_ops > 0:
-            print(f"  Beta v2:  {self.beta_v2_time:.3f}s ({self.beta_v2_ops:>8.0f} ops/sec) - {self.beta_v2_ops/self.original_ops:>5.2f}x vs Original")
+            if self.original_ops > 0:
+                print(f"  Beta v2:  {self.beta_v2_time:.3f}s ({self.beta_v2_ops:>8.0f} ops/sec) - {self.beta_v2_ops/self.original_ops:>5.2f}x vs Original")
+            else:
+                print(f"  Beta v2:  {self.beta_v2_time:.3f}s ({self.beta_v2_ops:>8.0f} ops/sec)")
         if self.v4_1_ops > 0:
-            print(f"  v4.1:     {self.v4_1_time:.3f}s ({self.v4_1_ops:>8.0f} ops/sec) - {self.v4_1_ops/self.original_ops:>5.2f}x vs Original")
+            if self.original_ops > 0:
+                print(f"  v4.1:     {self.v4_1_time:.3f}s ({self.v4_1_ops:>8.0f} ops/sec) - {self.v4_1_ops/self.original_ops:>5.2f}x vs Original")
+            else:
+                print(f"  v4.1:     {self.v4_1_time:.3f}s ({self.v4_1_ops:>8.0f} ops/sec)")
 
 
 # Sync benchmark functions for Original DictSQLite
