@@ -1,16 +1,8 @@
-name: DictSQLite v4.2 Performance Tests
+name: DictSQLite v4.2 Performance Tests (Manual)
 permissions:
   contents: read
 
 on:
-  push:
-    paths:
-      - 'others/beta-versions/dictsqlite_v4.2/**'
-      - '.github/workflows/v4.2-performance.yml'
-  pull_request:
-    paths:
-      - 'others/beta-versions/dictsqlite_v4.2/**'
-      - '.github/workflows/v4.2-performance.yml'
   workflow_dispatch:
     inputs:
       iterations:
@@ -24,8 +16,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ['3.9', '3.10', '3.11', '3.12']
+        os: [ubuntu-latest]
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
       fail-fast: false
     
     steps:
