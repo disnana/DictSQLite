@@ -1,0 +1,79 @@
+[package]
+name = "dictsqlite_v4"
+version = "4.0.0"
+edition = "2021"
+authors = ["Disnana <support@disnana.com>"]
+description = "High-performance DictSQLite v4.0 with enhanced security (AES-256-GCM encryption & safe pickle) targeting 100M+ ops/sec"
+license = "MIT"
+
+[lib]
+name = "dictsqlite_v4"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Python bindings
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py39"] }
+
+# High-performance concurrent data structures
+dashmap = "5.5"          # Lock-free concurrent HashMap
+papaya = "0.1"          # Ultra-low latency concurrent hashmap
+
+# SQLite backend
+rusqlite = { version = "0.31", features = ["bundled", "backup", "blob", "hooks"] }
+
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = "1.3"
+
+# Memory management
+crossbeam = "0.8"       # Lock-free data structures
+parking_lot = "0.12"    # Fast mutex implementations
+
+# Parallel processing
+rayon = "1.8"           # Data parallelism for batch operations
+
+# Hashing
+ahash = "0.8"           # Fast non-cryptographic hash
+
+# Cryptography (for v4 security features)
+aes-gcm = "0.10"        # AES-256-GCM encryption
+argon2 = "0.5"          # Password hashing (PBKDF2 alternative)
+pbkdf2 = { version = "0.12", features = ["simple"] }  # PBKDF2 key derivation
+sha2 = "0.10"           # SHA-256 hashing
+base64 = "0.21"         # Base64 encoding
+rand = "0.8"            # Random number generation
+
+# System info
+num_cpus = "1.16"       # CPU core detection
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.4"
+tempfile = "3.8"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.bench]
+inherits = "release"
+
+[[bench]]
+name = "ops_benchmark"
+harness = false
