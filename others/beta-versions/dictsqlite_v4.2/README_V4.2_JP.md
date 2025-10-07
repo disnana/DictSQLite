@@ -314,10 +314,26 @@ db.close()
 - [V4.1_OPTIMIZATION_VERIFICATION.md](./V4.1_OPTIMIZATION_VERIFICATION.md) - 技術詳細
 - [V4.1_INVESTIGATION_REPORT_JP.md](./V4.1_INVESTIGATION_REPORT_JP.md) - 包括的調査
 
+### ユーザー向けドキュメント
+
+- **[MIGRATION_GUIDE_V4.2_JP.md](./MIGRATION_GUIDE_V4.2_JP.md)** - **v1.8.8からの移行ガイド**
+  - v1.8.8とv4.2の違い
+  - ステップバイステップの移行手順
+  - API比較表
+  - コード移行例
+  - よくある問題と解決策
+
+- **[examples/README.md](./examples/README.md)** - **サンプルコード集**
+  - 基本的な使用方法（[v4.2_basic_usage.py](./examples/v4.2_basic_usage.py)）
+  - 移行サンプル（[v4.2_migration_example.py](./examples/v4.2_migration_example.py)）
+  - パフォーマンス最適化例（[v4.2_performance_examples.py](./examples/v4.2_performance_examples.py)）
+  - 高度な機能の使用例（[v4.2_advanced_examples.py](./examples/v4.2_advanced_examples.py)）
+
 ### 実装ガイド
 
 - [IMPROVEMENT_ACTION_PLAN_JP.md](./IMPROVEMENT_ACTION_PLAN_JP.md) - 実装アクションプラン
 - [BETA_ASYNC_PERFORMANCE_FIX.md](../BETA_ASYNC_PERFORMANCE_FIX.md) - Beta版の実証
+- [DEVELOPER_GUIDE_JP.md](./DEVELOPER_GUIDE_JP.md) - 開発者向け詳細ガイド
 
 ---
 
