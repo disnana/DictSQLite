@@ -320,8 +320,9 @@ async def run_v4_1_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
     
     results = {}
     
-    # v4.1 has maximum performance optimizations
-    async with AsyncV4_1(db_path) as db:
+    # v4.1 doesn't support async context manager, so initialize directly
+    db = AsyncV4_1(db_path)
+    try:
         # Basic operations
         print("\n1. Basic Write (300 items)...")
         elapsed, ops = await benchmark_basic_write(db, 300)
@@ -347,6 +348,10 @@ async def run_v4_1_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
         elapsed, ops = await benchmark_mixed_operations(db, 400)
         results['mixed_ops'] = (elapsed, ops)
         print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+    finally:
+        # Cleanup if the class has a close method
+        if hasattr(db, 'close'):
+            await db.close()
     
     return results
 

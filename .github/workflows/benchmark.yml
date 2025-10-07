@@ -87,10 +87,11 @@ jobs:
         pip install maturin
         cd others/beta-versions/dictsqlite_v4.1
         echo "🔨 Building Rust v4.1 extension..."
+        echo "Current directory: $(pwd)"
+        echo "Checking for Cargo.toml: $(ls -la Cargo.toml 2>&1 || echo 'NOT FOUND')"
         maturin build --release
         echo "📦 Installing Rust v4.1 extension..."
-        pip install target/wheels/dictsqlite_v4-*.whl
-        cd ../../..
+        pip install --force-reinstall target/wheels/dictsqlite_v4-*.whl
         echo "✅ Rust v4.1 extension built and installed successfully"
 
     - name: Run fast comprehensive benchmark
