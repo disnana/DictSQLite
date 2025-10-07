@@ -110,15 +110,17 @@ impl CryptoEngine {
 
 /// 高速化のためのユーティリティ関数
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+
 /// Base64エンコード（URL-safe）
 pub fn encode_base64(data: &[u8]) -> String {
-    base64::encode_config(data, base64::URL_SAFE_NO_PAD)
+    URL_SAFE_NO_PAD.encode(data)
 }
 
 /// Base64デコード（URL-safe）
 pub fn decode_base64(encoded: &str) -> Result<Vec<u8>, CryptoError> {
-    base64::decode_config(encoded, base64::URL_SAFE_NO_PAD)
-        .map_err(|e| CryptoError::InvalidFormat)
+    URL_SAFE_NO_PAD.decode(encoded)
+        .map_err(|_| CryptoError::InvalidFormat)
 }
 
 #[cfg(test)]

@@ -1,0 +1,14 @@
+/home/runner/work/DictSQLite/DictSQLite/dictsqlite_v4/target/debug/deps/pyo3_build_config-fede64ca05f5ac21.d: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.20.3/src/lib.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.20.3/src/errors.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.20.3/src/impl_.rs /home/runner/work/DictSQLite/DictSQLite/dictsqlite_v4/target/debug/build/pyo3-build-config-ed328cdaf8bcfc53/out/pyo3-build-config-file.txt /home/runner/work/DictSQLite/DictSQLite/dictsqlite_v4/target/debug/build/pyo3-build-config-ed328cdaf8bcfc53/out/pyo3-build-config.txt
+
+/home/runner/work/DictSQLite/DictSQLite/dictsqlite_v4/target/debug/deps/libpyo3_build_config-fede64ca05f5ac21.rlib: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.20.3/src/lib.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.20.3/src/errors.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.20.3/src/impl_.rs /home/runner/work/DictSQLite/DictSQLite/dictsqlite_v4/target/debug/build/pyo3-build-config-ed328cdaf8bcfc53/out/pyo3-build-config-file.txt /home/runner/work/DictSQLite/DictSQLite/dictsqlite_v4/target/debug/build/pyo3-build-config-ed328cdaf8bcfc53/out/pyo3-build-config.txt
+
+/home/runner/work/DictSQLite/DictSQLite/dictsqlite_v4/target/debug/deps/libpyo3_build_config-fede64ca05f5ac21.rmeta: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.20.3/src/lib.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.20.3/src/errors.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.20.3/src/impl_.rs /home/runner/work/DictSQLite/DictSQLite/dictsqlite_v4/target/debug/build/pyo3-build-config-ed328cdaf8bcfc53/out/pyo3-build-config-file.txt /home/runner/work/DictSQLite/DictSQLite/dictsqlite_v4/target/debug/build/pyo3-build-config-ed328cdaf8bcfc53/out/pyo3-build-config.txt
+
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.20.3/src/lib.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.20.3/src/errors.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.20.3/src/impl_.rs:
+/home/runner/work/DictSQLite/DictSQLite/dictsqlite_v4/target/debug/build/pyo3-build-config-ed328cdaf8bcfc53/out/pyo3-build-config-file.txt:
+/home/runner/work/DictSQLite/DictSQLite/dictsqlite_v4/target/debug/build/pyo3-build-config-ed328cdaf8bcfc53/out/pyo3-build-config.txt:
+
+# env-dep:CARGO_PKG_VERSION=0.20.3
+# env-dep:OUT_DIR=/home/runner/work/DictSQLite/DictSQLite/dictsqlite_v4/target/debug/build/pyo3-build-config-ed328cdaf8bcfc53/out

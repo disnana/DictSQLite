@@ -1,10 +1,10 @@
 #!/bin/bash
-# Build script for DictSQLite v3.0
+# Build script for DictSQLite v4.0
 
 set -e
 
 echo "================================"
-echo "DictSQLite v3.0 Build Script"
+echo "DictSQLite v4.0 Build Script"
 echo "================================"
 echo ""
 
@@ -26,10 +26,10 @@ fi
 echo "✅ Maturin found: $(maturin --version)"
 echo ""
 
-# Navigate to dictsqlite_v3 directory
+# Navigate to dictsqlite_v4 directory
 cd "$(dirname "$0")"
 
-echo "🔨 Building DictSQLite v3.0 in release mode..."
+echo "🔨 Building DictSQLite v4.0 in release mode..."
 echo ""
 
 # Build with maturin
@@ -51,14 +51,18 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "✅ Installed successfully!"
     echo ""
     echo "Test installation:"
-    python -c "from dictsqlite_v3 import DictSQLiteV3, is_native_available; print(f'Native available: {is_native_available()}')"
+    python -c "from dictsqlite_v4 import DictSQLiteV4; print('✅ DictSQLiteV4 imported successfully')"
 fi
 
 echo ""
 echo "🎉 Done!"
 echo ""
-echo "To run benchmarks:"
-echo "  python examples/benchmark.py"
+echo "To run examples:"
+echo "  python examples/v4_usage_examples.py"
 echo ""
-echo "To run Rust benchmarks:"
-echo "  cargo bench"
+echo "To run benchmarks:"
+echo "  python examples/v4_benchmark.py"
+echo ""
+echo "To run tests:"
+echo "  pytest tests/test_v4_security.py -v"
+echo ""
