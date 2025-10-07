@@ -894,8 +894,13 @@ print(stats)  # キャッシュヒット率などを確認
 ## 📚 参考資料
 
 - [README_V4.2_JP.md](./README_V4.2_JP.md) - v4.2の完全ガイド
+- [PERFORMANCE_OPTIMIZATION_GUIDE_JP.md](./PERFORMANCE_OPTIMIZATION_GUIDE_JP.md) - パフォーマンス最適化の詳細ガイド
 - [DEVELOPER_GUIDE_JP.md](./DEVELOPER_GUIDE_JP.md) - 開発者向け詳細ドキュメント
 - [examples/](./examples/) - 実践的なサンプルコード
+  - [v4.2_basic_usage.py](./examples/v4.2_basic_usage.py) - 基本的な使い方
+  - [v4.2_migration_example.py](./examples/v4.2_migration_example.py) - 移行例
+  - [v4.2_performance_examples.py](./examples/v4.2_performance_examples.py) - パフォーマンス最適化
+  - [v4.2_advanced_examples.py](./examples/v4.2_advanced_examples.py) - 高度な機能
 - [V4.2_IMPLEMENTATION_SUMMARY.md](./V4.2_IMPLEMENTATION_SUMMARY.md) - 実装詳細
 
 ---

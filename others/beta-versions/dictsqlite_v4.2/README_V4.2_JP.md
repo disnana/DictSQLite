@@ -323,6 +323,13 @@ db.close()
   - コード移行例
   - よくある問題と解決策
 
+- **[PERFORMANCE_OPTIMIZATION_GUIDE_JP.md](./PERFORMANCE_OPTIMIZATION_GUIDE_JP.md)** - **パフォーマンス最適化ガイド**
+  - buffer_sizeの最適化方法
+  - hot_capacityの選択ガイド
+  - persist_modeの使い分け
+  - ユースケース別推奨設定
+  - ベンチマーク方法
+
 - **[examples/README.md](./examples/README.md)** - **サンプルコード集**
   - 基本的な使用方法（[v4.2_basic_usage.py](./examples/v4.2_basic_usage.py)）
   - 移行サンプル（[v4.2_migration_example.py](./examples/v4.2_migration_example.py)）
