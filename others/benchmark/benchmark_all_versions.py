@@ -142,7 +142,7 @@ def benchmark_mixed_operations_sync(db, count: int) -> Tuple[float, float]:
     return elapsed, count / elapsed
 
 
-# Async benchmark functions
+# Async benchmark functions for Beta v2 (with aset/aget/abulk_insert methods)
 async def benchmark_basic_write(db, count: int) -> Tuple[float, float]:
     """Benchmark basic write operations."""
     start = time.time()
@@ -197,6 +197,46 @@ async def benchmark_mixed_operations(db, count: int) -> Tuple[float, float]:
             await db.aget(f'mixed_{i}')
         if i % 5 == 0:
             await db.adelete(f'mixed_{i}')
+    elapsed = time.time() - start
+    return elapsed, count / elapsed
+
+
+# V4.1-specific benchmark functions (uses set/get/batch_set, not async methods)
+async def benchmark_v4_1_basic_write(db, count: int) -> Tuple[float, float]:
+    """Benchmark basic write operations for v4.1."""
+    start = time.time()
+    for i in range(count):
+        db.set(f'key_{i}', f'value_{i}')
+    elapsed = time.time() - start
+    return elapsed, count / elapsed
+
+
+async def benchmark_v4_1_basic_read(db, count: int) -> Tuple[float, float]:
+    """Benchmark sequential read operations for v4.1."""
+    start = time.time()
+    for i in range(count):
+        db.get(f'key_{i}')
+    elapsed = time.time() - start
+    return elapsed, count / elapsed
+
+
+async def benchmark_v4_1_bulk_insert(db, count: int) -> Tuple[float, float]:
+    """Benchmark bulk insert for v4.1."""
+    data = [(f'bulk_key_{i}', f'bulk_value_{i}') for i in range(count)]
+    
+    start = time.time()
+    db.batch_set(data)
+    elapsed = time.time() - start
+    return elapsed, count / elapsed
+
+
+async def benchmark_v4_1_mixed_operations(db, count: int) -> Tuple[float, float]:
+    """Benchmark mixed read/write operations for v4.1."""
+    start = time.time()
+    for i in range(count):
+        db.set(f'mixed_{i}', f'data_{i}')
+        if i % 3 == 0:
+            db.get(f'mixed_{i}')
     elapsed = time.time() - start
     return elapsed, count / elapsed
 
@@ -325,33 +365,35 @@ async def run_v4_1_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
     try:
         # Basic operations
         print("\n1. Basic Write (300 items)...")
-        elapsed, ops = await benchmark_basic_write(db, 300)
+        elapsed, ops = await benchmark_v4_1_basic_write(db, 300)
         results['basic_write'] = (elapsed, ops)
         print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
         
         print("2. Basic Read (300 items)...")
-        elapsed, ops = await benchmark_basic_read(db, 300)
+        elapsed, ops = await benchmark_v4_1_basic_read(db, 300)
         results['basic_read'] = (elapsed, ops)
         print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        print("3. Concurrent Read (600 items, 8 concurrent)...")
-        elapsed, ops = await benchmark_concurrent_read(db, 600, 8)
-        results['concurrent_read'] = (elapsed, ops)
-        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        # Skip concurrent read since v4.1 doesn't have async methods
+        print("3. Concurrent Read - Skipped (v4.1 uses synchronous API)")
+        results['concurrent_read'] = (0, 0)
         
         print("4. Bulk Insert (500 items)...")
-        elapsed, ops = await benchmark_bulk_insert(db, 500)
+        elapsed, ops = await benchmark_v4_1_bulk_insert(db, 500)
         results['bulk_insert'] = (elapsed, ops)
         print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
         
         print("5. Mixed Operations (400 items)...")
-        elapsed, ops = await benchmark_mixed_operations(db, 400)
+        elapsed, ops = await benchmark_v4_1_mixed_operations(db, 400)
         results['mixed_ops'] = (elapsed, ops)
         print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
     finally:
         # Cleanup if the class has a close method
         if hasattr(db, 'close'):
-            await db.close()
+            if asyncio.iscoroutinefunction(db.close):
+                await db.close()
+            else:
+                db.close()
     
     return results
 
