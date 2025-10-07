@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Python bindings
-pyo3 = { version = "0.20", features = ["extension-module", "abi3-py39"] }
+pyo3 = { version = "0.26", features = ["extension-module", "abi3-py39"] }
 
 # High-performance concurrent data structures
 dashmap = "5.5"          # Lock-free concurrent HashMap
