@@ -87,9 +87,11 @@ jobs:
         pip install maturin
         cd others/beta-versions/dictsqlite_v4.1
         echo "🔨 Building Rust v4.1 extension..."
-        maturin develop --release
+        maturin build --release
+        echo "📦 Installing Rust v4.1 extension..."
+        pip install target/wheels/dictsqlite_v4-*.whl
         cd ../../..
-        echo "✅ Rust v4.1 extension built successfully"
+        echo "✅ Rust v4.1 extension built and installed successfully"
 
     - name: Run fast comprehensive benchmark
       run: |
