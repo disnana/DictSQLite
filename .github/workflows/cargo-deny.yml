@@ -10,12 +10,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          command: check
           log-level: warn
-          manifest-path: ./Cargo.toml
-          config: others/deny.toml     # ← これを追加！
+          manifest-path: ./dictsqlite_v4.1/Cargo.toml
+          command: check
           arguments: --all-features
-          # credentials: https://${{ secrets.GITHUB_USER }}:${{ secrets.GITHUB_PAT }}@github.com
