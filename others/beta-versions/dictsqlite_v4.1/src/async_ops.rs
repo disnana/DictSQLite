@@ -1,44 +1,70 @@
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use dashmap::DashMap;
 use rayon::prelude::*;
 
-/// Async version of DictSQLite v3.0 for high-concurrency scenarios
+use crate::{Config, PersistMode, StorageEngine};
+
+/// Async version of DictSQLite v4.1 for high-concurrency scenarios
 /// 
 /// Optimizations:
 /// - Shard-per-core DashMap for optimal concurrent access
 /// - Rayon for parallel batch operations
 /// - No GIL contention for pure in-memory operations
+/// - Optional persistence support (v4.1 feature)
 #[pyclass]
 pub struct AsyncDictSQLite {
     /// Lock-free concurrent hashmap with shard-per-core
     cache: Arc<DashMap<String, Vec<u8>>>,
     
+    /// Storage engine for persistence (optional)
+    storage: Arc<Mutex<Option<StorageEngine>>>,
+    
     /// Configuration
+    config: Config,
+    
+    /// Capacity
     capacity: usize,
 }
 
 #[pymethods]
 impl AsyncDictSQLite {
     #[new]
-    #[pyo3(signature = (db_path, capacity=1_000_000))]
-    fn new(db_path: String, capacity: usize) -> PyResult<Self> {
+    #[pyo3(signature = (db_path, capacity=1_000_000, persist_mode="lazy"))]
+    fn new(db_path: String, capacity: usize, persist_mode: &str) -> PyResult<Self> {
+        use std::str::FromStr;
+        
         // Use shard-per-core for optimal concurrent access
         let num_shards = num_cpus::get();
         let cache = Arc::new(DashMap::with_capacity_and_shard_amount(capacity, num_shards));
         
-        // For now, AsyncDictSQLite is pure in-memory
-        // TODO: Add async persistence support
-        let _ = db_path; // Silence unused warning
+        // Create config
+        let mut config = Config::default();
+        config.hot_tier_capacity = capacity;
+        config.persist_mode = PersistMode::from_str(persist_mode)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e))?;
+        
+        // Initialize storage engine
+        let storage = if config.persist_mode == PersistMode::Memory {
+            Arc::new(Mutex::new(None))
+        } else {
+            Arc::new(Mutex::new(Some(
+                StorageEngine::new(&db_path, &config)
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?
+            )))
+        };
         
         Ok(AsyncDictSQLite {
             cache,
+            storage,
+            config,
             capacity,
         })
     }
     
     /// Async get (non-blocking, no GIL for cache access)
+    /// Now with storage fallback for persistence modes
     fn get_async(&self, key: String, py: Python) -> PyResult<Option<PyObject>> {
         let cache = self.cache.clone();
         
@@ -47,13 +73,41 @@ impl AsyncDictSQLite {
             cache.get(&key).map(|value| value.clone())
         });
         
-        // Re-acquire GIL only for Python object creation
-        Ok(result.map(|value| PyBytes::new(py, &value).into()))
+        // If found in cache, return immediately
+        if let Some(value) = result {
+            return Ok(Some(PyBytes::new(py, &value).into()));
+        }
+        
+        // Fallback to storage if not in memory mode
+        if self.config.persist_mode != PersistMode::Memory {
+            let storage_guard = self.storage.lock().unwrap();
+            if let Some(ref storage) = *storage_guard {
+                if let Ok(Some(value)) = storage.get(&key) {
+                    // Promote to cache for future access
+                    drop(storage_guard);
+                    self.cache.insert(key, value.clone());
+                    return Ok(Some(PyBytes::new(py, &value).into()));
+                }
+            }
+        }
+        
+        Ok(None)
     }
     
     /// Async set (non-blocking, no GIL for cache access)
+    /// Now with optional persistence
     fn set_async(&self, key: String, value: Vec<u8>) -> PyResult<()> {
-        self.cache.insert(key, value);
+        self.cache.insert(key.clone(), value.clone());
+        
+        // Immediate write for WriteThrough mode
+        if self.config.persist_mode == PersistMode::WriteThrough {
+            let mut storage_guard = self.storage.lock().unwrap();
+            if let Some(ref mut storage) = *storage_guard {
+                storage.set(&key, &value)
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+            }
+        }
+        
         Ok(())
     }
     
@@ -103,6 +157,30 @@ impl AsyncDictSQLite {
     /// Clear all data
     fn clear(&self) -> PyResult<()> {
         self.cache.clear();
+        Ok(())
+    }
+    
+    /// Flush cache to storage (for Lazy mode)
+    fn flush(&self) -> PyResult<()> {
+        if self.config.persist_mode == PersistMode::Memory {
+            return Ok(());
+        }
+        
+        let mut storage_guard = self.storage.lock().unwrap();
+        if let Some(ref mut storage) = *storage_guard {
+            for entry in self.cache.iter() {
+                storage.set(entry.key(), entry.value())
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+            }
+        }
+        Ok(())
+    }
+    
+    /// Close and flush if needed
+    fn close(&self) -> PyResult<()> {
+        if self.config.persist_mode == PersistMode::Lazy {
+            self.flush()?;
+        }
         Ok(())
     }
 }

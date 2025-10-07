@@ -11,6 +11,8 @@ dist/
 build/
 *.so
 *.pyd
+.venv/
+venv/
 
 # Test artifacts
 .pytest_cache/

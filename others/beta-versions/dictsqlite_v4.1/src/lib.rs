@@ -5,12 +5,19 @@ use dashmap::DashMap;
 use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+use lru::LruCache;
+use std::num::NonZeroUsize;
 
 mod storage;
 mod cache;
 mod async_ops;
 mod crypto;
 mod safe_pickle;
+
+#[cfg(test)]
+mod tests_lru;
+#[cfg(test)]
+mod tests_storage;
 
 pub use storage::{StorageEngine, MemoryTier};
 pub use cache::HybridCache;
@@ -44,10 +51,11 @@ impl FromStr for PersistMode {
     }
 }
 
-/// High-performance DictSQLite v4.0 implementation with enhanced security
+/// High-performance DictSQLite v4.1 implementation with enhanced security
 /// 
 /// Architecture:
 /// - Lock-free concurrent hashmap for hot tier (100M+ ops/sec)
+/// - LRU eviction for memory management
 /// - Memory-mapped warm tier for frequently accessed data
 /// - SQLite cold tier for persistence
 /// - Async support for I/O operations
@@ -57,6 +65,9 @@ impl FromStr for PersistMode {
 pub struct DictSQLiteV4 {
     /// Hot tier: Lock-free concurrent hashmap (in-memory)
     hot_tier: Arc<DashMap<String, Vec<u8>>>,
+    
+    /// LRU tracker for eviction (protects insertion order)
+    access_tracker: Arc<Mutex<LruCache<String, ()>>>,
     
     /// Storage engine managing warm and cold tiers
     storage: Arc<Mutex<Option<StorageEngine>>>,
@@ -139,6 +150,11 @@ impl DictSQLiteV4 {
             config.num_shards,
         ));
         
+        // Initialize LRU tracker for eviction
+        let access_tracker = Arc::new(Mutex::new(
+            LruCache::new(NonZeroUsize::new(config.hot_tier_capacity).unwrap())
+        ));
+        
         // Only create storage if not in pure memory mode
         let storage = if config.persist_mode == PersistMode::Memory {
             Arc::new(Mutex::new(None))
@@ -179,6 +195,7 @@ impl DictSQLiteV4 {
         
         Ok(DictSQLiteV4 {
             hot_tier,
+            access_tracker,
             storage,
             config,
             crypto,
@@ -188,6 +205,9 @@ impl DictSQLiteV4 {
     
     /// Get value by key (lock-free read from hot tier)
     fn get(&self, key: String, py: Python) -> PyResult<Option<PyObject>> {
+        // Track access for LRU
+        self.access_tracker.lock().unwrap().put(key.clone(), ());
+        
         // Try hot tier first (lock-free read)
         if let Some(value) = self.hot_tier.get(&key) {
             // Decrypt if encryption is enabled
@@ -245,6 +265,9 @@ impl DictSQLiteV4 {
         
         self.hot_tier.insert(key.clone(), data.clone());
         
+        // Track access for LRU
+        self.access_tracker.lock().unwrap().put(key.clone(), ());
+        
         // Persist immediately if WriteThrough mode
         if self.config.persist_mode == PersistMode::WriteThrough {
             let mut storage_guard = self.storage.lock().unwrap();
@@ -256,7 +279,29 @@ impl DictSQLiteV4 {
         
         // Check if we need to evict to warm tier
         if self.hot_tier.len() > self.config.hot_tier_capacity {
-            // TODO: Implement LRU eviction to warm tier
+            self.evict_to_warm_tier()?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Evict least recently used item to warm tier (storage)
+    fn evict_to_warm_tier(&self) -> PyResult<()> {
+        let mut tracker = self.access_tracker.lock().unwrap();
+        
+        // Find LRU entry
+        if let Some((evict_key, _)) = tracker.pop_lru() {
+            // Remove from hot tier
+            if let Some((_, value)) = self.hot_tier.remove(&evict_key) {
+                // Write to storage if not in memory mode
+                if self.config.persist_mode != PersistMode::Memory {
+                    let mut storage_guard = self.storage.lock().unwrap();
+                    if let Some(ref mut storage) = *storage_guard {
+                        storage.set(&evict_key, &value)
+                            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+                    }
+                }
+            }
         }
         
         Ok(())
@@ -303,6 +348,116 @@ impl DictSQLiteV4 {
             .map(|entry| entry.key().clone())
             .collect();
         Ok(keys)
+    }
+    
+    /// Get all items as (key, value) tuples (dict-compatible)
+    fn items(&self, py: Python) -> PyResult<Vec<(String, PyObject)>> {
+        let items: Vec<(String, PyObject)> = self.hot_tier.iter()
+            .map(|entry| {
+                let value = if let Some(ref crypto) = self.crypto {
+                    crypto.decrypt(entry.value()).unwrap_or_else(|_| entry.value().clone())
+                } else {
+                    entry.value().clone()
+                };
+                (entry.key().clone(), PyBytes::new(py, &value).into())
+            })
+            .collect();
+        Ok(items)
+    }
+    
+    /// Get all values (dict-compatible)
+    fn values(&self, py: Python) -> PyResult<Vec<PyObject>> {
+        let values: Vec<PyObject> = self.hot_tier.iter()
+            .map(|entry| {
+                let value = if let Some(ref crypto) = self.crypto {
+                    crypto.decrypt(entry.value()).unwrap_or_else(|_| entry.value().clone())
+                } else {
+                    entry.value().clone()
+                };
+                PyBytes::new(py, &value).into()
+            })
+            .collect();
+        Ok(values)
+    }
+    
+    /// Update from dict (dict-compatible alias for bulk_insert)
+    fn update(&self, items: Bound<'_, PyDict>) -> PyResult<()> {
+        self.bulk_insert(items)
+    }
+    
+    /// Pop with optional default (dict-compatible)
+    #[pyo3(signature = (key, default=None))]
+    fn pop(&self, key: String, default: Option<Vec<u8>>, py: Python) -> PyResult<PyObject> {
+        // Track that we're removing this
+        self.access_tracker.lock().unwrap().pop(&key);
+        
+        if let Some((_, value)) = self.hot_tier.remove(&key) {
+            let data = if let Some(ref crypto) = self.crypto {
+                crypto.decrypt(&value)
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?
+            } else {
+                value
+            };
+            return Ok(PyBytes::new(py, &data).into());
+        }
+        
+        // Also try to remove from storage if it exists there
+        if self.config.persist_mode != PersistMode::Memory {
+            let mut storage_guard = self.storage.lock().unwrap();
+            if let Some(ref mut storage) = *storage_guard {
+                if let Ok(Some(value)) = storage.get(&key) {
+                    // Delete from storage
+                    let _ = storage.delete(&key);
+                    let data = if let Some(ref crypto) = self.crypto {
+                        crypto.decrypt(&value)
+                            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?
+                    } else {
+                        value
+                    };
+                    return Ok(PyBytes::new(py, &data).into());
+                }
+            }
+        }
+        
+        Ok(default.map(|v| PyBytes::new(py, &v).into())
+            .unwrap_or_else(|| py.None()))
+    }
+    
+    /// Setdefault - get value or set and return default (dict-compatible)
+    fn setdefault(&self, key: String, default: Vec<u8>, py: Python) -> PyResult<PyObject> {
+        // Check if key exists
+        if let Some(value) = self.hot_tier.get(&key) {
+            let data = if let Some(ref crypto) = self.crypto {
+                crypto.decrypt(&value)
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?
+            } else {
+                value.clone()
+            };
+            return Ok(PyBytes::new(py, &data).into());
+        }
+        
+        // Not in hot tier, check storage
+        if self.config.persist_mode != PersistMode::Memory {
+            let storage_guard = self.storage.lock().unwrap();
+            if let Some(ref storage) = *storage_guard {
+                if let Ok(Some(value)) = storage.get(&key) {
+                    let data = if let Some(ref crypto) = self.crypto {
+                        crypto.decrypt(&value)
+                            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?
+                    } else {
+                        value.clone()
+                    };
+                    drop(storage_guard);
+                    // Promote to hot tier
+                    self.hot_tier.insert(key, value);
+                    return Ok(PyBytes::new(py, &data).into());
+                }
+            }
+        }
+        
+        // Key doesn't exist, set the default
+        self.set(key.clone(), default.clone())?;
+        Ok(PyBytes::new(py, &default).into())
     }
     
     /// Get number of items in hot tier
