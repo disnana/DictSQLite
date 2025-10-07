@@ -28,6 +28,7 @@ pub struct StorageEngine {
     config: Config,
     
     /// Database path
+    #[allow(dead_code)]
     db_path: String,
 }
 
