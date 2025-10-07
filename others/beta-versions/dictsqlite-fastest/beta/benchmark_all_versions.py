@@ -5,12 +5,13 @@ Tests basic operations, concurrent operations, and version-specific optimization
 """
 
 import asyncio
+import csv
 import os
 import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Dict, Tuple, Any
+from typing import Dict, Tuple, Any, List
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -411,6 +412,9 @@ async def main():
         print("✅ Benchmark completed successfully!")
         print(f"{'='*70}")
         
+        # Save results to CSV and generate graphs
+        save_results_and_generate_graphs(results)
+        
     finally:
         # Cleanup
         for path in [v1_path, v2_path, v3_path, v4_path]:
@@ -418,6 +422,70 @@ async def main():
                 os.unlink(path)
     
     return 0
+
+
+def save_results_and_generate_graphs(results: List['BenchmarkResult']):
+    """Save benchmark results to CSV in the expected format and generate graphs."""
+    # Determine output directory
+    benchmark_dir = Path(__file__).parent.parent.parent.parent / 'benchmark'
+    results_dir = benchmark_dir / 'results' / 'versions' / 'all'
+    results_dir.mkdir(parents=True, exist_ok=True)
+    
+    csv_path = results_dir / 'benchmark.csv'
+    
+    print(f"\n{'='*70}")
+    print(f"Saving results to: {csv_path}")
+    print(f"{'='*70}")
+    
+    # Write CSV in Long format (compatible with generate_graphs.py)
+    csv_rows = []
+    for result in results:
+        # Add rows for each version
+        csv_rows.append({
+            'Version': 'original',
+            'Test': result.name,
+            'OPS': result.v1_ops,
+            'Duration(s)': result.v1_time,
+            'Result': '成功'
+        })
+        csv_rows.append({
+            'Version': 'fastest',
+            'Test': result.name,
+            'OPS': result.v2_ops,
+            'Duration(s)': result.v2_time,
+            'Result': '成功'
+        })
+        csv_rows.append({
+            'Version': 'beta',
+            'Test': result.name,
+            'OPS': result.v4_ops,  # Use v4 as beta
+            'Duration(s)': result.v4_time,
+            'Result': '成功'
+        })
+    
+    # Write CSV file
+    with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+        if csv_rows:
+            writer = csv.DictWriter(f, fieldnames=['Version', 'Test', 'OPS', 'Duration(s)', 'Result'])
+            writer.writeheader()
+            writer.writerows(csv_rows)
+    
+    print(f"✓ CSV saved: {csv_path}")
+    
+    # Generate graphs
+    try:
+        print(f"\nGenerating graphs...")
+        sys.path.insert(0, str(benchmark_dir))
+        from generate_graphs import BenchmarkGraphGenerator
+        
+        generator = BenchmarkGraphGenerator(csv_path, version_type='all')
+        generator.generate_all_graphs()
+        
+        print(f"✓ Graphs generated successfully")
+    except Exception as e:
+        print(f"⚠ Graph generation failed: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
