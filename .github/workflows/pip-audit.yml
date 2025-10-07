@@ -31,4 +31,3 @@ jobs:
         with:
           virtual-environment: env/
           inputs: requirements.txt
-          fail-on: vulnerability          # ← 任意（脆弱性あればジョブ失敗）
