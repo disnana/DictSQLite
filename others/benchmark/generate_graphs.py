@@ -9,13 +9,7 @@
 """
 
 import sys
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 from pathlib import Path
-import numpy as np
-from datetime import datetime
-from typing import Dict, List, Optional
 import warnings
 
 # 警告を抑制
@@ -26,12 +20,23 @@ warnings.filterwarnings('ignore', category=UserWarning)
 BASE_DIR = Path(__file__).parent
 sys.path.insert(0, str(BASE_DIR))
 
-# 日本語フォント設定をインポート
+# 日本語フォント設定を最初に実行（matplotlibインポート前）
 try:
     from visualize_benchmark import setup_japanese_font
     setup_japanese_font()
 except ImportError:
     print("⚠ 日本語フォント設定をスキップ")
+
+# matplotlibとseabornはフォント設定後にインポート
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+from datetime import datetime
+from typing import Dict, List, Optional
+
+# マイナス記号の文字化け防止（フォント設定後に再適用）
+plt.rcParams['axes.unicode_minus'] = False
 
 
 class BenchmarkGraphGenerator:

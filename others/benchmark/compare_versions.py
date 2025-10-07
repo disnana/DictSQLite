@@ -8,13 +8,7 @@
 """
 
 import sys
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 from pathlib import Path
-from datetime import datetime
-import json
-from typing import List, Dict
 import warnings
 
 # 警告を抑制
@@ -25,15 +19,25 @@ warnings.filterwarnings('ignore', category=UserWarning, module='matplotlib')
 BASE_DIR = Path(__file__).parent
 sys.path.insert(0, str(BASE_DIR))
 
-from version_manager import VersionManager
-
-
-# 日本語フォント設定をインポート
+# 日本語フォント設定を最初に実行（matplotlibインポート前）
 try:
     from visualize_benchmark import setup_japanese_font
     setup_japanese_font()
 except ImportError:
     print("⚠ visualize_benchmark.pyが見つかりません。日本語フォント設定をスキップします。")
+
+# matplotlibとseabornはフォント設定後にインポート
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime
+import json
+from typing import List, Dict
+
+from version_manager import VersionManager
+
+# マイナス記号の文字化け防止（フォント設定後に再適用）
+plt.rcParams['axes.unicode_minus'] = False
 
 
 class VersionComparator:
