@@ -249,6 +249,12 @@ class VersionManager:
             saved_files['log'] = paths['log']
             print(f"✓ ログ保存: {paths['log']}")
         
+        # グラフディレクトリを作成して追加
+        graphs_dir = paths['graphs_dir']
+        graphs_dir.mkdir(exist_ok=True)
+        saved_files['graphs_dir'] = graphs_dir
+        print(f"✓ グラフディレクトリ作成: {graphs_dir}")
+        
         # バージョン履歴を更新
         timestamp = datetime.now().isoformat()
         if version_string not in self.version_history['versions']:

@@ -49,6 +49,7 @@ def test_version_manager():
         print(f"  JSON: {paths['json'].name}")
         print(f"  Summary: {paths['summary'].name}")
         print(f"  Log: {paths['log'].name}")
+        print(f"  Graphs Dir: {paths['graphs_dir'].name}")
         
         # 4. ダミーデータを保存
         print("\n[4/6] ベンチマーク結果保存テスト")
@@ -69,10 +70,18 @@ def test_version_manager():
         # 5. 保存されたファイルを確認
         print("\n[5/6] 保存ファイル確認")
         for file_type, file_path in saved_files.items():
-            if file_path.exists():
-                print(f"  ✓ {file_type}: {file_path.name} ({file_path.stat().st_size} bytes)")
+            if file_type == 'graphs_dir':
+                # ディレクトリの場合
+                if file_path.exists() and file_path.is_dir():
+                    print(f"  ✓ {file_type}: {file_path.name}/ (ディレクトリ)")
+                else:
+                    print(f"  ✗ {file_type}: ディレクトリが存在しません")
             else:
-                print(f"  ✗ {file_type}: ファイルが存在しません")
+                # ファイルの場合
+                if file_path.exists():
+                    print(f"  ✓ {file_type}: {file_path.name} ({file_path.stat().st_size} bytes)")
+                else:
+                    print(f"  ✗ {file_type}: ファイルが存在しません")
         
         # 6. バージョン一覧を取得
         print("\n[6/6] バージョン一覧取得")
