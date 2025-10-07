@@ -1,0 +1,20 @@
+name: Cargo Deny
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  cargo-deny:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          # 任意でパラメータを指定できる
+          log-level: warn
+          manifest-path: ./Cargo.toml
+          command: check
+          arguments: --all-features
+          # credentials: を指定してプライベート依存も扱うなら
+          # credentials: https://${{ secrets.GITHUB_USER }}:${{ secrets.GITHUB_PAT }}@github.com
