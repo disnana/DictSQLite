@@ -25,6 +25,9 @@ pub use crypto::CryptoEngine;
 pub use safe_pickle::{SafePicklePolicy, SafePickleValidator};
 pub use storage::{MemoryTier, StorageEngine};
 
+/// Type alias for write buffer to reduce complexity
+type WriteBuffer = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
+
 /// Persistence mode for performance vs durability trade-off
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum PersistMode {
@@ -86,7 +89,7 @@ pub struct DictSQLiteV4 {
     safe_pickle: Option<Arc<SafePickleValidator>>,
 
     /// Write buffer for batching SQL writes (v4.2 optimization)
-    write_buffer: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
+    write_buffer: WriteBuffer,
 
     /// Buffer size threshold for auto-flush
     buffer_size: usize,
@@ -138,6 +141,7 @@ impl Default for Config {
 impl DictSQLiteV4 {
     #[new]
     #[pyo3(signature = (db_path, hot_capacity=1_000_000, enable_async=true, persist_mode="writethrough", encryption_password=None, enable_safe_pickle=false, safe_pickle_allowed_modules=None, buffer_size=100))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         db_path: String,
         hot_capacity: usize,
@@ -148,13 +152,17 @@ impl DictSQLiteV4 {
         safe_pickle_allowed_modules: Option<Vec<String>>,
         buffer_size: usize,
     ) -> PyResult<Self> {
-        let mut config = Config::default();
-        config.hot_tier_capacity = hot_capacity;
-        config.enable_async_flush = enable_async;
-        config.persist_mode = PersistMode::from_str(persist_mode)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e))?;
-        config.enable_encryption = encryption_password.is_some();
-        config.enable_safe_pickle = enable_safe_pickle;
+        let persist_mode_parsed = PersistMode::from_str(persist_mode)
+            .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+
+        let config = Config {
+            hot_tier_capacity: hot_capacity,
+            enable_async_flush: enable_async,
+            persist_mode: persist_mode_parsed,
+            enable_encryption: encryption_password.is_some(),
+            enable_safe_pickle,
+            ..Default::default()
+        };
 
         let hot_tier = Arc::new(DashMap::with_capacity_and_shard_amount(
             config.hot_tier_capacity,
