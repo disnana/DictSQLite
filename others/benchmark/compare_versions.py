@@ -304,6 +304,13 @@ class VersionComparator:
         
         if not self.version_data:
             print("\n⚠ 比較可能なバージョンデータがありません")
+            print("   バージョン間比較を生成するには、少なくとも2つのバージョンのベンチマーク結果が必要です。")
+            print("   ベンチマークを複数回実行してから、再度このツールを実行してください。")
+            return
+        
+        if len(self.version_data) < 2:
+            print(f"\n⚠ バージョン間比較には少なくとも2つのバージョンが必要です（現在: {len(self.version_data)}個）")
+            print("   別のバージョンでベンチマークを実行してから、再度このツールを実行してください。")
             return
         
         print(f"\n{len(self.version_data)}個のバージョンを比較します")
