@@ -37,7 +37,8 @@ class DictSQLiteV4:
         enable_async=True,
         persist_mode="writethrough",
         encryption_password=None,
-        enable_safe_pickle=False
+        enable_safe_pickle=False,
+        safe_pickle_allowed_modules=None
     ):
         """
         Initialize DictSQLite v4.0
@@ -49,6 +50,8 @@ class DictSQLiteV4:
             persist_mode: "memory", "lazy", or "writethrough"
             encryption_password: Password for AES-256-GCM encryption (optional)
             enable_safe_pickle: Enable Safe Pickle validation (optional)
+            safe_pickle_allowed_modules: List of module prefixes to allow in Safe Pickle (optional)
+                                        Example: ["myapp", "mylib"] to allow myapp.* and mylib.*
         """
         if not _NATIVE_AVAILABLE:
             raise RuntimeError(
@@ -62,7 +65,8 @@ class DictSQLiteV4:
             enable_async,
             persist_mode,
             encryption_password,
-            enable_safe_pickle
+            enable_safe_pickle,
+            safe_pickle_allowed_modules
         )
         self._closed = False
     

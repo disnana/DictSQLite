@@ -115,7 +115,7 @@ impl Default for Config {
 #[pymethods]
 impl DictSQLiteV4 {
     #[new]
-    #[pyo3(signature = (db_path, hot_capacity=1_000_000, enable_async=true, persist_mode="writethrough", encryption_password=None, enable_safe_pickle=false))]
+    #[pyo3(signature = (db_path, hot_capacity=1_000_000, enable_async=true, persist_mode="writethrough", encryption_password=None, enable_safe_pickle=false, safe_pickle_allowed_modules=None))]
     fn new(
         db_path: String, 
         hot_capacity: usize, 
@@ -123,6 +123,7 @@ impl DictSQLiteV4 {
         persist_mode: &str,
         encryption_password: Option<String>,
         enable_safe_pickle: bool,
+        safe_pickle_allowed_modules: Option<Vec<String>>,
     ) -> PyResult<Self> {
         let mut config = Config::default();
         config.hot_tier_capacity = hot_capacity;
@@ -159,7 +160,18 @@ impl DictSQLiteV4 {
         
         // Initialize safe pickle validator if enabled
         let safe_pickle = if enable_safe_pickle {
-            Some(Arc::new(SafePickleValidator::default()))
+            // Create policy with custom allowed modules if provided
+            let policy = if let Some(modules) = safe_pickle_allowed_modules {
+                let mut policy = SafePicklePolicy::new();
+                for module in modules {
+                    policy = policy.with_module_prefix(module);
+                }
+                policy
+            } else {
+                SafePicklePolicy::default()
+            };
+            
+            Some(Arc::new(SafePickleValidator::new(policy)))
         } else {
             None
         };

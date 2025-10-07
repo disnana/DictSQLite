@@ -100,6 +100,8 @@ def example_safe_pickle():
     print("例3: Safe Pickle（安全なpickle）")
     print("="*60)
     
+    # 基本的な使用（デフォルトポリシー）
+    print("\n▶ デフォルトポリシー（基本型のみ）")
     db = DictSQLiteV4(
         ":memory:",
         enable_safe_pickle=True
@@ -128,6 +130,12 @@ def example_safe_pickle():
     print(f"  名前: {restored['name']}")
     print(f"  メール: {restored['email']}")
     print(f"  趣味: {', '.join(restored['hobbies'])}")
+    
+    # カスタムモジュールの許可（v1互換機能）
+    print("\n▶ カスタムモジュールポリシー")
+    print("  指定したモジュールプレフィックスを許可できます")
+    print("  例: safe_pickle_allowed_modules=['myapp', 'mylib']")
+    print("  → myapp.*とmylib.*配下のクラスが使用可能")
     
     # 統計
     stats = db.stats()

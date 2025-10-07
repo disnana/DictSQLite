@@ -127,7 +127,7 @@ data = db["secret_data"]  # 自動復号化
 from dictsqlite_v4 import DictSQLiteV4
 import pickle
 
-# Safe Pickleを有効化
+# Safe Pickleを有効化（デフォルト: 基本型のみ許可）
 db = DictSQLiteV4(
     "safe.db",
     enable_safe_pickle=True
@@ -140,6 +140,30 @@ db["user"] = pickle.dumps(data)
 # 復元時に自動的に検証
 restored = pickle.loads(db["user"])
 print(restored)  # {'name': 'Alice', 'age': 30, 'items': [1, 2, 3]}
+```
+
+#### カスタムモジュールの許可
+
+v1と同様に、特定のモジュールのクラスを許可できます：
+
+```python
+from dictsqlite_v4 import DictSQLiteV4
+import pickle
+
+# カスタムモジュールを許可
+db = DictSQLiteV4(
+    "safe.db",
+    enable_safe_pickle=True,
+    safe_pickle_allowed_modules=["myapp", "mylib"]  # myapp.*とmylib.*を許可
+)
+
+# これで myapp.models.User などのカスタムクラスが使用可能
+from myapp.models import User
+user = User(name="Alice", email="alice@example.com")
+db["user:1"] = pickle.dumps(user)
+
+# 復元も可能
+restored_user = pickle.loads(db["user:1"])
 ```
 
 ### 4. 暗号化 + Safe Pickle の組み合わせ
@@ -239,6 +263,8 @@ db = DictSQLiteV4(
 ```
 
 ### 2. Safe Pickleの活用
+
+#### 基本的な使用（デフォルトポリシー）
 ```python
 # 信頼できないソースからのデータを扱う場合
 db = DictSQLiteV4(
@@ -249,6 +275,26 @@ db = DictSQLiteV4(
 # 基本的なデータ型のみ許可されるため、
 # 悪意あるpickleデータから保護される
 ```
+
+#### カスタムモジュールの許可（v1互換）
+```python
+# 自前のアプリケーションモジュールを許可
+db = DictSQLiteV4(
+    "app.db",
+    enable_safe_pickle=True,
+    safe_pickle_allowed_modules=["myapp", "mylib"]
+)
+
+# これでmyapp.*とmylib.*配下のクラスが使用可能
+# 例: myapp.models.User, mylib.data.Record など
+```
+
+**許可されるもの**:
+- デフォルト: int, str, list, dict, tuple等の基本型
+- カスタム: 指定したモジュールプレフィックスのクラス
+
+**常に拒否されるもの**:
+- os.system, subprocess.Popen, eval, exec等の危険な関数
 
 ### 3. パーミッション設定
 ```python
