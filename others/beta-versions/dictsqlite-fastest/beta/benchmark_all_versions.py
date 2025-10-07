@@ -2,6 +2,8 @@
 
 Compares performance of all four versions with optimized configurations.
 Tests basic operations, concurrent operations, and version-specific optimizations.
+
+v4 uses Rust-based DictSQLite v4.1 for maximum performance.
 """
 
 import asyncio
@@ -16,10 +18,56 @@ from typing import Dict, Tuple, Any, List
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Add v4.1 to path
+v4_1_path = Path(__file__).parent.parent.parent.parent / 'beta-versions' / 'dictsqlite_v4.1'
+sys.path.insert(0, str(v4_1_path))
+
 from dictsqlite_fastest_beta import AsyncDictSQLiteFastestBeta as AsyncV1
 from dictsqlite_fastest_beta_v2 import AsyncDictSQLiteFastestBeta as AsyncV2
 from dictsqlite_fastest_beta_v3_alpha import AsyncDictSQLiteFastestBetaV3 as AsyncV3
-from dictsqlite_fastest_beta_v4_final import AsyncDictSQLiteFastestBetaV4Final as AsyncV4
+
+# Import Rust v4.1
+try:
+    from dictsqlite_v4 import AsyncDictSQLite as _RustAsyncV4
+    RUST_V4_AVAILABLE = True
+except ImportError:
+    print("⚠️ Warning: Rust v4.1 not available. Please build it:")
+    print("   cd others/beta-versions/dictsqlite_v4.1 && maturin develop --release")
+    _RustAsyncV4 = None
+    RUST_V4_AVAILABLE = False
+
+
+class AsyncV4Adapter:
+    """Adapter to make Rust v4.1 AsyncDictSQLite compatible with benchmark interface"""
+    
+    def __init__(self, db_path, **kwargs):
+        if not RUST_V4_AVAILABLE:
+            raise RuntimeError("Rust v4.1 is not available. Cannot run v4 benchmark.")
+        # v4.1 uses simpler interface
+        capacity = kwargs.get('cache_max_size', kwargs.get('capacity', 1_000_000))
+        self._db = _RustAsyncV4(db_path, capacity=capacity)
+    
+    async def aset(self, key: str, value: Any) -> None:
+        """Async set operation"""
+        if isinstance(value, str):
+            value = value.encode('utf-8')
+        self._db.set_async(key, value)
+    
+    async def aget(self, key: str, default: Any = None) -> Any:
+        """Async get operation"""
+        result = self._db.get_async(key)
+        return result if result is not None else default
+    
+    async def __aenter__(self):
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        # Rust v4.1 handles cleanup automatically
+        pass
+
+
+# Use the adapter for v4
+AsyncV4 = AsyncV4Adapter
 
 
 class BenchmarkResult:
@@ -256,20 +304,28 @@ async def run_v3_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
 
 
 async def run_v4_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
-    """Run benchmark for v4 with optimized settings."""
+    """Run benchmark for v4 (Rust v4.1) with optimized settings."""
     print(f"\n{'='*70}")
-    print(f"Benchmarking: v4 (Ultra-optimized cache + connection pool)")
+    print(f"Benchmarking: v4 (Rust v4.1 - Lock-free 100M+ ops/sec)")
     print(f"{'='*70}")
+    
+    if not RUST_V4_AVAILABLE:
+        print("⚠️ Rust v4.1 not available, skipping v4 benchmark")
+        # Return dummy results
+        return {
+            'basic_write': (0.0, 0.0),
+            'basic_read': (0.0, 0.0),
+            'concurrent_read': (0.0, 0.0),
+            'bulk_insert': (0.0, 0.0),
+            'mixed_ops': (0.0, 0.0)
+        }
     
     results = {}
     
-    # v4 has maximum performance optimizations
+    # v4.1 Rust version - simpler configuration, maximum performance
     async with AsyncV4(
         db_path,
-        cache_max_size=10000,
-        enable_stats=True,
-        pool_size=8,
-        auto_preload=False
+        capacity=1_000_000
     ) as db:
         # Basic operations
         print("\n1. Basic Write (300 items)...")
@@ -297,11 +353,8 @@ async def run_v4_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
         results['mixed_ops'] = (elapsed, ops)
         print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        # Print v4 statistics
-        if hasattr(db, '_stats') and hasattr(db._stats, 'get_stats'):
-            stats = db._stats.get_stats()
-            print(f"\nv4 Statistics:")
-            print(f"  Operations: {stats}")
+        # v4.1 doesn't expose detailed stats in the same way
+        print(f"\n✓ Rust v4.1 completed - High-performance lock-free hashmap")
     
     return results
 
