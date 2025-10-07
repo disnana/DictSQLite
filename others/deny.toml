@@ -1,6 +1,9 @@
 # others/deny.toml
-[advisories]
-deny = true
+version = "1"
+
+[vulnerability]
+# これで見つかったら fail する
+deny = ["*"] # 全てのアドバイザリを拒否
 
 [bans]
 # 二重依存やバージョン違いを禁止
