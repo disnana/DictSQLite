@@ -11,7 +11,19 @@
           "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v1/graphs"
         ]
       }
+    ],
+    "all": [
+      {
+        "timestamp": "2025-10-07T07:57:40.113631",
+        "files": [
+          "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/all/benchmark.csv",
+          "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/all/benchmark.json",
+          "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/all/summary.md",
+          "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/all/benchmark.log",
+          "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/all/graphs"
+        ]
+      }
     ]
   },
-  "latest_run": "2025-10-07T07:46:06.842564"
+  "latest_run": "2025-10-07T07:57:40.113631"
 }

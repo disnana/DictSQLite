@@ -568,18 +568,10 @@ class BenchmarkRunner:
             version_string=self.version_string
         )
         
-        # グラフディレクトリが存在する場合はコピー
-        graphs_dir = self.output_dir / "graphs"
-        if graphs_dir.exists():
-            self.version_manager.copy_graphs_to_version(
-                graphs_dir,
-                version_string=self.version_string
-            )
-        
         print(f"\n✓ バージョン {self.version_string} の結果を保存しました")
         print(f"  保存先: {self.version_manager.version_results_dir / self.version_string}")
         
-        # グラフ生成を実行
+        # グラフ生成を実行（バージョン固有のディレクトリに直接生成）
         self._generate_benchmark_graphs(saved_files)
         
         return saved_files
