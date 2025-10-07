@@ -1,7 +1,6 @@
 # others/deny.toml
 [advisories]
-# crates.io のセキュリティアドバイザリをチェック
-vulnerability = "deny" # 見つけたらエラーにする
+deny = true
 
 [bans]
 # 二重依存やバージョン違いを禁止
