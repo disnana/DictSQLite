@@ -57,7 +57,7 @@ impl AsyncDictSQLite {
         // Create config with custom values
         let persist_mode_parsed = PersistMode::from_str(persist_mode)
             .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
-        
+
         let config = Config {
             hot_tier_capacity: capacity,
             persist_mode: persist_mode_parsed,

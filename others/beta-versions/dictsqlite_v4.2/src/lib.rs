@@ -154,7 +154,7 @@ impl DictSQLiteV4 {
     ) -> PyResult<Self> {
         let persist_mode_parsed = PersistMode::from_str(persist_mode)
             .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
-        
+
         let config = Config {
             hot_tier_capacity: hot_capacity,
             enable_async_flush: enable_async,
