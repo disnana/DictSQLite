@@ -75,11 +75,13 @@ class AsyncV4Adapter:
         """Async set operation"""
         if isinstance(value, str):
             value = value.encode('utf-8')
-        self._db.set_async(key, value)
+        # v4.1 AsyncDictSQLite has .set() method, not .set_async()
+        self._db.set(key, value)
     
     async def aget(self, key: str, default: Any = None) -> Any:
         """Async get operation"""
-        result = self._db.get_async(key)
+        # v4.1 AsyncDictSQLite has .get() method, not .get_async()
+        result = self._db.get(key)
         return result if result is not None else default
     
     async def __aenter__(self):
