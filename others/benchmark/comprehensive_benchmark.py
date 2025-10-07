@@ -189,8 +189,9 @@ class ComprehensiveBenchmark:
         for _ in range(warmup):
             try:
                 func()
-            except Exception:
-                pass
+            except Exception as e:  # nosec B112 - Warmup errors are expected and non-critical
+                # Warmup時のエラーは無視（初回実行での初期化エラー等）
+                continue
         
         # 測定
         times = []
@@ -1569,8 +1570,9 @@ def main():
                 old_logs_size_kb += old_file.stat().st_size / 1024
                 old_file.unlink()
                 old_logs_count += 1
-            except Exception:
-                pass
+            except (OSError, PermissionError) as e:  # nosec B112 - File deletion errors are non-critical
+                # ファイル削除エラーは無視（使用中、権限不足等）
+                continue
         
         if old_logs_count > 0:
             print(f"✓ 古いログ/CSV/JSON削除: {old_logs_count}個 ({old_logs_size_kb:.1f} KB)")

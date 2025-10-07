@@ -93,8 +93,8 @@ def test_graph_generation():
             print(f"  - {graph.name} ({graph.stat().st_size} bytes)")
         
         # 統計サマリーのみが生成されることを確認
-        assert (v1_dir / "graphs" / "stats_summary.png").exists(), "統計サマリーが生成されていません"
-        assert len(v1_graphs) == 1, f"v1では統計サマリーのみ生成されるべきですが、{len(v1_graphs)}個生成されました"
+        assert (v1_dir / "graphs" / "stats_summary.png").exists(), "統計サマリーが生成されていません"  # nosec B101
+        assert len(v1_graphs) == 1, f"v1では統計サマリーのみ生成されるべきですが、{len(v1_graphs)}個生成されました"  # nosec B101
         
         print("✓ v1テスト: OK（統計サマリーのみ生成）")
         
@@ -132,10 +132,10 @@ def test_graph_generation():
         
         for expected_file in expected_files:
             file_path = all_dir / "graphs" / expected_file
-            assert file_path.exists(), f"{expected_file}が生成されていません"
+            assert file_path.exists(), f"{expected_file}が生成されていません"  # nosec B101
         
         assert len(all_graphs) == len(expected_files), \
-            f"allでは{len(expected_files)}個のグラフが生成されるべきですが、{len(all_graphs)}個生成されました"
+            f"allでは{len(expected_files)}個のグラフが生成されるべきですが、{len(all_graphs)}個生成されました"  # nosec B101
         
         print(f"✓ allテスト: OK（{len(expected_files)}個のグラフ生成）")
         
@@ -148,7 +148,7 @@ def test_graph_generation():
         v1_stats = v1_dir / "graphs" / "stats_summary.png"
         all_stats = all_dir / "graphs" / "stats_summary.png"
         
-        assert v1_stats.exists() and all_stats.exists(), "統計サマリーが両方に存在することを確認"
+        assert v1_stats.exists() and all_stats.exists(), "統計サマリーが両方に存在することを確認"  # nosec B101
         print("✓ 固定ファイル名: OK（stats_summary.png が両方に存在）")
         
         # Test 4: 上書きテスト
@@ -165,7 +165,7 @@ def test_graph_generation():
         generator_v1_2.generate_all_graphs()
         
         new_mtime = v1_stats.stat().st_mtime
-        assert new_mtime > original_mtime, "ファイルが上書きされていません"
+        assert new_mtime > original_mtime, "ファイルが上書きされていません"  # nosec B101
         print("✓ 上書きテスト: OK（ファイルが正常に上書きされました）")
         
         print("\n" + "=" * 80)
