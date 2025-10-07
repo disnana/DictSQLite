@@ -14,6 +14,11 @@ mod async_ops;
 mod crypto;
 mod safe_pickle;
 
+#[cfg(test)]
+mod tests_lru;
+#[cfg(test)]
+mod tests_storage;
+
 pub use storage::{StorageEngine, MemoryTier};
 pub use cache::HybridCache;
 pub use async_ops::AsyncDictSQLite;
