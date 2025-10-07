@@ -272,8 +272,8 @@ db = DictSQLiteFastest('test.db', cache_size=-16000)  # 16MB
 ## 📚 参考資料
 
 - [DictSQLite Documentation](../documents/japanese.md)
-- [DictSQLite-Fastest README](../dictsqlite-fastest/README.md)
-- [Beta版 Documentation](../dictsqlite-fastest/beta/README_JP.md)
+- [DictSQLite-Fastest README](../beta-versions/dictsqlite-fastest/README.md)
+- [Beta版 Documentation](../beta-versions/dictsqlite-fastest/beta/README_JP.md)
 
 ## 🤝 貢献
 
