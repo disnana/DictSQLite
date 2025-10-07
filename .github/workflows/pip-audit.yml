@@ -26,9 +26,3 @@ jobs:
 
       - name: Run pip-audit
         uses: pypa/gh-action-pip-audit@v1.1.0
-        with:
-          # HTMLレポートを出したいなら:
-          # output-format: html
-          # output: pip-audit-report.html
-          # fail-on: vulnerability
-          # ↑ 脆弱性があるとジョブを失敗にする
