@@ -448,26 +448,62 @@ async def main():
     ]
     
     try:
-        # Run benchmarks
+        # Run benchmarks with individual error handling
         # Original is synchronous, so we call it directly (not await)
-        original_results = run_original_benchmark(original_path)
-        
-        # Save original results
-        if VERSION_MANAGER_AVAILABLE:
-            save_version_results('original', original_results, test_labels)
+        try:
+            original_results = run_original_benchmark(original_path)
+            
+            # Save original results
+            if VERSION_MANAGER_AVAILABLE and ORIGINAL_AVAILABLE:
+                save_version_results('original', original_results, test_labels)
+        except Exception as e:
+            print(f"\n❌ Error running Original benchmark: {e}")
+            import traceback
+            traceback.print_exc()
+            original_results = {
+                'basic_write': (0, 0),
+                'basic_read': (0, 0),
+                'concurrent_read': (0, 0),
+                'bulk_insert': (0, 0),
+                'mixed_ops': (0, 0)
+            }
         
         # Beta v2 and v4.1 are async, so we await them
-        beta_v2_results = await run_beta_v2_benchmark(beta_v2_path)
+        try:
+            beta_v2_results = await run_beta_v2_benchmark(beta_v2_path)
+            
+            # Save beta v2 results
+            if VERSION_MANAGER_AVAILABLE and BETA_V2_AVAILABLE:
+                save_version_results('beta_v2', beta_v2_results, test_labels)
+        except Exception as e:
+            print(f"\n❌ Error running Beta v2 benchmark: {e}")
+            import traceback
+            traceback.print_exc()
+            beta_v2_results = {
+                'basic_write': (0, 0),
+                'basic_read': (0, 0),
+                'concurrent_read': (0, 0),
+                'bulk_insert': (0, 0),
+                'mixed_ops': (0, 0)
+            }
         
-        # Save beta v2 results
-        if VERSION_MANAGER_AVAILABLE:
-            save_version_results('beta_v2', beta_v2_results, test_labels)
-        
-        v4_1_results = await run_v4_1_benchmark(v4_1_path)
-        
-        # Save v4.1 results
-        if VERSION_MANAGER_AVAILABLE:
-            save_version_results('v4.1', v4_1_results, test_labels)
+        try:
+            v4_1_results = await run_v4_1_benchmark(v4_1_path)
+            
+            # Save v4.1 results
+            if VERSION_MANAGER_AVAILABLE and V4_1_AVAILABLE:
+                save_version_results('v4.1', v4_1_results, test_labels)
+        except Exception as e:
+            print(f"\n❌ Error running v4.1 benchmark: {e}")
+            import traceback
+            traceback.print_exc()
+            v4_1_results = {
+                'basic_write': (0, 0),
+                'basic_read': (0, 0),
+                'concurrent_read': (0, 0),
+                'bulk_insert': (0, 0),
+                'mixed_ops': (0, 0)
+            }
         
         # Create result objects
         results = []
