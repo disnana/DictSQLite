@@ -16,4 +16,4 @@ jobs:
           manifest-path: ./others/beta-versions/dictsqlite_v4.1/Cargo.toml
           command: check advisories bans sources
           arguments: --all-features
-          command-arguments: --config ..../others/deny.toml
+          command-arguments: --config ${{ github.workspace }}/others/deny.toml
