@@ -32,7 +32,9 @@ class TestDictSQLiteV3Compatibility:
     
     def setup_method(self):
         """Create temporary database for each test"""
-        self.db_file = tempfile.mktemp(suffix='.db')
+        # Security: Use NamedTemporaryFile instead of mktemp to avoid race condition
+        fd, self.db_file = tempfile.mkstemp(suffix='.db')
+        os.close(fd)  # Close file descriptor as we only need the path
     
     def teardown_method(self):
         """Clean up temporary database"""
@@ -188,7 +190,9 @@ class TestDictSQLiteV3Performance:
     
     def setup_method(self):
         """Create temporary database for each test"""
-        self.db_file = tempfile.mktemp(suffix='.db')
+        # Security: Use mkstemp instead of mktemp to avoid race condition
+        fd, self.db_file = tempfile.mkstemp(suffix='.db')
+        os.close(fd)  # Close file descriptor as we only need the path
     
     def teardown_method(self):
         """Clean up temporary database"""
@@ -267,7 +271,9 @@ class TestAsyncDictSQLite:
     
     def setup_method(self):
         """Create temporary database for each test"""
-        self.db_file = tempfile.mktemp(suffix='.db')
+        # Security: Use mkstemp instead of mktemp to avoid race condition
+        fd, self.db_file = tempfile.mkstemp(suffix='.db')
+        os.close(fd)  # Close file descriptor as we only need the path
     
     def teardown_method(self):
         """Clean up temporary database"""

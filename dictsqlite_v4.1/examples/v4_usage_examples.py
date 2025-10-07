@@ -64,7 +64,8 @@ def example_encryption():
         
         # データを読み込み（自動復号化）
         api_key = db["api_key"]
-        print(f"✓ APIキーを復号化: {api_key[:10]}...")
+        # Security: Don't log sensitive data in clear text
+        print(f"✓ APIキーを復号化: [REDACTED]...")
         
         # 統計で暗号化が有効か確認
         stats = db.stats()
@@ -177,7 +178,8 @@ def example_combined():
         print("\n保存されたユーザー:")
         for i in range(1, len(users) + 1):
             user = pickle.loads(db[f"user:{i}"])
-            print(f"  {user['name']:10s} - {user['role']:10s} - ${user['salary']:,}")
+            # Security: Don't log sensitive data (salary) in clear text
+            print(f"  {user['name']:10s} - {user['role']:10s} - [REDACTED]")
         
         # セキュリティ設定を確認
         stats = db.stats()
