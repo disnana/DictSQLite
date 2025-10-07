@@ -105,7 +105,7 @@ jobs:
         export BETA_VERSION
         
         if [ "$BETA_VERSION" == "all" ]; then
-          echo "🔬 全バージョン (v1, v2, v3, v4) の比較ベンチマークを実行..."
+          echo "🔬 全バージョン (Original, Beta v2, v4.1) の比較ベンチマークを実行..."
           python run_benchmark.py --beta all
         elif [ "$BETA_VERSION" == "v2" ]; then
           echo "🔄 ベンチマークスクリプトをv2用に変更..."

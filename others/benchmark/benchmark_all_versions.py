@@ -389,12 +389,14 @@ async def main():
     
     try:
         # Run benchmarks
+        # Original is synchronous, so we call it directly (not await)
         original_results = run_original_benchmark(original_path)
         
         # Save original results
         if VERSION_MANAGER_AVAILABLE:
             save_version_results('original', original_results, test_labels)
         
+        # Beta v2 and v4.1 are async, so we await them
         beta_v2_results = await run_beta_v2_benchmark(beta_v2_path)
         
         # Save beta v2 results
