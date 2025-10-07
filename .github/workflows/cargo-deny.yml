@@ -13,7 +13,7 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           log-level: warn
-          manifest-path: ./dictsqlite_v4.1/Cargo.toml
+          manifest-path: dictsqlite_v4.1/Cargo.toml
           command: check
           arguments: --all-features
-          command-arguments: --config ./others/deny.toml
+          command-arguments: --config others/deny.toml
