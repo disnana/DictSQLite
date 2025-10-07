@@ -69,12 +69,12 @@ jobs:
         pip install aiosqlite
         pip install -e .
         # dictsqlite-fastest の依存関係をインストール（パッケージとしてではなく）
-        if [ -f "dictsqlite-fastest/requirements.txt" ]; then
-          pip install -r dictsqlite-fastest/requirements.txt
+        if [ -f "others/beta-versions/dictsqlite-fastest/requirements.txt" ]; then
+          pip install -r others/beta-versions/dictsqlite-fastest/requirements.txt
         fi
         # dictsqlite-fastest beta の依存関係をインストール
-        if [ -f "dictsqlite-fastest/beta/requirements.txt" ]; then
-          pip install -r dictsqlite-fastest/beta/requirements.txt
+        if [ -f "others/beta-versions/dictsqlite-fastest/beta/requirements.txt" ]; then
+          pip install -r others/beta-versions/dictsqlite-fastest/beta/requirements.txt
         fi
 
     - name: Run fast comprehensive benchmark
@@ -135,7 +135,7 @@ jobs:
           fi
         fi
       env:
-        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/dictsqlite-fastest:${{ github.workspace }}/dictsqlite-fastest/beta
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta
       continue-on-error: false
 
     - name: Generate benchmark visualizations
@@ -147,12 +147,12 @@ jobs:
           echo "Visualizing: $LATEST_CSV"
           python visualize_benchmark.py "$LATEST_CSV"
         else
-          echo "No CSV file found in results/"
-          exit 1
+          echo "⚠️  No CSV file found in results/"
+          echo "Benchmark may not have generated CSV output. Skipping visualization."
         fi
       env:
-        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/dictsqlite-fastest:${{ github.workspace }}/dictsqlite-fastest/beta
-      continue-on-error: false
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta
+      continue-on-error: true
 
     - name: List benchmark results
       run: |

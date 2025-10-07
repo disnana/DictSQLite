@@ -9,8 +9,8 @@ import time
 from pathlib import Path
 
 # パスの設定
-sys.path.insert(0, str(Path(__file__).parent / 'dictsqlite-fastest'))
-sys.path.insert(0, str(Path(__file__).parent / 'dictsqlite-fastest' / 'beta'))
+sys.path.insert(0, str(Path(__file__).parent / 'beta-versions' / 'dictsqlite-fastest'))
+sys.path.insert(0, str(Path(__file__).parent / 'beta-versions' / 'dictsqlite-fastest' / 'beta'))
 
 from dictsqlite_fastest.main import AsyncDictSQLiteFastest
 from dictsqlite_fastest_beta_v2 import AsyncDictSQLiteFastestBeta

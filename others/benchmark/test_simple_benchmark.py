@@ -14,8 +14,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent
 REPO_ROOT = BASE_DIR.parent.parent  # /others/benchmark から / へ
 sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(REPO_ROOT / 'dictsqlite-fastest'))
-sys.path.insert(0, str(REPO_ROOT / 'dictsqlite-fastest' / 'beta'))
+sys.path.insert(0, str(REPO_ROOT / 'others' / 'beta-versions' / 'dictsqlite-fastest'))
+sys.path.insert(0, str(REPO_ROOT / 'others' / 'beta-versions' / 'dictsqlite-fastest' / 'beta'))
 
 # インポート
 from dictsqlite.main import DictSQLite

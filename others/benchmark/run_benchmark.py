@@ -134,7 +134,7 @@ def run_all_versions_benchmark():
     """Run comprehensive benchmark comparing all versions (v1, v2, v3, v4)."""
     
     # ベンチマークディレクトリに移動
-    benchmark_dir = Path(__file__).parent.parent.parent / 'dictsqlite-fastest' / 'beta'
+    benchmark_dir = Path(__file__).parent.parent.parent / 'others' / 'beta-versions' / 'dictsqlite-fastest' / 'beta'
     
     # 専用の比較ベンチマークを実行
     script = benchmark_dir / 'benchmark_all_versions.py'
