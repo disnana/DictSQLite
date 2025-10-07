@@ -1,5 +1,7 @@
 # DictSQLite v4.2 - I/O最適化版
 
+> 📚 **ドキュメント案内**: すべてのドキュメントの概要は [DOCUMENTATION_INDEX_JP.md](./DOCUMENTATION_INDEX_JP.md) を参照してください
+
 ## 概要
 
 DictSQLite v4.2は、v4.1の調査結果に基づき、**非同期・同期のI/O処理を最適化**したバージョンです。
