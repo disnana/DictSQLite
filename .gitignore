@@ -22,22 +22,22 @@ coverage.xml
 HACKATHON_PRESENTATION_PLAN.md
 
 # DictSQLite v3.0 Rust build artifacts
-dictsqlite_v3/target/
-dictsqlite_v3/Cargo.lock
-dictsqlite_v3/__pycache__/
+others/beta-versionsdictsqlite_v3/target/
+others/beta-versionsdictsqlite_v3/Cargo.lock
+others/beta-versionsdictsqlite_v3/__pycache__/
 *.so
 *.pyd
 *.dylib
 
 # DictSQLite v4.0 Rust build artifacts
-dictsqlite_v4/target/
-dictsqlite_v4/Cargo.lock
-dictsqlite_v4/__pycache__/
+others/beta-versionsdictsqlite_v4/target/
+others/beta-versionsdictsqlite_v4/Cargo.lock
+others/beta-versionsdictsqlite_v4/__pycache__/
 
 # DictSQLite v4.1 Rust build artifacts
-dictsqlite_v4.1/target/
-dictsqlite_v4.1/Cargo.lock
-dictsqlite_v4.1/__pycache__/
+others/beta-versionsdictsqlite_v4.1/target/
+others/beta-versionsdictsqlite_v4.1/Cargo.lock
+others/beta-versionsdictsqlite_v4.1/__pycache__/
 
 # Benchmark results (keep summary only)
 others/benchmark/results/*.csv
