@@ -32,8 +32,7 @@ on:
           - 'v1'
           - 'v2'
           - 'v3'
-          - 'v4'
-          - 'both'
+          - 'all'
 
 jobs:
   benchmark:
@@ -85,31 +84,42 @@ jobs:
         BETA_VERSION="${{ github.event.inputs.beta_version }}"
         echo "📦 選択されたBeta版: $BETA_VERSION"
         
-        if [ "$BETA_VERSION" == "v2" ]; then
+        if [ "$BETA_VERSION" == "all" ]; then
+          echo "🔬 全バージョン (v1, v2, v3) の比較ベンチマークを実行..."
+          python run_benchmark.py --beta all
+        elif [ "$BETA_VERSION" == "v2" ]; then
           echo "🔄 ベンチマークスクリプトをv2用に変更..."
-          # v1のインポートをv2に置換
           sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v2 import/g' comprehensive_benchmark.py
           sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v2 import/g' fast_comprehensive_benchmark.py
+          
+          if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
+            echo "🔬 フル機能ベンチマーク (v2) を実行中..."
+            python comprehensive_benchmark.py
+          else
+            echo "⚡ 高速ベンチマーク (v2) を実行中..."
+            python fast_comprehensive_benchmark.py
+          fi
         elif [ "$BETA_VERSION" == "v3" ]; then
           echo "🔄 ベンチマークスクリプトをv3-alpha用に変更..."
-          # v1のインポートをv3-alphaに置換
           sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v3_alpha import/g' comprehensive_benchmark.py
           sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v3_alpha import/g' fast_comprehensive_benchmark.py
-        elif [ "$BETA_VERSION" == "v4" ]; then
-          echo "🔄 ベンチマークスクリプトをv4用に変更..."
-          # v1のインポートをv4に置換
-          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v4 import/g' comprehensive_benchmark.py
-          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v4 import/g' fast_comprehensive_benchmark.py
-        elif [ "$BETA_VERSION" == "both" ]; then
-          echo "⚠️  両バージョンテストは未実装（v1のみ実行）"
-        fi
-        
-        if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
-          echo "🔬 フル機能ベンチマーク（comprehensive_benchmark.py）を実行中..."
-          python comprehensive_benchmark.py
+          
+          if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
+            echo "🔬 フル機能ベンチマーク (v3) を実行中..."
+            python comprehensive_benchmark.py
+          else
+            echo "⚡ 高速ベンチマーク (v3) を実行中..."
+            python fast_comprehensive_benchmark.py
+          fi
         else
-          echo "⚡ 高速ベンチマーク（fast_comprehensive_benchmark.py）を実行中..."
-          python fast_comprehensive_benchmark.py
+          # v1の場合
+          if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
+            echo "🔬 フル機能ベンチマーク (v1) を実行中..."
+            python comprehensive_benchmark.py
+          else
+            echo "⚡ 高速ベンチマーク (v1) を実行中..."
+            python fast_comprehensive_benchmark.py
+          fi
         fi
       env:
         PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/dictsqlite-fastest:${{ github.workspace }}/dictsqlite-fastest/beta

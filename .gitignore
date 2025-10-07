@@ -28,3 +28,9 @@ dictsqlite_v3/__pycache__/
 *.so
 *.pyd
 *.dylib
+
+# Benchmark results (keep summary only)
+others/benchmark/results/*.csv
+others/benchmark/results/*.json
+others/benchmark/results/*.log
+!others/benchmark/results/BENCHMARK_SUMMARY.md

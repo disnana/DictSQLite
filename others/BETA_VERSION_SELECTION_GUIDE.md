@@ -14,11 +14,10 @@ DictSQLite-Fastest Beta版には複数のバージョンがあります：
 2. 「Performance Benchmark」ワークフローを選択
 3. 「Run workflow」をクリック
 4. **Beta版のバージョン選択**で以下から選択：
-   - `v1`: Beta v1のみテスト（既存版）
-   - `v2`: Beta v2のみテスト（新版）
-   - `v3`: Beta v3-alphaのみテスト（拡張版）
-   - `v4`: Beta v4のみテスト（最新版）
-   - `both`: 両方テスト（未実装）
+   - `v1`: Beta v1のみテスト（既存版・ThreadPoolExecutor）
+   - `v2`: Beta v2のみテスト（新版・aiosqlite + batching）
+   - `v3`: Beta v3-alphaのみテスト（拡張版・動的プール + prefetch）
+   - `all`: 全バージョン (v1, v2, v3) を比較テスト
 
 5. オプション：フル機能ベンチマークを実行するか選択
 6. 「Run workflow」を実行
@@ -30,11 +29,11 @@ DictSQLite-Fastest Beta版には複数のバージョンがあります：
 Beta版のバージョン選択: v2
 ```
 
-### 例: v4でテストする場合
+### 例: 全バージョン比較する場合
 
 ```yaml
 フル機能ベンチマークを実行: false
-Beta版のバージョン選択: v4
+Beta版のバージョン選択: all
 ```
 
 ## ローカルでの選択方法
@@ -51,14 +50,11 @@ python others/benchmark/run_benchmark.py --beta v2
 # v3のみテスト（高速ベンチマーク）
 python others/benchmark/run_benchmark.py --beta v3
 
-# v4のみテスト（高速ベンチマーク）
-python others/benchmark/run_benchmark.py --beta v4
+# 全バージョン比較テスト
+python others/benchmark/run_benchmark.py --beta all
 
-# 両方テスト
-python others/benchmark/run_benchmark.py --beta both
-
-# v4でフルベンチマーク
-python others/benchmark/run_benchmark.py --beta v4 --full
+# v3でフルベンチマーク
+python others/benchmark/run_benchmark.py --beta v3 --full
 ```
 
 **メリット:**

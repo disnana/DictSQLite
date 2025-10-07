@@ -5,9 +5,8 @@
     python run_benchmark.py --beta v1              # v1のみテスト
     python run_benchmark.py --beta v2              # v2のみテスト
     python run_benchmark.py --beta v3              # v3のみテスト
-    python run_benchmark.py --beta v4              # v4のみテスト
-    python run_benchmark.py --beta both            # 両方テスト
-    python run_benchmark.py --beta v4 --full       # v4でフルベンチマーク
+    python run_benchmark.py --beta all             # v1, v2, v3を全て比較
+    python run_benchmark.py --beta all --full      # 全バージョンでフルベンチマーク
 """
 
 import sys
@@ -34,9 +33,6 @@ def replace_import_in_file(file_path, version):
         ).replace(
             'from dictsqlite_fastest_beta_v3_alpha import',
             'from dictsqlite_fastest_beta import'
-        ).replace(
-            'from dictsqlite_fastest_beta_v4 import',
-            'from dictsqlite_fastest_beta import'
         )
     elif version == 'v2':
         # v1のインポートをv2に変更
@@ -49,12 +45,6 @@ def replace_import_in_file(file_path, version):
         new_content = content.replace(
             'from dictsqlite_fastest_beta import',
             'from dictsqlite_fastest_beta_v3_alpha import'
-        )
-    elif version == 'v4':
-        # v1のインポートをv4に変更
-        new_content = content.replace(
-            'from dictsqlite_fastest_beta import',
-            'from dictsqlite_fastest_beta_v4 import'
         )
     else:
         return False
@@ -69,6 +59,11 @@ def replace_import_in_file(file_path, version):
 
 def run_benchmark(beta_version, full_benchmark=False):
     """ベンチマークを実行"""
+    
+    # v4は切り捨て、v1, v2, v3のみサポート
+    if beta_version not in ['v1', 'v2', 'v3']:
+        print(f"\n❌ エラー: {beta_version} はサポートされていません。v1, v2, v3のみサポートされています。")
+        return False
     
     # ベンチマークディレクトリに移動
     benchmark_dir = Path(__file__).parent
@@ -90,7 +85,7 @@ def run_benchmark(beta_version, full_benchmark=False):
     
     try:
         # インポートを変更
-        if beta_version in ['v1', 'v2', 'v3', 'v4']:
+        if beta_version in ['v1', 'v2', 'v3']:
             print(f"\n🔄 ベンチマークスクリプトを{beta_version}用に変更...")
             for script in scripts:
                 if replace_import_in_file(script, beta_version):
@@ -125,15 +120,44 @@ def run_benchmark(beta_version, full_benchmark=False):
                 print(f"   ✓ {script} を復元")
 
 
+def run_all_versions_benchmark():
+    """Run comprehensive benchmark comparing all versions (v1, v2, v3)."""
+    
+    # ベンチマークディレクトリに移動
+    benchmark_dir = Path(__file__).parent.parent.parent / 'dictsqlite-fastest' / 'beta'
+    
+    # 専用の比較ベンチマークを実行
+    script = benchmark_dir / 'benchmark_all_versions.py'
+    
+    if not script.exists():
+        print(f"\n❌ エラー: {script} が見つかりません")
+        return False
+    
+    print("\n🔬 v1, v2, v3 総合比較ベンチマークを実行中...")
+    print(f"スクリプト: {script}")
+    
+    result = subprocess.run(
+        [sys.executable, str(script)],
+        cwd=str(benchmark_dir)
+    )
+    
+    if result.returncode != 0:
+        print(f"\n❌ ベンチマーク失敗 (終了コード: {result.returncode})")
+        return False
+    
+    print(f"\n✅ 総合ベンチマーク成功")
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='DictSQLite Beta版ベンチマーク実行スクリプト'
     )
     parser.add_argument(
         '--beta',
-        choices=['v1', 'v2', 'v3', 'v4', 'both'],
+        choices=['v1', 'v2', 'v3', 'all'],
         default='v1',
-        help='Beta版のバージョン (デフォルト: v1)'
+        help='Beta版のバージョン (デフォルト: v1, all=全バージョン比較)'
     )
     parser.add_argument(
         '--full',
@@ -150,34 +174,10 @@ def main():
     print(f"ベンチマークタイプ: {'フル機能' if args.full else '高速'}")
     print("=" * 80)
     
-    if args.beta == 'both':
-        print("\n📊 両バージョンのベンチマークを実行...")
-        
-        # v1を実行
-        print("\n" + "=" * 80)
-        print("Part 1/2: Beta v1")
-        print("=" * 80)
-        success_v1 = run_benchmark('v1', args.full)
-        
-        # v2を実行
-        print("\n" + "=" * 80)
-        print("Part 2/2: Beta v2")
-        print("=" * 80)
-        success_v2 = run_benchmark('v2', args.full)
-        
-        # 結果サマリー
-        print("\n" + "=" * 80)
-        print("結果サマリー")
-        print("=" * 80)
-        print(f"v1: {'✅ 成功' if success_v1 else '❌ 失敗'}")
-        print(f"v2: {'✅ 成功' if success_v2 else '❌ 失敗'}")
-        
-        if success_v1 and success_v2:
-            print("\n🎉 両バージョンのベンチマークが成功しました！")
-            return 0
-        else:
-            print("\n⚠️  一部のベンチマークが失敗しました")
-            return 1
+    if args.beta == 'all':
+        print("\n📊 全バージョン (v1, v2, v3) の比較ベンチマークを実行...")
+        success = run_all_versions_benchmark()
+        return 0 if success else 1
     else:
         # 単一バージョンを実行
         success = run_benchmark(args.beta, args.full)
