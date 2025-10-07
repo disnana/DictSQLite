@@ -54,7 +54,7 @@ def main():
     
     # Test 1: Direct benchmark_all_versions.py
     print("\n" + "="*70)
-    print("Test 1: Direct v1 vs v2 vs v3 Comparison Benchmark")
+    print("Test 1: Direct v1 vs v2 vs v3 vs v4 Comparison Benchmark")
     print("="*70)
     success = run_command(
         [sys.executable, "benchmark_all_versions.py"],
@@ -102,9 +102,19 @@ def main():
     )
     results.append(("run_benchmark.py v3", success))
     
-    # Test 6: run_benchmark.py with all
+    # Test 6: run_benchmark.py with v4
     print("\n" + "="*70)
-    print("Test 6: run_benchmark.py --beta all")
+    print("Test 6: run_benchmark.py --beta v4")
+    print("="*70)
+    success = run_command(
+        [sys.executable, "run_benchmark.py", "--beta", "v4"],
+        cwd=str(benchmark_dir)
+    )
+    results.append(("run_benchmark.py v4", success))
+    
+    # Test 7: run_benchmark.py with all
+    print("\n" + "="*70)
+    print("Test 7: run_benchmark.py --beta all")
     print("="*70)
     success = run_command(
         [sys.executable, "run_benchmark.py", "--beta", "all"],
