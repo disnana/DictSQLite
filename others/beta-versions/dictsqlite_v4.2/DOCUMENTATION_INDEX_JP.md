@@ -135,10 +135,12 @@
 - [V4.1_OPTIMIZATION_FINAL_REPORT_JP.md](./V4.1_OPTIMIZATION_FINAL_REPORT_JP.md) - v4.1検証結果
 - [V4.1_INVESTIGATION_REPORT_JP.md](./V4.1_INVESTIGATION_REPORT_JP.md) - 包括的調査
 - [IMPROVEMENT_ACTION_PLAN_JP.md](./IMPROVEMENT_ACTION_PLAN_JP.md) - 実装計画
+- [JSON_MODE_TABLE_SUPPORT_FEASIBILITY_JP.md](./JSON_MODE_TABLE_SUPPORT_FEASIBILITY_JP.md) - JSONモード・テーブルサポート実装可能性調査
 
 **推奨読者**:
 - v4.2の開発経緯を知りたい方
 - 設計判断の理由を理解したい方
+- JSONモードやテーブルサポートの実装を検討している方
 
 ---
 
@@ -257,6 +259,7 @@ print(stats)
 | [PERFORMANCE_OPTIMIZATION_GUIDE_JP.md](./PERFORMANCE_OPTIMIZATION_GUIDE_JP.md) | 最適化 | 30分 | ★★☆ |
 | [examples/README.md](./examples/README.md) | 実践者 | 10分 | ★★★ |
 | [DEVELOPER_GUIDE_JP.md](./DEVELOPER_GUIDE_JP.md) | 開発者 | 45分 | ★☆☆ |
+| [JSON_MODE_TABLE_SUPPORT_FEASIBILITY_JP.md](./JSON_MODE_TABLE_SUPPORT_FEASIBILITY_JP.md) | 機能拡張検討者 | 20分 | ★☆☆ |
 
 **必須度**: ★★★ 必読 / ★★☆ 推奨 / ★☆☆ 必要に応じて
 
