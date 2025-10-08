@@ -8,12 +8,22 @@ import tempfile
 import os
 import sys
 
-# Import the built module
+# Add the parent directory to path to import the wrapper
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import the Python wrapper (not the native module directly)
 try:
-    from dictsqlite_v4 import AsyncDictSQLite
-except ImportError:
-    print("Error: dictsqlite_v4 module not found. Please build with 'maturin develop'")
-    sys.exit(1)
+    import __init__ as wrapper_module
+    AsyncDictSQLite = wrapper_module.AsyncDictSQLite
+except ImportError as e:
+    print(f"Error importing wrapper: {e}")
+    print("Trying direct import...")
+    try:
+        from dictsqlite_v4 import AsyncDictSQLite
+        print("Warning: Using native AsyncDictSQLite directly (async context manager not available)")
+    except ImportError:
+        print("Error: Could not import AsyncDictSQLite")
+        sys.exit(1)
 
 
 async def test_async_get_set():

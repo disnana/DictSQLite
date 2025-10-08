@@ -302,44 +302,43 @@ impl AsyncDictSQLite {
     /// Truly async get operation (awaitable in Python)
     /// Returns a Python coroutine that resolves to the value
     #[pyo3(signature = (key))]
-    fn aget(&self, py: Python, key: String) -> PyResult<Bound<PyAny>> {
+    async fn aget(&self, key: String) -> PyResult<Option<Vec<u8>>> {
         let cache = self.cache.clone();
         let storage = self.storage.clone();
         let config = self.config.clone();
         let runtime = self.runtime.clone();
 
-        pyo3::coroutine::new_from_future(py, async move {
-            // Check cache first
-            if let Some(value) = cache.get(&key) {
-                return Ok(Some(value.clone()));
-            }
+        // Check cache first
+        if let Some(value) = cache.get(&key) {
+            return Ok(Some(value.clone()));
+        }
 
-            // Fallback to storage if not in memory mode
-            if config.persist_mode != PersistMode::Memory {
-                let value = runtime.spawn_blocking(move || {
-                    let storage_guard = storage.lock().unwrap();
-                    if let Some(ref storage_engine) = *storage_guard {
-                        storage_engine.get(&key).ok().flatten()
-                    } else {
-                        None
-                    }
-                }).await.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-                if let Some(val) = value {
-                    // Promote to cache for future access
-                    cache.insert(key, val.clone());
-                    return Ok(Some(val));
+        // Fallback to storage if not in memory mode
+        if config.persist_mode != PersistMode::Memory {
+            let key_clone = key.clone();
+            let value = runtime.spawn_blocking(move || {
+                let storage_guard = storage.lock().unwrap();
+                if let Some(ref storage_engine) = *storage_guard {
+                    storage_engine.get(&key_clone).ok().flatten()
+                } else {
+                    None
                 }
-            }
+            }).await.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-            Ok(None)
-        })
+            if let Some(val) = value {
+                // Promote to cache for future access
+                cache.insert(key, val.clone());
+                return Ok(Some(val));
+            }
+        }
+
+        Ok(None)
     }
 
     /// Truly async set operation (awaitable in Python)
     /// Returns a Python coroutine that completes when the operation is done
     #[pyo3(signature = (key, value))]
-    fn aset(&self, py: Python, key: String, value: Vec<u8>) -> PyResult<Bound<PyAny>> {
+    async fn aset(&self, key: String, value: Vec<u8>) -> PyResult<()> {
         let cache = self.cache.clone();
         let write_buffer = self.write_buffer.clone();
         let storage = self.storage.clone();
@@ -347,98 +346,94 @@ impl AsyncDictSQLite {
         let buffer_size = self.buffer_size;
         let runtime = self.runtime.clone();
 
-        pyo3::coroutine::new_from_future(py, async move {
-            // Always update cache immediately for fast reads
-            cache.insert(key.clone(), value.clone());
+        // Always update cache immediately for fast reads
+        cache.insert(key.clone(), value.clone());
 
-            // Handle persistence based on mode
-            if config.persist_mode == PersistMode::WriteThrough {
-                // Add to write buffer
-                let should_flush = {
+        // Handle persistence based on mode
+        if config.persist_mode == PersistMode::WriteThrough {
+            // Add to write buffer
+            let should_flush = {
+                let mut buffer = write_buffer.lock().unwrap();
+                buffer.insert(key, value);
+                buffer.len() >= buffer_size
+            };
+
+            // Auto-flush when buffer is full
+            if should_flush {
+                runtime.spawn_blocking(move || {
                     let mut buffer = write_buffer.lock().unwrap();
-                    buffer.insert(key, value);
-                    buffer.len() >= buffer_size
-                };
+                    if buffer.is_empty() {
+                        return Ok(());
+                    }
 
-                // Auto-flush when buffer is full
-                if should_flush {
-                    runtime.spawn_blocking(move || {
-                        let mut buffer = write_buffer.lock().unwrap();
-                        if buffer.is_empty() {
-                            return Ok(());
+                    // Get storage handle and write
+                    let mut storage_guard = storage.lock().unwrap();
+                    if let Some(ref mut storage_engine) = *storage_guard {
+                        for (k, v) in buffer.drain() {
+                            storage_engine.set(&k, &v)
+                                .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
                         }
-
-                        // Get storage handle and write
-                        let mut storage_guard = storage.lock().unwrap();
-                        if let Some(ref mut storage_engine) = *storage_guard {
-                            for (k, v) in buffer.drain() {
-                                storage_engine.set(&k, &v)
-                                    .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
-                            }
-                        }
-                        Ok::<(), PyErr>(())
-                    }).await.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
-                }
+                    }
+                    Ok::<(), PyErr>(())
+                }).await.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
             }
+        }
 
-            Ok(())
-        })
+        Ok(())
     }
 
     /// Truly async batch get operation (awaitable in Python)
     #[pyo3(signature = (keys))]
-    fn abatch_get(&self, py: Python, keys: Vec<String>) -> PyResult<Bound<PyAny>> {
+    async fn abatch_get(&self, keys: Vec<String>) -> PyResult<Vec<Option<Vec<u8>>>> {
         let cache = self.cache.clone();
         let storage = self.storage.clone();
         let config = self.config.clone();
         let runtime = self.runtime.clone();
 
-        pyo3::coroutine::new_from_future(py, async move {
-            let mut results = Vec::with_capacity(keys.len());
+        let mut results = Vec::with_capacity(keys.len());
 
-            // Check cache for all keys
-            let mut cache_misses = Vec::new();
-            for (idx, key) in keys.iter().enumerate() {
-                if let Some(value) = cache.get(key) {
-                    results.push((idx, Some(value.clone())));
-                } else {
-                    results.push((idx, None));
-                    cache_misses.push((idx, key.clone()));
-                }
+        // Check cache for all keys
+        let mut cache_misses = Vec::new();
+        for (idx, key) in keys.iter().enumerate() {
+            if let Some(value) = cache.get(key) {
+                results.push((idx, Some(value.clone())));
+            } else {
+                results.push((idx, None));
+                cache_misses.push((idx, key.clone()));
             }
+        }
 
-            // Fetch cache misses from storage
-            if !cache_misses.is_empty() && config.persist_mode != PersistMode::Memory {
-                let fetched = runtime.spawn_blocking(move || {
-                    let storage_guard = storage.lock().unwrap();
-                    let mut fetched_values = Vec::new();
-                    
-                    if let Some(ref storage_engine) = *storage_guard {
-                        for (idx, key) in cache_misses {
-                            if let Ok(Some(value)) = storage_engine.get(&key) {
-                                fetched_values.push((idx, key, value));
-                            }
+        // Fetch cache misses from storage
+        if !cache_misses.is_empty() && config.persist_mode != PersistMode::Memory {
+            let fetched = runtime.spawn_blocking(move || {
+                let storage_guard = storage.lock().unwrap();
+                let mut fetched_values = Vec::new();
+                
+                if let Some(ref storage_engine) = *storage_guard {
+                    for (idx, key) in cache_misses {
+                        if let Ok(Some(value)) = storage_engine.get(&key) {
+                            fetched_values.push((idx, key, value));
                         }
                     }
-                    fetched_values
-                }).await.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-
-                for (idx, key, value) in fetched {
-                    // Promote to cache
-                    cache.insert(key, value.clone());
-                    results[idx].1 = Some(value);
                 }
-            }
+                fetched_values
+            }).await.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-            // Sort by index and extract values
-            results.sort_by_key(|(idx, _)| *idx);
-            Ok(results.into_iter().map(|(_, v)| v).collect::<Vec<_>>())
-        })
+            for (idx, key, value) in fetched {
+                // Promote to cache
+                cache.insert(key, value.clone());
+                results[idx].1 = Some(value);
+            }
+        }
+
+        // Sort by index and extract values
+        results.sort_by_key(|(idx, _)| *idx);
+        Ok(results.into_iter().map(|(_, v)| v).collect::<Vec<_>>())
     }
 
     /// Truly async batch set operation (awaitable in Python)
     #[pyo3(signature = (items))]
-    fn abatch_set(&self, py: Python, items: Vec<(String, Vec<u8>)>) -> PyResult<Bound<PyAny>> {
+    async fn abatch_set(&self, items: Vec<(String, Vec<u8>)>) -> PyResult<()> {
         let cache = self.cache.clone();
         let write_buffer = self.write_buffer.clone();
         let storage = self.storage.clone();
@@ -446,45 +441,43 @@ impl AsyncDictSQLite {
         let buffer_size = self.buffer_size;
         let runtime = self.runtime.clone();
 
-        pyo3::coroutine::new_from_future(py, async move {
-            // Update cache immediately for all items
-            for (key, value) in &items {
-                cache.insert(key.clone(), value.clone());
-            }
+        // Update cache immediately for all items
+        for (key, value) in &items {
+            cache.insert(key.clone(), value.clone());
+        }
 
-            // Handle persistence based on mode
-            if config.persist_mode == PersistMode::WriteThrough {
-                let should_flush = {
-                    let mut buffer = write_buffer.lock().unwrap();
-                    for (key, value) in items {
-                        buffer.insert(key, value);
-                    }
-                    buffer.len() >= buffer_size
-                };
-
-                // Auto-flush when buffer is full
-                if should_flush {
-                    runtime.spawn_blocking(move || {
-                        let mut buffer = write_buffer.lock().unwrap();
-                        if buffer.is_empty() {
-                            return Ok(());
-                        }
-
-                        // Get storage handle and write
-                        let mut storage_guard = storage.lock().unwrap();
-                        if let Some(ref mut storage_engine) = *storage_guard {
-                            for (k, v) in buffer.drain() {
-                                storage_engine.set(&k, &v)
-                                    .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
-                            }
-                        }
-                        Ok::<(), PyErr>(())
-                    }).await.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
+        // Handle persistence based on mode
+        if config.persist_mode == PersistMode::WriteThrough {
+            let should_flush = {
+                let mut buffer = write_buffer.lock().unwrap();
+                for (key, value) in items {
+                    buffer.insert(key, value);
                 }
-            }
+                buffer.len() >= buffer_size
+            };
 
-            Ok(())
-        })
+            // Auto-flush when buffer is full
+            if should_flush {
+                runtime.spawn_blocking(move || {
+                    let mut buffer = write_buffer.lock().unwrap();
+                    if buffer.is_empty() {
+                        return Ok(());
+                    }
+
+                    // Get storage handle and write
+                    let mut storage_guard = storage.lock().unwrap();
+                    if let Some(ref mut storage_engine) = *storage_guard {
+                        for (k, v) in buffer.drain() {
+                            storage_engine.set(&k, &v)
+                                .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+                        }
+                    }
+                    Ok::<(), PyErr>(())
+                }).await.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
+            }
+        }
+
+        Ok(())
     }
 
     /// Dict-like access: db[key]
