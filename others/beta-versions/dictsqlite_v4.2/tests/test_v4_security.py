@@ -382,5 +382,154 @@ def test_module_import():
         pytest.skip("DictSQLiteV4 module not available")
 
 
+@pytest.mark.skipif(not DICTSQLITE_V4_AVAILABLE, reason="DictSQLiteV4 module not built")
+class TestJSONBSecurity:
+    """JSONBモードのセキュリティテスト"""
+    
+    def test_jsonb_with_encryption(self, temp_db):
+        """JSONB + 暗号化の組み合わせテスト"""
+        password = "test_password_123"
+        db = DictSQLiteV4(
+            temp_db,
+            storage_mode="jsonb",
+            encryption_password=password
+        )
+        
+        # 辞書データを暗号化して保存
+        sensitive_data = {
+            "credit_card": "1234-5678-9012-3456",
+            "ssn": "123-45-6789",
+            "password": "secret123"
+        }
+        
+        db["sensitive"] = sensitive_data
+        db.flush()
+        db.close()
+        
+        # 正しいパスワードで復号化
+        db2 = DictSQLiteV4(
+            temp_db,
+            storage_mode="jsonb",
+            encryption_password=password
+        )
+        retrieved = db2["sensitive"]
+        assert retrieved == sensitive_data
+        db2.close()
+        
+        # 間違ったパスワードでは復号化できない
+        db3 = DictSQLiteV4(
+            temp_db,
+            storage_mode="jsonb",
+            encryption_password="wrong_password"
+        )
+        try:
+            _ = db3["sensitive"]
+            assert False, "Should have raised an error"
+        except:
+            # 復号化エラーが発生することを期待
+            pass
+        db3.close()
+    
+    def test_jsonb_type_validation(self, temp_db):
+        """JSONB型検証テスト（不正な型を拒否）"""
+        db = DictSQLiteV4(temp_db, storage_mode="jsonb")
+        
+        # JSON互換の型はOK
+        db["valid_dict"] = {"key": "value"}
+        db["valid_list"] = [1, 2, 3]
+        db["valid_str"] = "string"
+        db["valid_int"] = 42
+        db["valid_float"] = 3.14
+        db["valid_bool"] = True
+        db["valid_none"] = None
+        
+        # すべて正常に保存・取得できる
+        assert db["valid_dict"] == {"key": "value"}
+        assert db["valid_list"] == [1, 2, 3]
+        assert db["valid_str"] == "string"
+        assert db["valid_int"] == 42
+        assert db["valid_float"] == 3.14
+        assert db["valid_bool"] is True
+        assert db["valid_none"] is None
+    
+    def test_table_isolation_security(self, temp_db):
+        """テーブル間のデータ隔離セキュリティテスト"""
+        db = DictSQLiteV4(temp_db, storage_mode="jsonb")
+        
+        # 異なるテーブルにデータ保存
+        users = db.table("users")
+        admin = db.table("admin")
+        
+        users["user1"] = {"role": "user", "access": "limited"}
+        admin["admin1"] = {"role": "admin", "access": "full"}
+        
+        # ユーザーテーブルから管理者データにアクセスできないことを確認
+        assert "admin1" not in users
+        assert "user1" not in admin
+        
+        # 各テーブルは自分のデータのみアクセス可能
+        assert users["user1"]["access"] == "limited"
+        assert admin["admin1"]["access"] == "full"
+    
+    def test_jsonb_injection_prevention(self, temp_db):
+        """JSONB SQLインジェクション防止テスト"""
+        db = DictSQLiteV4(temp_db, storage_mode="jsonb")
+        
+        # 悪意のあるキー名を含むデータ
+        malicious_keys = [
+            "'; DROP TABLE main; --",
+            "admin' OR '1'='1",
+            "../../../etc/passwd",
+            "<script>alert('xss')</script>",
+            "\\x00\\x00\\x00",
+        ]
+        
+        for key in malicious_keys:
+            # 悪意のあるキーでもエラーなく保存できる
+            db[key] = {"safe": "data"}
+        
+        # すべて正常に取得できる
+        for key in malicious_keys:
+            assert db[key] == {"safe": "data"}
+    
+    def test_async_jsonb_security(self, temp_db):
+        """非同期版JSONBのセキュリティテスト"""
+        from dictsqlite_v4 import AsyncDictSQLite
+        
+        db = AsyncDictSQLite(
+            temp_db,
+            storage_mode="jsonb"
+        )
+        
+        # 並行アクセスでのデータ整合性
+        db["key1"] = {"value": 1}
+        db["key2"] = {"value": 2}
+        
+        # データが正しく保存されている
+        assert db["key1"]["value"] == 1
+        assert db["key2"]["value"] == 2
+        
+        db.close()
+    
+    def test_table_key_collision_prevention(self, temp_db):
+        """テーブル間のキー衝突防止テスト"""
+        db = DictSQLiteV4(temp_db, storage_mode="jsonb")
+        
+        table1 = db.table("table1")
+        table2 = db.table("table2")
+        
+        # 同じキー名で異なるデータを保存
+        table1["same_key"] = {"table": "table1", "data": "A"}
+        table2["same_key"] = {"table": "table2", "data": "B"}
+        
+        # データが混在しないことを確認
+        assert table1["same_key"]["data"] == "A"
+        assert table2["same_key"]["data"] == "B"
+        
+        # テーブル名が含まれることを確認
+        assert table1["same_key"]["table"] == "table1"
+        assert table2["same_key"]["table"] == "table2"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

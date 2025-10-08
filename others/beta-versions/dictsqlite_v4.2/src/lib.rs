@@ -18,12 +18,98 @@ mod storage;
 mod tests_lru;
 #[cfg(test)]
 mod tests_storage;
+#[cfg(test)]
+mod tests_jsonb;
 
-pub use async_ops::AsyncDictSQLite;
+pub use async_ops::{AsyncDictSQLite, AsyncTableProxy};
 pub use cache::HybridCache;
 pub use crypto::CryptoEngine;
 pub use safe_pickle::{SafePicklePolicy, SafePickleValidator};
 pub use storage::{MemoryTier, StorageEngine};
+
+/// Helper function to convert Python object to serde_json::Value
+fn pyobject_to_json_value(obj: PyObject, py: Python) -> PyResult<serde_json::Value> {
+    use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
+    
+    let obj_ref = obj.bind(py);
+    
+    if obj_ref.is_none() {
+        Ok(serde_json::Value::Null)
+    } else if let Ok(val) = obj_ref.downcast::<PyBool>() {
+        Ok(serde_json::Value::Bool(val.is_true()))
+    } else if let Ok(val) = obj_ref.downcast::<PyInt>() {
+        if let Ok(i) = val.extract::<i64>() {
+            Ok(serde_json::Value::Number(i.into()))
+        } else {
+            // Try as u64 for large numbers
+            let u: u64 = val.extract()?;
+            Ok(serde_json::Value::Number(u.into()))
+        }
+    } else if let Ok(val) = obj_ref.downcast::<PyFloat>() {
+        let f: f64 = val.extract()?;
+        Ok(serde_json::Value::Number(
+            serde_json::Number::from_f64(f)
+                .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid float"))?,
+        ))
+    } else if let Ok(val) = obj_ref.downcast::<PyString>() {
+        Ok(serde_json::Value::String(val.to_string()))
+    } else if let Ok(val) = obj_ref.downcast::<PyList>() {
+        let mut arr = Vec::new();
+        for item in val.iter() {
+            arr.push(pyobject_to_json_value(item.into(), py)?);
+        }
+        Ok(serde_json::Value::Array(arr))
+    } else if let Ok(val) = obj_ref.downcast::<PyDict>() {
+        let mut map = serde_json::Map::new();
+        for (key, value) in val.iter() {
+            let key_str: String = key.extract()?;
+            map.insert(key_str, pyobject_to_json_value(value.into(), py)?);
+        }
+        Ok(serde_json::Value::Object(map))
+    } else {
+        Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+            "Unsupported type for JSON serialization. Use pickle mode for arbitrary objects.",
+        ))
+    }
+}
+
+/// Helper function to convert serde_json::Value to Python object
+fn json_value_to_pyobject(value: serde_json::Value, py: Python) -> PyResult<PyObject> {
+    use pyo3::types::{PyDict, PyList, PyBool, PyInt, PyFloat, PyString};
+    
+    match value {
+        serde_json::Value::Null => Ok(py.None()),
+        serde_json::Value::Bool(b) => Ok(PyBool::new(py, b).to_owned().unbind().into()),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(PyInt::new(py, i).to_owned().unbind().into())
+            } else if let Some(u) = n.as_u64() {
+                Ok(PyInt::new(py, u).to_owned().unbind().into())
+            } else if let Some(f) = n.as_f64() {
+                Ok(PyFloat::new(py, f).to_owned().unbind().into())
+            } else {
+                Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "Invalid number",
+                ))
+            }
+        }
+        serde_json::Value::String(s) => Ok(PyString::new(py, &s).to_owned().unbind().into()),
+        serde_json::Value::Array(arr) => {
+            let list = PyList::empty(py);
+            for item in arr {
+                list.append(json_value_to_pyobject(item, py)?)?;
+            }
+            Ok(list.into())
+        }
+        serde_json::Value::Object(map) => {
+            let dict = PyDict::new(py);
+            for (key, value) in map {
+                dict.set_item(key, json_value_to_pyobject(value, py)?)?;
+            }
+            Ok(dict.into())
+        }
+    }
+}
 
 /// Type alias for write buffer to reduce complexity
 type WriteBuffer = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
@@ -50,6 +136,45 @@ impl FromStr for PersistMode {
             "lazy" => Ok(PersistMode::Lazy),
             "writethrough" | "write_through" => Ok(PersistMode::WriteThrough),
             _ => Err(format!("Invalid persist_mode: {}", s)),
+        }
+    }
+}
+
+/// Storage mode for data serialization
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum StorageMode {
+    /// Pickle format (default, supports any Python object)
+    Pickle,
+    
+    /// JSON text format (human-readable, limited types)
+    Json,
+    
+    /// JSONB binary format using MessagePack (fast, compact, limited types)
+    JsonB,
+    
+    /// Raw bytes (no conversion)
+    Bytes,
+}
+
+impl Default for StorageMode {
+    fn default() -> Self {
+        StorageMode::Pickle  // Backward compatibility
+    }
+}
+
+impl FromStr for StorageMode {
+    type Err = String;
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "pickle" => Ok(StorageMode::Pickle),
+            "json" => Ok(StorageMode::Json),
+            "jsonb" => Ok(StorageMode::JsonB),
+            "bytes" => Ok(StorageMode::Bytes),
+            _ => Err(format!(
+                "Invalid storage_mode: {}. Choose from ['pickle', 'json', 'jsonb', 'bytes']",
+                s
+            )),
         }
     }
 }
@@ -120,6 +245,12 @@ pub struct Config {
 
     /// Enable safe pickle validation
     pub enable_safe_pickle: bool,
+    
+    /// Storage mode for serialization
+    pub storage_mode: StorageMode,
+    
+    /// Default table name
+    pub table_name: String,
 }
 
 impl Default for Config {
@@ -133,6 +264,8 @@ impl Default for Config {
             persist_mode: PersistMode::WriteThrough,
             enable_encryption: false,
             enable_safe_pickle: false,
+            storage_mode: StorageMode::Pickle,
+            table_name: "main".to_string(),
         }
     }
 }
@@ -140,19 +273,24 @@ impl Default for Config {
 #[pymethods]
 impl DictSQLiteV4 {
     #[new]
-    #[pyo3(signature = (db_path, hot_capacity=1_000_000, enable_async=true, persist_mode="writethrough", encryption_password=None, enable_safe_pickle=false, safe_pickle_allowed_modules=None, buffer_size=100))]
+    #[pyo3(signature = (db_path, hot_capacity=1_000_000, enable_async=true, persist_mode="writethrough", storage_mode="pickle", table_name="main", encryption_password=None, enable_safe_pickle=false, safe_pickle_allowed_modules=None, buffer_size=100))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         db_path: String,
         hot_capacity: usize,
         enable_async: bool,
         persist_mode: &str,
+        storage_mode: &str,
+        table_name: &str,
         encryption_password: Option<String>,
         enable_safe_pickle: bool,
         safe_pickle_allowed_modules: Option<Vec<String>>,
         buffer_size: usize,
     ) -> PyResult<Self> {
         let persist_mode_parsed = PersistMode::from_str(persist_mode)
+            .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+        
+        let storage_mode_parsed = StorageMode::from_str(storage_mode)
             .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
 
         let config = Config {
@@ -161,6 +299,8 @@ impl DictSQLiteV4 {
             persist_mode: persist_mode_parsed,
             enable_encryption: encryption_password.is_some(),
             enable_safe_pickle,
+            storage_mode: storage_mode_parsed,
+            table_name: table_name.to_string(),
             ..Default::default()
         };
 
@@ -580,19 +720,106 @@ impl DictSQLiteV4 {
 
     /// Dict-like access: db[key]
     fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
-        let result = self.get(key.clone(), None, py)?;
+        // Add table prefix if default table is not "main" or empty
+        let full_key = if !self.config.table_name.is_empty() && self.config.table_name != "main" {
+            format!("{}:{}", self.config.table_name, key)
+        } else {
+            key.clone()
+        };
+        
+        let result = self.get(full_key.clone(), None, py)?;
         if result.is_none(py) {
             return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
                 "Key not found: {}",
                 key
             )));
         }
-        Ok(result)
+        
+        // Extract bytes from result
+        let data: Vec<u8> = result.extract(py)?;
+        
+        // Deserialize based on storage mode
+        match self.config.storage_mode {
+            StorageMode::Pickle => {
+                // Use pickle module to deserialize
+                let pickle = py.import("pickle")?;
+                let loads = pickle.getattr("loads")?;
+                let unpickled = loads.call1((PyBytes::new(py, &data),))?;
+                Ok(unpickled.into())
+            }
+            StorageMode::Json => {
+                // Deserialize from JSON text
+                let json_value: serde_json::Value = serde_json::from_slice(&data).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "JSON deserialization error: {}",
+                        e
+                    ))
+                })?;
+                json_value_to_pyobject(json_value, py)
+            }
+            StorageMode::JsonB => {
+                // Deserialize from MessagePack binary
+                let json_value: serde_json::Value =
+                    rmp_serde::from_slice(&data).map_err(|e| {
+                        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                            "MessagePack deserialization error: {}",
+                            e
+                        ))
+                    })?;
+                json_value_to_pyobject(json_value, py)
+            }
+            StorageMode::Bytes => {
+                // Return raw bytes
+                Ok(PyBytes::new(py, &data).into())
+            }
+        }
     }
 
     /// Dict-like access: db[key] = value
-    fn __setitem__(&self, key: String, value: Vec<u8>) -> PyResult<()> {
-        self.set(key, value)
+    fn __setitem__(&self, key: String, value: PyObject, py: Python) -> PyResult<()> {
+        // Add table prefix if default table is not "main" or empty
+        let full_key = if !self.config.table_name.is_empty() && self.config.table_name != "main" {
+            format!("{}:{}", self.config.table_name, key)
+        } else {
+            key.clone()
+        };
+        
+        // Convert value based on storage mode
+        let data: Vec<u8> = match self.config.storage_mode {
+            StorageMode::Pickle => {
+                // Use pickle module to serialize
+                let pickle = py.import("pickle")?;
+                let dumps = pickle.getattr("dumps")?;
+                let pickled = dumps.call1((value,))?;
+                pickled.extract::<Vec<u8>>()?
+            }
+            StorageMode::Json => {
+                // Convert to JSON text
+                let json_value = pyobject_to_json_value(value, py)?;
+                serde_json::to_vec(&json_value).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "JSON serialization error: {}",
+                        e
+                    ))
+                })?
+            }
+            StorageMode::JsonB => {
+                // Convert to MessagePack binary
+                let json_value = pyobject_to_json_value(value, py)?;
+                rmp_serde::to_vec(&json_value).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "MessagePack serialization error: {}",
+                        e
+                    ))
+                })?
+            }
+            StorageMode::Bytes => {
+                // Expect bytes directly
+                value.extract::<Vec<u8>>(py)?
+            }
+        };
+        
+        self.set(full_key, data)
     }
 
     /// Dict-like access: del db[key]
@@ -609,6 +836,195 @@ impl DictSQLiteV4 {
     fn __len__(&self) -> PyResult<usize> {
         self.len()
     }
+    
+    /// Get a table proxy for accessing a specific table
+    fn table(slf: PyRef<Self>, table_name: String) -> PyResult<TableProxy> {
+        Ok(TableProxy {
+            db: slf.into(),
+            table_name,
+        })
+    }
+    
+    /// List all tables (by extracting unique table prefixes from keys)
+    fn tables(&self, _py: Python) -> PyResult<Vec<String>> {
+        let all_keys = self.keys(_py)?;
+        let mut tables = std::collections::HashSet::new();
+        
+        for key in all_keys {
+            if let Some(pos) = key.find(':') {
+                tables.insert(key[..pos].to_string());
+            } else {
+                // Keys without prefix belong to "main" table
+                tables.insert("main".to_string());
+            }
+        }
+        
+        Ok(tables.into_iter().collect())
+    }
+}
+
+/// TableProxy provides dict-like access to a specific table
+#[pyclass]
+pub struct TableProxy {
+    db: Py<DictSQLiteV4>,
+    table_name: String,
+}
+
+#[pymethods]
+impl TableProxy {
+    /// Dict-like access: table[key]
+    fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
+        let full_key = format!("{}:{}", self.table_name, key);
+        let db = self.db.borrow(py);
+        
+        // Get the raw data
+        let result = db.get(full_key.clone(), None, py)?;
+        if result.is_none(py) {
+            return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                "Key not found: {}",
+                key
+            )));
+        }
+        
+        // Extract and deserialize based on storage mode
+        let data: Vec<u8> = result.extract(py)?;
+        
+        match db.config.storage_mode {
+            StorageMode::Pickle => {
+                let pickle = py.import("pickle")?;
+                let loads = pickle.getattr("loads")?;
+                let unpickled = loads.call1((PyBytes::new(py, &data),))?;
+                Ok(unpickled.into())
+            }
+            StorageMode::Json => {
+                let json_value: serde_json::Value = serde_json::from_slice(&data).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "JSON deserialization error: {}",
+                        e
+                    ))
+                })?;
+                json_value_to_pyobject(json_value, py)
+            }
+            StorageMode::JsonB => {
+                let json_value: serde_json::Value =
+                    rmp_serde::from_slice(&data).map_err(|e| {
+                        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                            "MessagePack deserialization error: {}",
+                            e
+                        ))
+                    })?;
+                json_value_to_pyobject(json_value, py)
+            }
+            StorageMode::Bytes => Ok(PyBytes::new(py, &data).into()),
+        }
+    }
+    
+    /// Dict-like access: table[key] = value
+    fn __setitem__(&self, key: String, value: PyObject, py: Python) -> PyResult<()> {
+        let full_key = format!("{}:{}", self.table_name, key);
+        let db = self.db.borrow(py);
+        
+        // Serialize based on storage mode
+        let data: Vec<u8> = match db.config.storage_mode {
+            StorageMode::Pickle => {
+                let pickle = py.import("pickle")?;
+                let dumps = pickle.getattr("dumps")?;
+                let pickled = dumps.call1((value,))?;
+                pickled.extract::<Vec<u8>>()?
+            }
+            StorageMode::Json => {
+                let json_value = pyobject_to_json_value(value, py)?;
+                serde_json::to_vec(&json_value).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "JSON serialization error: {}",
+                        e
+                    ))
+                })?
+            }
+            StorageMode::JsonB => {
+                let json_value = pyobject_to_json_value(value, py)?;
+                rmp_serde::to_vec(&json_value).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "MessagePack serialization error: {}",
+                        e
+                    ))
+                })?
+            }
+            StorageMode::Bytes => value.extract::<Vec<u8>>(py)?,
+        };
+        
+        db.set(full_key, data)
+    }
+    
+    /// Dict-like access: del table[key]
+    fn __delitem__(&self, key: String, py: Python) -> PyResult<()> {
+        let full_key = format!("{}:{}", self.table_name, key);
+        let db = self.db.borrow(py);
+        db.delete(full_key)
+    }
+    
+    /// Dict-like access: key in table
+    fn __contains__(&self, key: String, py: Python) -> PyResult<bool> {
+        let full_key = format!("{}:{}", self.table_name, key);
+        let db = self.db.borrow(py);
+        db.contains(full_key)
+    }
+    
+    /// Get all keys in this table
+    fn keys(&self, py: Python) -> PyResult<Vec<String>> {
+        let db = self.db.borrow(py);
+        let all_keys = db.keys(py)?;
+        let prefix = format!("{}:", self.table_name);
+        
+        Ok(all_keys
+            .into_iter()
+            .filter(|k| k.starts_with(&prefix))
+            .map(|k| k[prefix.len()..].to_string())
+            .collect())
+    }
+    
+    /// Get all values in this table
+    fn values(&self, py: Python) -> PyResult<Vec<PyObject>> {
+        let keys = self.keys(py)?;
+        let mut values = Vec::new();
+        for key in keys {
+            values.push(self.__getitem__(key, py)?);
+        }
+        Ok(values)
+    }
+    
+    /// Get all items as (key, value) tuples
+    fn items(&self, py: Python) -> PyResult<Vec<(String, PyObject)>> {
+        let keys = self.keys(py)?;
+        let mut items = Vec::new();
+        for key in keys {
+            items.push((key.clone(), self.__getitem__(key, py)?));
+        }
+        Ok(items)
+    }
+    
+    /// Get value with default
+    #[pyo3(signature = (key, default=None))]
+    fn get(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+        match self.__getitem__(key, py) {
+            Ok(value) => Ok(value),
+            Err(_) => Ok(default.unwrap_or_else(|| py.None())),
+        }
+    }
+    
+    /// Clear all items in this table
+    fn clear(&self, py: Python) -> PyResult<()> {
+        let keys = self.keys(py)?;
+        for key in keys {
+            self.__delitem__(key, py)?;
+        }
+        Ok(())
+    }
+    
+    /// Get number of items in this table
+    fn __len__(&self, py: Python) -> PyResult<usize> {
+        Ok(self.keys(py)?.len())
+    }
 }
 
 /// Python module definition
@@ -616,5 +1032,7 @@ impl DictSQLiteV4 {
 fn dictsqlite_v4(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<DictSQLiteV4>()?;
     m.add_class::<AsyncDictSQLite>()?;
+    m.add_class::<TableProxy>()?;
+    m.add_class::<AsyncTableProxy>()?;
     Ok(())
 }
