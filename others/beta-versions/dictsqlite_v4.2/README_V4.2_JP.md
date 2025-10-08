@@ -584,12 +584,6 @@ db.close()
 
 ## 📚 参考資料
 
-### v4.2開発の背景
-
-- [V4.1_OPTIMIZATION_FINAL_REPORT_JP.md](./V4.1_OPTIMIZATION_FINAL_REPORT_JP.md) - 検証結果サマリー
-- [V4.1_OPTIMIZATION_VERIFICATION.md](./V4.1_OPTIMIZATION_VERIFICATION.md) - 技術詳細
-- [V4.1_INVESTIGATION_REPORT_JP.md](./V4.1_INVESTIGATION_REPORT_JP.md) - 包括的調査
-
 ### ユーザー向けドキュメント
 
 - **[MIGRATION_GUIDE_V4.2_JP.md](./MIGRATION_GUIDE_V4.2_JP.md)** - **v1.8.8からの移行ガイド**
@@ -615,7 +609,6 @@ db.close()
 ### 実装ガイド
 
 - [IMPROVEMENT_ACTION_PLAN_JP.md](./IMPROVEMENT_ACTION_PLAN_JP.md) - 実装アクションプラン
-- [BETA_ASYNC_PERFORMANCE_FIX.md](../BETA_ASYNC_PERFORMANCE_FIX.md) - Beta版の実証
 - [DEVELOPER_GUIDE_JP.md](./DEVELOPER_GUIDE_JP.md) - 開発者向け詳細ガイド
 
 ### 機能拡張ガイド
