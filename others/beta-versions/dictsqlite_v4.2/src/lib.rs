@@ -255,7 +255,7 @@ impl Default for Config {
             warm_tier_size: 100 * 1024 * 1024, // 100MB
             enable_async_flush: true,
             flush_interval_ms: 1000,
-            num_shards: num_cpus::get(),
+            num_shards: num_cpus::get().next_power_of_two(),
             persist_mode: PersistMode::WriteThrough,
             enable_encryption: false,
             enable_safe_pickle: false,

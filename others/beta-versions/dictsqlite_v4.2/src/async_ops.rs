@@ -53,7 +53,7 @@ impl AsyncDictSQLite {
         use std::str::FromStr;
 
         // Use shard-per-core for optimal concurrent access
-        let num_shards = num_cpus::get();
+        let num_shards = num_cpus::get().next_power_of_two();
         let cache = Arc::new(DashMap::with_capacity_and_shard_amount(
             capacity, num_shards,
         ));
