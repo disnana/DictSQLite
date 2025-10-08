@@ -9,9 +9,13 @@ import tempfile
 import os
 from pathlib import Path
 
-# Rust拡張モジュールが利用可能か確認
+# Python wrapper (with safe_pickle validation) が利用可能か確認
+# Note: Rust拡張を直接インポートするのではなく、Pythonラッパー経由で使う
 try:
-    from dictsqlite_v4 import DictSQLiteV4
+    import sys
+    # Ensure parent directory is in path to import the wrapper __init__.py
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from __init__ import DictSQLiteV4
     DICTSQLITE_V4_AVAILABLE = True
 except ImportError:
     DICTSQLITE_V4_AVAILABLE = False

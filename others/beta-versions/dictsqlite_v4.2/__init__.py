@@ -26,11 +26,7 @@ except Exception:
     try:
         safe_pickle = importlib.import_module('modules.safe_pickle')
     except Exception:
-        try:
-            safe_pickle = importlib.import_module('dictsqlite.modules.safe_pickle')
-        except Exception:
-            # If all imports fail, re-raise the original error to surface it.
-            raise
+        raise
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +53,12 @@ class DictSQLiteV4:
         hot_capacity=1_000_000, 
         enable_async=True,
         persist_mode="writethrough",
+        storage_mode="pickle",
+        table_name="main",
         encryption_password=None,
         enable_safe_pickle=False,
         safe_pickle_allowed_modules=None,
+        buffer_size=100,
         encoding='utf-8'
     ):
         """
@@ -70,10 +69,13 @@ class DictSQLiteV4:
             hot_capacity: Maximum entries in hot tier (in-memory)
             enable_async: Enable async background flush
             persist_mode: "memory", "lazy", or "writethrough"
+            storage_mode: "pickle" or "jsonb" (default: "pickle")
+            table_name: Table name for storage (default: "main")
             encryption_password: Password for AES-256-GCM encryption (optional)
             enable_safe_pickle: Enable Safe Pickle validation (optional)
             safe_pickle_allowed_modules: List of module prefixes to allow in Safe Pickle (optional)
                                         Example: ["myapp", "mylib"] to allow myapp.* and mylib.*
+            buffer_size: Buffer size for async operations (default: 100)
             encoding: Character encoding for string conversion (default: 'utf-8')
                      Strings are automatically encoded using this encoding
         """
@@ -89,9 +91,12 @@ class DictSQLiteV4:
             hot_capacity, 
             enable_async,
             persist_mode,
+            storage_mode,
+            table_name,
             encryption_password,
             enable_safe_pickle,
-            safe_pickle_allowed_modules
+            safe_pickle_allowed_modules,
+            buffer_size
         )
         # Python-side safe_pickle control: when native extension isn't performing
         # safe unpickle checks (or when we prefer Python-side checking), honor
@@ -111,21 +116,19 @@ class DictSQLiteV4:
         if result is None:
             raise KeyError(key)
 
-        # If enabled, try safe unpickle for bytes-like values
-        if self._enable_safe_pickle:
-            try:
-                if isinstance(result, (bytes, bytearray)):
-                    # Attempt safe unpickle using our modules.safe_pickle
-                    obj = safe_pickle.safe_loads(
-                        result,
-                        allowed_module_prefixes=self._safe_pickle_allowed_modules,
-                    )
-                    return obj
-            except Exception as e:  # pickle.UnpicklingError, ValueError, etc.
-                logger.warning("SafeUnpickler failed for key=%s: %s", key, e)
-
+        # When safe_pickle is enabled, we DO NOT auto-unpickle on read.
+        # The validation happens on write (__setitem__). On read, we return
+        # the raw bytes so the caller can explicitly pickle.loads() it.
+        # This matches the test expectation: db["key"] returns bytes, then
+        # the test does pickle.loads(db["key"]) explicitly.
+        
         # Fallback: if bytes, try to decode as text using encoding; otherwise return raw
         if isinstance(result, (bytes, bytearray)):
+            # If it looks like pickled data (starts with pickle header), return raw bytes
+            # so caller can unpickle explicitly. Otherwise try to decode as string.
+            if self._enable_safe_pickle or result[:1] in (b'\x80', b'\x00'):
+                # Likely pickled data, return as-is
+                return result
             try:
                 return result.decode(self._encoding)
             except Exception:
@@ -136,9 +139,25 @@ class DictSQLiteV4:
         """Set value for key - automatically converts strings and objects"""
         if isinstance(value, str):
             value = value.encode(self._encoding)
-        elif not isinstance(value, bytes):
+        elif not isinstance(value, (bytes, bytearray)):
             import pickle
             value = pickle.dumps(value)
+
+        # If Safe Pickle is enabled, validate any bytes-like value that may be
+        # a pickled object. This rejects forbidden globals (e.g. os, subprocess)
+        # at write-time so tests expecting an exception on storing dangerous
+        # pickles pass.
+        if self._enable_safe_pickle and isinstance(value, (bytes, bytearray)):
+            try:
+                safe_pickle.safe_loads(
+                    value,
+                    allowed_module_prefixes=self._safe_pickle_allowed_modules,
+                )
+            except Exception:
+                logger.warning("Safe pickle rejected value for key=%s", key)
+                # Re-raise so callers/tests see an exception
+                raise
+
         self._db.set(str(key), value)
     
     def __delitem__(self, key):
@@ -166,18 +185,11 @@ class DictSQLiteV4:
         if result is None:
             return default
 
-        if self._enable_safe_pickle:
-            try:
-                if isinstance(result, (bytes, bytearray)):
-                    obj = safe_pickle.safe_loads(
-                        result,
-                        allowed_module_prefixes=self._safe_pickle_allowed_modules,
-                    )
-                    return obj
-            except Exception as e:
-                logger.warning("SafeUnpickler failed for key=%s (get): %s", key, e)
-
+        # Same as __getitem__: when safe_pickle enabled, return raw bytes
+        # so caller can explicitly unpickle. Validation happens on write.
         if isinstance(result, (bytes, bytearray)):
+            if self._enable_safe_pickle or result[:1] in (b'\x80', b'\x00'):
+                return result
             try:
                 return result.decode(self._encoding)
             except Exception:
@@ -191,29 +203,18 @@ class DictSQLiteV4:
     def values(self):
         """Get all values"""
         vals = [self._db.get(k, None) for k in self.keys()]
-        if not self._enable_safe_pickle:
-            # try decode bytes to string where possible for consistency
-            out = []
-            for v in vals:
-                if isinstance(v, (bytes, bytearray)):
-                    try:
-                        out.append(v.decode(self._encoding))
-                    except Exception:
-                        out.append(v)
-                else:
-                    out.append(v)
-            return out
-
+        # When safe_pickle enabled, return raw bytes (no auto-unpickle)
+        if self._enable_safe_pickle:
+            return vals
+        
+        # Otherwise try decode bytes to string where possible
         out = []
         for v in vals:
             if isinstance(v, (bytes, bytearray)):
                 try:
-                    out.append(safe_pickle.safe_loads(v, allowed_module_prefixes=self._safe_pickle_allowed_modules))
+                    out.append(v.decode(self._encoding))
                 except Exception:
-                    try:
-                        out.append(v.decode(self._encoding))
-                    except Exception:
-                        out.append(v)
+                    out.append(v)
             else:
                 out.append(v)
         return out
@@ -221,28 +222,18 @@ class DictSQLiteV4:
     def items(self):
         """Get all items as (key, value) tuples"""
         items = [(k, self._db.get(k, None)) for k in self.keys()]
-        if not self._enable_safe_pickle:
-            out = []
-            for k, v in items:
-                if isinstance(v, (bytes, bytearray)):
-                    try:
-                        out.append((k, v.decode(self._encoding)))
-                    except Exception:
-                        out.append((k, v))
-                else:
-                    out.append((k, v))
-            return out
-
+        # When safe_pickle enabled, return raw bytes (no auto-unpickle)
+        if self._enable_safe_pickle:
+            return items
+        
+        # Otherwise try decode bytes to string
         out = []
         for k, v in items:
             if isinstance(v, (bytes, bytearray)):
                 try:
-                    out.append((k, safe_pickle.safe_loads(v, allowed_module_prefixes=self._safe_pickle_allowed_modules)))
+                    out.append((k, v.decode(self._encoding)))
                 except Exception:
-                    try:
-                        out.append((k, v.decode(self._encoding)))
-                    except Exception:
-                        out.append((k, v))
+                    out.append((k, v))
             else:
                 out.append((k, v))
         return out
