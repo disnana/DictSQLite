@@ -195,9 +195,8 @@ class TestSafePickle:
         pickled = pickle.dumps(test_data)
         db["safe_data"] = pickled
         
-        # 読み込みと復元 - safe_pickle有効時は明示的にunpickleが必要
-        restored_bytes = db["safe_data"]
-        restored = pickle.loads(restored_bytes)
+        # 読み込みと復元 - safe_pickle有効でも自動的にunpickleされる
+        restored = db["safe_data"]
         assert restored == test_data
     
     def test_safe_pickle_nested_structures(self, temp_db):
@@ -218,9 +217,8 @@ class TestSafePickle:
         pickled = pickle.dumps(nested)
         db["nested"] = pickled
         
-        # safe_pickle有効時は明示的にunpickleが必要
-        restored_bytes = db["nested"]
-        restored = pickle.loads(restored_bytes)
+        # safe_pickle有効でも自動的にunpickleされる
+        restored = db["nested"]
         assert restored == nested
     
     def test_safe_pickle_forbidden_objects(self, temp_db):
@@ -263,9 +261,8 @@ class TestCombinedSecurity:
         pickled = pickle.dumps(data)
         db["user:alice"] = pickled
         
-        # safe_pickle有効時は明示的にunpickleが必要
-        restored_bytes = db["user:alice"]
-        restored = pickle.loads(restored_bytes)
+        # safe_pickle有効でも自動的にunpickleされる
+        restored = db["user:alice"]
         assert restored == data
     
     def test_combined_performance(self, temp_db):
@@ -343,9 +340,8 @@ class TestPersistenceModes:
             enable_safe_pickle=True
         )
         
-        # safe_pickle有効時は明示的にunpickleが必要
-        restored_bytes = db2["item"]
-        restored = pickle.loads(restored_bytes)
+        # safe_pickle有効でも自動的にunpickleされる
+        restored = db2["item"]
         assert restored == data
 
 

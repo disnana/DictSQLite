@@ -111,28 +111,18 @@ class DictSQLiteV4:
         self._closed = False
     
     def __getitem__(self, key):
-        """Get value by key"""
+        """Get value by key
+        
+        Note: This method is overridden by Rust implementation.
+        When safe_pickle is enabled, the Rust side automatically unpickles
+        the data using safe_loads for validation.
+        """
         result = self._db.get(str(key), None)
         if result is None:
             raise KeyError(key)
 
-        # When safe_pickle is enabled, we DO NOT auto-unpickle on read.
-        # The validation happens on write (__setitem__). On read, we return
-        # the raw bytes so the caller can explicitly pickle.loads() it.
-        # This matches the test expectation: db["key"] returns bytes, then
-        # the test does pickle.loads(db["key"]) explicitly.
-        
-        # Fallback: if bytes, try to decode as text using encoding; otherwise return raw
-        if isinstance(result, (bytes, bytearray)):
-            # If it looks like pickled data (starts with pickle header), return raw bytes
-            # so caller can unpickle explicitly. Otherwise try to decode as string.
-            if self._enable_safe_pickle or result[:1] in (b'\x80', b'\x00'):
-                # Likely pickled data, return as-is
-                return result
-            try:
-                return result.decode(self._encoding)
-            except Exception:
-                return result
+        # This code is not actually executed - Rust __getitem__ takes precedence
+        # Kept for documentation purposes
         return result
     
     def __setitem__(self, key, value):

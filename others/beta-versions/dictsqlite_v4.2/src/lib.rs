@@ -824,20 +824,29 @@ impl DictSQLiteV4 {
         // Extract bytes from result
         let data: Vec<u8> = result.extract(py)?;
 
-        // If safe_pickle is enabled, return raw bytes without unpickling
-        // This allows Python side to explicitly unpickle with validation
-        if self.config.enable_safe_pickle && self.config.storage_mode == StorageMode::Pickle {
-            return Ok(PyBytes::new(py, &data).into());
-        }
-
         // Deserialize based on storage mode
         match self.config.storage_mode {
             StorageMode::Pickle => {
-                // Use pickle module to deserialize
-                let pickle = py.import("pickle")?;
-                let loads = pickle.getattr("loads")?;
-                let unpickled = loads.call1((PyBytes::new(py, &data),))?;
-                Ok(unpickled.into())
+                // If safe_pickle is enabled, use safe_loads for validation
+                if self.config.enable_safe_pickle {
+                    if let Some(ref validator) = self.safe_pickle {
+                        // Use safe_pickle validator to load and validate
+                        let unpickled = validator.validate_and_load(&data)?;
+                        Ok(unpickled)
+                    } else {
+                        // Fallback: use regular pickle.loads
+                        let pickle = py.import("pickle")?;
+                        let loads = pickle.getattr("loads")?;
+                        let unpickled = loads.call1((PyBytes::new(py, &data),))?;
+                        Ok(unpickled.into())
+                    }
+                } else {
+                    // Use pickle module to deserialize
+                    let pickle = py.import("pickle")?;
+                    let loads = pickle.getattr("loads")?;
+                    let unpickled = loads.call1((PyBytes::new(py, &data),))?;
+                    Ok(unpickled.into())
+                }
             }
             StorageMode::Json => {
                 // Deserialize from JSON text
