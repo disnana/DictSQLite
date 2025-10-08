@@ -293,7 +293,9 @@ impl AsyncDictSQLite {
 
     /// Close and flush if needed
     fn close(&self) -> PyResult<()> {
-        if self.config.persist_mode == PersistMode::Lazy {
+        // Flush write buffer for WriteThrough mode
+        // Flush both buffer and cache for Lazy mode
+        if self.config.persist_mode != PersistMode::Memory {
             self.flush()?;
         }
         Ok(())
