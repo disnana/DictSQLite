@@ -26,6 +26,25 @@ from dictsqlite_fastest_beta_v4_step1 import AsyncDictSQLiteFastestBetaV4 as V4S
 from dictsqlite_fastest_beta_v4_step2 import AsyncDictSQLiteFastestBetaV4 as V4Step2
 
 
+def cleanup_db_files(db_path):
+    """データベースファイルとWALファイルをクリーンアップ - Windows対応"""
+    time.sleep(0.1)
+    for attempt in range(3):
+        try:
+            if os.path.exists(db_path):
+                os.unlink(db_path)
+            for ext in ['-wal', '-shm']:
+                wal_file = db_path + ext
+                if os.path.exists(wal_file):
+                    os.unlink(wal_file)
+            break
+        except PermissionError:
+            if attempt < 2:
+                time.sleep(0.2)
+        except Exception:
+            break
+
+
 @pytest_asyncio.fixture
 async def v4_step1_db():
     """Create a temporary v4 Step 1 database for comparison"""
@@ -38,8 +57,7 @@ async def v4_step1_db():
     yield db
     
     await db.aclose()
-    if os.path.exists(db_path):
-        os.unlink(db_path)
+    cleanup_db_files(db_path)
 
 
 @pytest_asyncio.fixture
@@ -54,8 +72,7 @@ async def v4_step2_db():
     yield db
     
     await db.aclose()
-    if os.path.exists(db_path):
-        os.unlink(db_path)
+    cleanup_db_files(db_path)
 
 
 @pytest.mark.asyncio

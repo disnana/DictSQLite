@@ -20,6 +20,25 @@ sys.path.insert(0, str(Path(__file__).parent))
 from dictsqlite_fastest_beta_v3_alpha import AsyncDictSQLiteFastestBetaV3
 
 
+def cleanup_db_files(db_path):
+    """データベースファイルとWALファイルをクリーンアップ - Windows対応"""
+    time.sleep(0.1)
+    for attempt in range(3):
+        try:
+            if os.path.exists(db_path):
+                os.unlink(db_path)
+            for ext in ['-wal', '-shm']:
+                wal_file = db_path + ext
+                if os.path.exists(wal_file):
+                    os.unlink(wal_file)
+            break
+        except PermissionError:
+            if attempt < 2:
+                time.sleep(0.2)
+        except Exception:
+            break
+
+
 async def test_basic_operations():
     """Test basic read/write operations."""
     print("Test 1: Basic Operations...")
@@ -48,8 +67,7 @@ async def test_basic_operations():
         print("  ✓ Basic operations passed")
         return True
     finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+        cleanup_db_files(db_path)
 
 
 async def test_phase1_dynamic_pool():
@@ -91,8 +109,7 @@ async def test_phase1_dynamic_pool():
         print("  ✓ Phase 1 dynamic pool passed")
         return True
     finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+        cleanup_db_files(db_path)
 
 
 async def test_phase2_prefetch():
@@ -128,8 +145,7 @@ async def test_phase2_prefetch():
         print("  ✓ Phase 2 prefetch passed")
         return True
     finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+        cleanup_db_files(db_path)
 
 
 async def test_phase3_adaptive_batch():
@@ -164,8 +180,7 @@ async def test_phase3_adaptive_batch():
         print("  ✓ Phase 3 adaptive batch passed")
         return True
     finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+        cleanup_db_files(db_path)
 
 
 async def test_phase4_extended_stats():
@@ -208,8 +223,7 @@ async def test_phase4_extended_stats():
         print("  ✓ Phase 4 extended stats passed")
         return True
     finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+        cleanup_db_files(db_path)
 
 
 async def test_concurrent_operations():
@@ -271,8 +285,7 @@ async def test_concurrent_operations():
         print("  ✓ Concurrent operations passed")
         return True
     finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+        cleanup_db_files(db_path)
 
 
 async def test_performance_comparison():

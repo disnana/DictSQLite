@@ -29,11 +29,23 @@ async def temp_db():
     
     yield db_path
     
-    # クリーンアップ
-    try:
-        os.unlink(db_path)
-    except Exception:
-        pass
+    # クリーンアップ - Windows対応: リトライロジックを追加
+    time.sleep(0.1)  # 100ms待機してファイルハンドルを確実に解放
+    for attempt in range(3):
+        try:
+            if os.path.exists(db_path):
+                os.unlink(db_path)
+            # WALファイルもクリーンアップ
+            for ext in ['-wal', '-shm']:
+                wal_file = db_path + ext
+                if os.path.exists(wal_file):
+                    os.unlink(wal_file)
+            break
+        except PermissionError:
+            if attempt < 2:
+                time.sleep(0.2)  # 200ms待機してリトライ
+        except Exception:
+            break
 
 
 @pytest.mark.asyncio

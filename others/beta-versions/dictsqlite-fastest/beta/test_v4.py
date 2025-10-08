@@ -23,6 +23,25 @@ from dictsqlite_fastest_beta_v4 import (
 )
 
 
+def cleanup_db_files(db_path):
+    """データベースファイルとWALファイルをクリーンアップ - Windows対応"""
+    time.sleep(0.1)
+    for attempt in range(3):
+        try:
+            if os.path.exists(db_path):
+                os.unlink(db_path)
+            for ext in ['-wal', '-shm']:
+                wal_file = db_path + ext
+                if os.path.exists(wal_file):
+                    os.unlink(wal_file)
+            break
+        except PermissionError:
+            if attempt < 2:
+                time.sleep(0.2)
+        except Exception:
+            break
+
+
 async def test_database_size_analyzer():
     """Test 1: Database size analysis"""
     print("Test 1: Database Size Analyzer...")
@@ -50,8 +69,7 @@ async def test_database_size_analyzer():
         print("  ✓ Database size analyzer passed")
         return True
     finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+        cleanup_db_files(db_path)
 
 
 async def test_hybrid_cache():
@@ -126,8 +144,7 @@ async def test_auto_preload():
         
         return True
     finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+        cleanup_db_files(db_path)
 
 
 async def test_sequential_read_performance():
@@ -199,8 +216,7 @@ async def test_sequential_read_performance():
         
         return True
     finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+        cleanup_db_files(db_path)
 
 
 async def test_backward_compatibility():
@@ -239,8 +255,7 @@ async def test_backward_compatibility():
         
         return True
     finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+        cleanup_db_files(db_path)
 
 
 async def main():
