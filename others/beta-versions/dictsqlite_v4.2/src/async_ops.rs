@@ -5,7 +5,9 @@ use rayon::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::{Config, PersistMode, StorageEngine, StorageMode, pyobject_to_json_value, json_value_to_pyobject};
+use crate::{
+    json_value_to_pyobject, pyobject_to_json_value, Config, PersistMode, StorageEngine, StorageMode,
+};
 
 /// Async version of DictSQLite v4.2 for high-concurrency scenarios
 ///
@@ -59,7 +61,7 @@ impl AsyncDictSQLite {
         // Create config with custom values
         let persist_mode_parsed = PersistMode::from_str(persist_mode)
             .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
-        
+
         let storage_mode_parsed = StorageMode::from_str(storage_mode)
             .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
 
@@ -284,7 +286,7 @@ impl AsyncDictSQLite {
         }
         Ok(())
     }
-    
+
     /// Dict-like access: db[key]
     fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
         // Add table prefix if default table is not "main" or empty
@@ -293,7 +295,7 @@ impl AsyncDictSQLite {
         } else {
             key.clone()
         };
-        
+
         let result = self.get_async(full_key.clone(), py)?;
         if result.is_none() {
             return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
@@ -301,10 +303,10 @@ impl AsyncDictSQLite {
                 key
             )));
         }
-        
+
         // Extract bytes from result
         let data: Vec<u8> = result.unwrap().extract(py)?;
-        
+
         // Deserialize based on storage mode
         match self.config.storage_mode {
             StorageMode::Pickle => {
@@ -323,19 +325,18 @@ impl AsyncDictSQLite {
                 json_value_to_pyobject(json_value, py)
             }
             StorageMode::JsonB => {
-                let json_value: serde_json::Value =
-                    rmp_serde::from_slice(&data).map_err(|e| {
-                        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-                            "MessagePack deserialization error: {}",
-                            e
-                        ))
-                    })?;
+                let json_value: serde_json::Value = rmp_serde::from_slice(&data).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "MessagePack deserialization error: {}",
+                        e
+                    ))
+                })?;
                 json_value_to_pyobject(json_value, py)
             }
             StorageMode::Bytes => Ok(PyBytes::new(py, &data).into()),
         }
     }
-    
+
     /// Dict-like access: db[key] = value
     fn __setitem__(&self, key: String, value: PyObject, py: Python) -> PyResult<()> {
         // Add table prefix if default table is not "main" or empty
@@ -344,7 +345,7 @@ impl AsyncDictSQLite {
         } else {
             key.clone()
         };
-        
+
         // Convert value based on storage mode
         let data: Vec<u8> = match self.config.storage_mode {
             StorageMode::Pickle => {
@@ -373,10 +374,10 @@ impl AsyncDictSQLite {
             }
             StorageMode::Bytes => value.extract::<Vec<u8>>(py)?,
         };
-        
+
         self.set_async(full_key, data)
     }
-    
+
     /// Get a table proxy for accessing a specific table
     fn table(slf: PyRef<Self>, table_name: String) -> PyResult<AsyncTableProxy> {
         Ok(AsyncTableProxy {
@@ -399,7 +400,7 @@ impl AsyncTableProxy {
     fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
         let full_key = format!("{}:{}", self.table_name, key);
         let db = self.db.borrow(py);
-        
+
         // Get the raw data
         let result = db.get_async(full_key.clone(), py)?;
         if result.is_none() {
@@ -408,10 +409,10 @@ impl AsyncTableProxy {
                 key
             )));
         }
-        
+
         // Extract and deserialize based on storage mode
         let data: Vec<u8> = result.unwrap().extract(py)?;
-        
+
         match db.config.storage_mode {
             StorageMode::Pickle => {
                 let pickle = py.import("pickle")?;
@@ -429,24 +430,23 @@ impl AsyncTableProxy {
                 json_value_to_pyobject(json_value, py)
             }
             StorageMode::JsonB => {
-                let json_value: serde_json::Value =
-                    rmp_serde::from_slice(&data).map_err(|e| {
-                        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-                            "MessagePack deserialization error: {}",
-                            e
-                        ))
-                    })?;
+                let json_value: serde_json::Value = rmp_serde::from_slice(&data).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "MessagePack deserialization error: {}",
+                        e
+                    ))
+                })?;
                 json_value_to_pyobject(json_value, py)
             }
             StorageMode::Bytes => Ok(PyBytes::new(py, &data).into()),
         }
     }
-    
+
     /// Dict-like access: table[key] = value
     fn __setitem__(&self, key: String, value: PyObject, py: Python) -> PyResult<()> {
         let full_key = format!("{}:{}", self.table_name, key);
         let db = self.db.borrow(py);
-        
+
         // Serialize based on storage mode
         let data: Vec<u8> = match db.config.storage_mode {
             StorageMode::Pickle => {
@@ -475,7 +475,7 @@ impl AsyncTableProxy {
             }
             StorageMode::Bytes => value.extract::<Vec<u8>>(py)?,
         };
-        
+
         db.set_async(full_key, data)
     }
 }
