@@ -317,7 +317,7 @@ def test_native_available():
     assert is_native_available() == True
 
 
-@pytest.mark.skipif(NATIVE_AVAILABLE, reason="Only test when native not available")
+@pytest.mark.skipif(NATIVE_AVAILABLE or DictSQLiteV3 is None, reason="Only test when native not available and module can be imported")
 def test_fallback_error():
     """Test error when native extension not available"""
     with pytest.raises(RuntimeError, match="native extension not available"):

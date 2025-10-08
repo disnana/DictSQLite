@@ -7,6 +7,7 @@ import asyncio
 import tempfile
 import os
 import sys
+import pytest
 
 # Add the parent directory to path to import the wrapper
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -26,6 +27,7 @@ except ImportError as e:
         sys.exit(1)
 
 
+@pytest.mark.asyncio
 async def test_async_get_set():
     """Test basic async get/set operations"""
     print("\n" + "="*60)
@@ -75,6 +77,7 @@ async def test_async_get_set():
                 os.unlink(wal_file)
 
 
+@pytest.mark.asyncio
 async def test_async_batch_operations():
     """Test async batch operations"""
     print("\n" + "="*60)
@@ -134,6 +137,7 @@ async def test_async_batch_operations():
                 os.unlink(wal_file)
 
 
+@pytest.mark.asyncio
 async def test_concurrent_async_operations():
     """Test concurrent async operations"""
     print("\n" + "="*60)
@@ -187,6 +191,7 @@ async def test_concurrent_async_operations():
                 os.unlink(wal_file)
 
 
+@pytest.mark.asyncio
 async def test_async_persistence():
     """Test async operations with persistence"""
     print("\n" + "="*60)
@@ -235,6 +240,7 @@ async def test_async_persistence():
                 os.unlink(wal_file)
 
 
+@pytest.mark.asyncio
 async def test_backward_compatibility():
     """Test that synchronous methods still work for backward compatibility"""
     print("\n" + "="*60)
