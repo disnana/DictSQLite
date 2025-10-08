@@ -508,11 +508,14 @@ impl DictSQLiteV4 {
     /// Set value for key (lock-free write to hot tier)
     /// v4.2: Uses write buffering for 43x speedup in WriteThrough mode
     fn set(&self, key: String, value: Vec<u8>) -> PyResult<()> {
-        // Validate with safe pickle if enabled
+        // Validate with safe pickle if enabled AND storage mode is Pickle
+        // Safe pickle validation only makes sense for pickled data, not for JSON/JSONB/Bytes
         if let Some(ref validator) = self.safe_pickle {
-            validator
-                .validate(&value)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+            if self.config.storage_mode == StorageMode::Pickle {
+                validator
+                    .validate(&value)
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+            }
         }
 
         // Encrypt if encryption is enabled
