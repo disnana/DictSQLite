@@ -77,6 +77,8 @@ impl Default for SafePicklePolicy {
             "builtins.exec",
             "__builtin__.eval",
             "__builtin__.exec",
+            "builtins.__import__",
+            "__builtin__.__import__",
         ] {
             denied_globals.insert(dangerous.to_string());
         }
@@ -131,28 +133,202 @@ impl SafePicklePolicy {
     pub fn validate_opcodes(&self, data: &[u8]) -> Result<(), SafePickleError> {
         // 危険なopcodeを検出
         // Pickle プロトコルの危険な opcode:
-        // - 'R' (REDUCE): 任意の関数呼び出しが可能
-        // - 'i' (INST): クラスのインスタンス化
-        // - 'o' (OBJ): オブジェクトの構築
         // - 'c' (GLOBAL): グローバル変数の取得
+        // - 0x93 (STACK_GLOBAL): プロトコル4+のグローバル取得
+        //
+        // 注: REDUCE ('R') は正常な pickle でも使われるため、
+        // 危険な GLOBAL との組み合わせを防ぐことで対応する
 
         let mut i = 0;
+        // 簡易的な文字列スタック（SHORT_BINUNICODE 等で読んだ文字列を格納）
+        let mut str_stack: Vec<String> = Vec::new();
+
         while i < data.len() {
             let opcode = data[i];
 
-            match opcode as char {
-                'R' => {
-                    // REDUCE は慎重に扱う必要がある
-                    // 完全な検証は Python 側で実施
-                }
-                'c' => {
-                    // GLOBAL opcode - モジュール名とクラス名を読み取り
-                    // ここでは基本的な検出のみ
-                }
-                _ => {}
-            }
+            match opcode {
+                b'c' => {
+                    // GLOBAL opcode - テキスト形式で module<nl>name<nl> が続く (プロトコル0系)
+                    i += 1; // opcode の次のバイトから開始
+                    let start_mod = i;
+                    while i < data.len() && data[i] != b'\n' {
+                        i += 1;
+                    }
+                    if i >= data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    let module = String::from_utf8_lossy(&data[start_mod..i]).to_string();
+                    // 改行バイトをスキップ
+                    i += 1;
 
-            i += 1;
+                    // name を読み取る
+                    let start_name = i;
+                    while i < data.len() && data[i] != b'\n' {
+                        i += 1;
+                    }
+                    if i >= data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    let name = String::from_utf8_lossy(&data[start_name..i]).to_string();
+                    // 改行バイトをスキップして次へ
+                    i += 1;
+
+                    // ポリシーで許可されているか検査
+                    if !self.is_allowed_global(&module, &name) {
+                        return Err(SafePickleError::ForbiddenGlobal(module, name));
+                    }
+                }
+                0x8c => {
+                    // SHORT_BINUNICODE: 1バイト長 + データ
+                    // フォーマット: 0x8c <len:u8> <utf8 bytes>
+                    i += 1;
+                    if i >= data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    let len = data[i] as usize;
+                    i += 1;
+                    if i + len > data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    let s = String::from_utf8_lossy(&data[i..i + len]).to_string();
+                    str_stack.push(s);
+                    i += len;
+                }
+                0x58 => {
+                    // BINUNICODE ("X"): 4バイト長 (little-endian) + データ
+                    i += 1;
+                    if i + 4 > data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    let len = u32::from_le_bytes([data[i], data[i+1], data[i+2], data[i+3]]) as usize;
+                    i += 4;
+                    if i + len > data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    let s = String::from_utf8_lossy(&data[i..i + len]).to_string();
+                    str_stack.push(s);
+                    i += len;
+                }
+                0x8d => {
+                    // BINUNICODE8: 8バイト長 + データ
+                    i += 1;
+                    if i + 8 > data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    let len = u64::from_le_bytes([
+                        data[i], data[i+1], data[i+2], data[i+3], data[i+4], data[i+5], data[i+6], data[i+7]
+                    ]) as usize;
+                    i += 8;
+                    if i + len > data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    let s = String::from_utf8_lossy(&data[i..i + len]).to_string();
+                    str_stack.push(s);
+                    i += len;
+                }
+                // --- Common fixed/variable-length opcodes that carry immediate data ---
+                0x4A => {
+                    // BININT ("J"): 4-byte little-endian int
+                    i += 1;
+                    if i + 4 > data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    i += 4;
+                }
+                0x4B => {
+                    // BININT1 ("K"): 1-byte int
+                    i += 1;
+                    if i >= data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    i += 1;
+                }
+                0x4D => {
+                    // BININT2 ("M"): 2-byte little-endian int
+                    i += 1;
+                    if i + 2 > data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    i += 2;
+                }
+                0x42 => {
+                    // BINBYTES ("B"): 4-byte length + data
+                    i += 1;
+                    if i + 4 > data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    let len = u32::from_le_bytes([data[i], data[i+1], data[i+2], data[i+3]]) as usize;
+                    i += 4;
+                    if i + len > data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    i += len;
+                }
+                0x8A => {
+                    // SHORT_BINBYTES: 1-byte length + data
+                    i += 1;
+                    if i >= data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    let len = data[i] as usize;
+                    i += 1;
+                    if i + len > data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    i += len;
+                }
+                0x71 => {
+                    // BINPUT ("q"): 1-byte memo index
+                    i += 1;
+                    if i >= data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    i += 1;
+                }
+                0x72 => {
+                    // LONG_BINPUT ("r"): 4-byte memo index
+                    i += 1;
+                    if i + 4 > data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    i += 4;
+                }
+                0x95 => {
+                    // FRAME opcode: 8バイトのフレーム長が続く (protocol 4+)
+                    i += 1;
+                    if i + 8 > data.len() {
+                        return Err(SafePickleError::InvalidData);
+                    }
+                    // skip 8 bytes
+                    i += 8;
+                }
+                0x93 => {
+                    // STACK_GLOBAL (プロトコル 4+): 直前のスタック要素から module/name を取る
+                    // ここでは簡易的に直前に読み取った文字列スタックから name, module を取得
+                    // name が最後、module がその前にあるはず
+                    if str_stack.len() < 2 {
+                        // 文字列情報がない場合は InvalidData ではなく無視
+                        i += 1;
+                        continue;
+                    }
+                    let name = str_stack.pop().unwrap();
+                    let module = str_stack.pop().unwrap();
+
+                    if !self.is_allowed_global(&module, &name) {
+                        return Err(SafePickleError::ForbiddenGlobal(module, name));
+                    }
+
+                    i += 1;
+                }
+                0x94 => {
+                    // MEMOIZE / PUT のような opcode はスキップ（protocol 4+）
+                    i += 1;
+                }
+                _ => {
+                    // その他の opcode は現在解析対象外 -> 1バイト進める
+                    i += 1;
+                }
+            }
         }
 
         Ok(())
