@@ -51,13 +51,15 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install maturin pytest
+          pip install maturin pytest pytest-asyncio
       
-      - name: Build DictSQLite v4.2 (Production)
+      - name: Build DictSQLite v4.2
         working-directory: others/beta-versions/dictsqlite_v4.2
         run: |
-          chmod +x build_production.sh
-          ./build_production.sh
+          chmod +x build.sh
+          ./build.sh
+        env:
+          CI: true
       
       - name: Run comprehensive performance tests
         working-directory: others/beta-versions/dictsqlite_v4.2
@@ -66,18 +68,17 @@ jobs:
             --iterations ${{ github.event.inputs.iterations || '3' }} \
             --output performance_results_${{ matrix.os }}_py${{ matrix.python-version }}.json
       
+      - name: Run pytest on entire tests folder
+        working-directory: others/beta-versions/dictsqlite_v4.2
+        run: |
+          pytest tests/ -v --tb=short
+      
       - name: Upload performance results
         uses: actions/upload-artifact@v4
         with:
           name: performance-results-${{ matrix.os }}-py${{ matrix.python-version }}
           path: others/beta-versions/dictsqlite_v4.2/performance_results_*.json
           retention-days: 30
-      
-      - name: Run existing tests
-        working-directory: others/beta-versions/dictsqlite_v4.2
-        run: |
-          pytest tests/test_v4_security.py -v || true
-          pytest tests/test_async_persistence.py -v || true
   
   benchmark-comparison:
     name: Benchmark v4.1 vs v4.2
