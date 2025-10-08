@@ -3,6 +3,7 @@
 # Optimized for maximum performance benchmarking
 
 set -e
+trap 'echo; read -p "Press Enter to exit..."' EXIT
 
 echo "================================"
 echo "DictSQLite v4.2 Production Build"

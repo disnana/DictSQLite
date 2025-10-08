@@ -2,6 +2,7 @@
 # Build script for DictSQLite v4.0
 
 set -e
+trap 'echo; read -p "Press Enter to exit..."' EXIT
 
 echo "================================"
 echo "DictSQLite v4.0 Build Script"
