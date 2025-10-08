@@ -1,0 +1,247 @@
+"""
+Test JSONB mode and table support for DictSQLite v4.2
+"""
+import os
+import tempfile
+import pytest
+
+
+def test_jsonb_mode_basic():
+    """Test basic JSONB mode functionality"""
+    # Import after building
+    try:
+        from dictsqlite_v4 import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite_v4 not built yet")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_jsonb.db")
+        
+        # Create DB with JSONB mode
+        db = DictSQLiteV4(db_path, storage_mode="jsonb")
+        
+        # Test dict storage
+        test_data = {
+            "name": "Alice",
+            "age": 30,
+            "hobbies": ["reading", "coding"],
+            "address": {
+                "city": "Tokyo",
+                "country": "Japan"
+            }
+        }
+        
+        db["user1"] = test_data
+        
+        # Retrieve and verify
+        retrieved = db["user1"]
+        assert retrieved == test_data
+        assert retrieved["name"] == "Alice"
+        assert retrieved["age"] == 30
+        assert retrieved["hobbies"] == ["reading", "coding"]
+        assert retrieved["address"]["city"] == "Tokyo"
+        
+        # Test with list
+        db["numbers"] = [1, 2, 3, 4, 5]
+        assert db["numbers"] == [1, 2, 3, 4, 5]
+        
+        # Test with string
+        db["message"] = "Hello, World!"
+        assert db["message"] == "Hello, World!"
+        
+        # Test with number
+        db["count"] = 42
+        assert db["count"] == 42
+        
+        # Test with boolean
+        db["flag"] = True
+        assert db["flag"] is True
+        
+        db.close()
+        print("✅ JSONB mode basic test passed")
+
+
+def test_json_mode_basic():
+    """Test basic JSON mode functionality"""
+    try:
+        from dictsqlite_v4 import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite_v4 not built yet")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_json.db")
+        
+        # Create DB with JSON mode
+        db = DictSQLiteV4(db_path, storage_mode="json")
+        
+        # Test dict storage
+        test_data = {
+            "theme": "dark",
+            "language": "ja",
+            "notifications": True
+        }
+        
+        db["config"] = test_data
+        
+        # Retrieve and verify
+        retrieved = db["config"]
+        assert retrieved == test_data
+        
+        db.close()
+        print("✅ JSON mode basic test passed")
+
+
+def test_table_support_basic():
+    """Test basic table support"""
+    try:
+        from dictsqlite_v4 import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite_v4 not built yet")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_tables.db")
+        
+        # Create DB with JSONB mode
+        db = DictSQLiteV4(db_path, storage_mode="jsonb")
+        
+        # Get table proxies
+        users = db.table("users")
+        products = db.table("products")
+        
+        # Add data to users table
+        users["user1"] = {"name": "Alice", "age": 30}
+        users["user2"] = {"name": "Bob", "age": 25}
+        
+        # Add data to products table
+        products["prod1"] = {"name": "Laptop", "price": 80000}
+        products["prod2"] = {"name": "Mouse", "price": 1500}
+        
+        # Verify users table
+        assert users["user1"]["name"] == "Alice"
+        assert users["user2"]["age"] == 25
+        
+        # Verify products table
+        assert products["prod1"]["price"] == 80000
+        assert products["prod2"]["name"] == "Mouse"
+        
+        # Check keys
+        user_keys = users.keys()
+        assert "user1" in user_keys
+        assert "user2" in user_keys
+        
+        product_keys = products.keys()
+        assert "prod1" in product_keys
+        assert "prod2" in product_keys
+        
+        # Test __contains__
+        assert "user1" in users
+        assert "prod1" in products
+        assert "user999" not in users
+        
+        # Test len
+        assert len(users) == 2
+        assert len(products) == 2
+        
+        db.close()
+        print("✅ Table support basic test passed")
+
+
+def test_table_with_default_table_name():
+    """Test using default table name parameter"""
+    try:
+        from dictsqlite_v4 import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite_v4 not built yet")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_default_table.db")
+        
+        # Create DB with custom default table name
+        users_db = DictSQLiteV4(db_path, storage_mode="jsonb", table_name="users")
+        
+        # Add data - should go to "users" table
+        users_db["user1"] = {"name": "Alice", "age": 30}
+        
+        # Verify
+        assert users_db["user1"]["name"] == "Alice"
+        
+        users_db.close()
+        print("✅ Default table name test passed")
+
+
+def test_async_table_support():
+    """Test async table support"""
+    try:
+        from dictsqlite_v4 import AsyncDictSQLite
+    except ImportError:
+        pytest.skip("dictsqlite_v4 not built yet")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_async_tables.db")
+        
+        # Create async DB with JSONB mode
+        db = AsyncDictSQLite(db_path, storage_mode="jsonb")
+        
+        # Get table proxy
+        users = db.table("users")
+        
+        # Add data
+        users["user1"] = {"name": "Alice", "age": 30}
+        
+        # Verify
+        assert users["user1"]["name"] == "Alice"
+        
+        db.close()
+        print("✅ Async table support test passed")
+
+
+def test_mixed_storage_modes():
+    """Test that different storage modes work correctly"""
+    try:
+        from dictsqlite_v4 import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite_v4 not built yet")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Test Pickle mode (default)
+        db_pickle = DictSQLiteV4(os.path.join(tmpdir, "pickle.db"))
+        db_pickle["data"] = {"key": "value"}
+        assert db_pickle["data"] == {"key": "value"}
+        db_pickle.close()
+        
+        # Test JSON mode
+        db_json = DictSQLiteV4(os.path.join(tmpdir, "json.db"), storage_mode="json")
+        db_json["data"] = {"key": "value"}
+        assert db_json["data"] == {"key": "value"}
+        db_json.close()
+        
+        # Test JSONB mode
+        db_jsonb = DictSQLiteV4(os.path.join(tmpdir, "jsonb.db"), storage_mode="jsonb")
+        db_jsonb["data"] = {"key": "value"}
+        assert db_jsonb["data"] == {"key": "value"}
+        db_jsonb.close()
+        
+        # Test Bytes mode
+        db_bytes = DictSQLiteV4(os.path.join(tmpdir, "bytes.db"), storage_mode="bytes")
+        db_bytes["data"] = b"Hello, World!"
+        assert db_bytes["data"] == b"Hello, World!"
+        db_bytes.close()
+        
+        print("✅ Mixed storage modes test passed")
+
+
+if __name__ == "__main__":
+    print("Running JSONB and table support tests...")
+    
+    try:
+        test_jsonb_mode_basic()
+        test_json_mode_basic()
+        test_table_support_basic()
+        test_table_with_default_table_name()
+        test_async_table_support()
+        test_mixed_storage_modes()
+        print("\n✅ All tests passed!")
+    except Exception as e:
+        print(f"\n❌ Test failed: {e}")
+        import traceback
+        traceback.print_exc()

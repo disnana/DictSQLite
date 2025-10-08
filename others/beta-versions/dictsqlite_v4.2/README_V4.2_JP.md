@@ -27,6 +27,24 @@ DictSQLite v4.2は、v4.1の調査結果に基づき、**非同期・同期のI/
 - SQLクエリ数: N回 → 1回
 - **期待効果**: キャッシュミス時に**5-10倍高速化**
 
+#### ✨ JSONモードとJSONBモード（v4.2新機能）
+
+- **JSONBモード**: MessagePackによる高速バイナリJSON（推奨）
+  - JSON互換の型をサポート（dict, list, str, int, float, bool, None）
+  - 10-20% JSONより高速、コンパクトなバイナリ形式
+- **JSONモード**: 人間が読めるテキストJSON
+  - デバッグに便利、SQLiteブラウザで直接確認可能
+- **Pickleモード**: 任意のPythonオブジェクトをサポート（デフォルト）
+- **Bytesモード**: 生のバイト列を直接保存
+
+#### ✨ テーブルサポート（v4.2新機能）
+
+- 1つのデータベースで複数のテーブルを管理
+- テーブルプロキシによる直感的なアクセス
+- デフォルトテーブル名の指定が可能
+- 非同期版でもサポート
+- プレフィックス方式による実装（パフォーマンス影響: 1-2%）
+
 ---
 
 ## 🔧 v4.1からの変更点
@@ -119,6 +137,115 @@ print(db["key"])
 async_db = AsyncDictSQLite("mydb.db")
 async_db.set_async("key", b"value")
 print(async_db.get_async("key"))
+```
+
+### v4.2の新機能: JSONモードとJSONBモード
+
+DictSQLite v4.2では、データの保存形式を選択できるようになりました：
+
+#### 1. Pickleモード（デフォルト）
+
+任意のPythonオブジェクトをサポート：
+
+```python
+db = DictSQLiteV4("data.db", storage_mode="pickle")  # デフォルト
+db["complex"] = {"nested": {"data": [1, 2, 3]}, "set": {1, 2, 3}}
+```
+
+#### 2. JSONBモード（推奨★）
+
+MessagePackによる高速バイナリJSON：
+
+```python
+db = DictSQLiteV4("data.db", storage_mode="jsonb")
+db["config"] = {
+    "theme": "dark",
+    "language": "ja",
+    "features": ["feature1", "feature2"],
+    "settings": {"notifications": True}
+}
+print(db["config"])  # Pythonの辞書として取得
+```
+
+**特徴:**
+- ✅ JSON互換の型をサポート（dict, list, str, int, float, bool, None）
+- ✅ 10-20% JSONより高速
+- ✅ コンパクトなバイナリ形式
+- ✅ 本番環境に最適
+
+#### 3. JSONモード
+
+人間が読めるテキストJSON：
+
+```python
+db = DictSQLiteV4("data.db", storage_mode="json")
+db["config"] = {"theme": "dark", "lang": "ja"}
+# SQLiteブラウザで直接確認可能（デバッグに便利）
+```
+
+#### 4. Bytesモード
+
+生のバイト列を直接保存：
+
+```python
+db = DictSQLiteV4("data.db", storage_mode="bytes")
+db["binary_data"] = b"\x00\x01\x02\x03"
+```
+
+### v4.2の新機能: テーブルサポート
+
+複数のテーブルを1つのデータベースで管理できます：
+
+#### 方法1: テーブルプロキシを使用
+
+```python
+from dictsqlite_v4 import DictSQLiteV4
+
+db = DictSQLiteV4("app.db", storage_mode="jsonb")
+
+# テーブルプロキシを取得
+users = db.table("users")
+products = db.table("products")
+
+# 各テーブルに辞書のようにアクセス
+users["user1"] = {"name": "田中太郎", "age": 30}
+products["prod1"] = {"name": "ノートPC", "price": 80000}
+
+# データ取得
+print(users["user1"]["name"])  # "田中太郎"
+print(products["prod1"]["price"])  # 80000
+
+# テーブル内のキー一覧
+print(users.keys())  # ["user1"]
+
+# テーブル内のアイテム数
+print(len(users))  # 1
+
+# すべてのテーブルを一覧表示
+print(db.tables())  # ["users", "products"]
+```
+
+#### 方法2: デフォルトテーブル名を指定
+
+```python
+# 初期化時にテーブル名を指定
+users_db = DictSQLiteV4("app.db", table_name="users", storage_mode="jsonb")
+
+# すべての操作は自動的に"users"テーブルに対して行われる
+users_db["user1"] = {"name": "Alice", "age": 30}
+print(users_db["user1"])
+```
+
+#### 非同期版でもテーブルをサポート
+
+```python
+from dictsqlite_v4 import AsyncDictSQLite
+
+async_db = AsyncDictSQLite("app.db", storage_mode="jsonb")
+users = async_db.table("users")
+
+users["user1"] = {"name": "Alice", "age": 30}
+print(users["user1"])
 ```
 
 ### v4.2の新機能: バッファサイズの調整
@@ -360,7 +487,17 @@ db.close()
 - ✨ **改善**: バッチ読み込みの最適化（5-10倍高速化）
 - ✨ **新パラメータ**: `buffer_size` の追加
 - ✨ **新メソッド**: `flush_write_buffer()` の追加
-- 📝 **ドキュメント**: README_V4.2_JP.mdの追加
+- ✨ **新機能**: JSONBモード（MessagePack）のサポート
+- ✨ **新機能**: JSONモードのサポート
+- ✨ **新機能**: テーブルサポート（複数テーブルの管理）
+- ✨ **新パラメータ**: `storage_mode` の追加（pickle/json/jsonb/bytes）
+- ✨ **新パラメータ**: `table_name` の追加（デフォルトテーブル名）
+- ✨ **新クラス**: `TableProxy` - テーブル固有の操作
+- ✨ **新クラス**: `AsyncTableProxy` - 非同期テーブル操作
+- ✨ **新メソッド**: `table(table_name)` - テーブルプロキシの取得
+- ✨ **新メソッド**: `tables()` - すべてのテーブル一覧
+- 📝 **ドキュメント**: README_V4.2_JP.mdの更新（JSONBとテーブルサポート）
+- 📝 **サンプル**: jsonb_table_usage_example.pyの追加
 
 ### v4.1.0
 
