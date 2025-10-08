@@ -11,7 +11,12 @@ from pathlib import Path
 
 # Python wrapper (with safe_pickle validation) が利用可能か確認
 # Note: Rust拡張を直接インポートするのではなく、Pythonラッパー経由で使う
-from dictsqlite_v4 import DictSQLiteV4
+try:
+    from dictsqlite_v4 import DictSQLiteV4
+    DICTSQLITE_V4_AVAILABLE = True
+except ImportError:
+    DICTSQLITE_V4_AVAILABLE = False
+    DictSQLiteV4 = None
 
 
 @pytest.fixture
