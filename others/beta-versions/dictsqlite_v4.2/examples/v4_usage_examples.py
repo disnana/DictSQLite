@@ -125,8 +125,8 @@ def example_safe_pickle():
     db["user:1"] = pickle.dumps(user_data)
     print("✓ ユーザーデータを保存しました")
     
-    # 読み込みと復元
-    restored = pickle.loads(db["user:1"])
+    # 読み込みと復元 (__getitem__ will return the unpickled object when safe_pickle is enabled)
+    restored = db["user:1"]
     print(f"\n復元されたデータ:")
     print(f"  名前: {restored['name']}")
     print(f"  メール: {restored['email']}")

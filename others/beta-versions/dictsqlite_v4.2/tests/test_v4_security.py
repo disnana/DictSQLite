@@ -196,7 +196,7 @@ class TestSafePickle:
         db["safe_data"] = pickled
         
         # 読み込みと復元
-        restored = pickle.loads(db["safe_data"])
+        restored = db["safe_data"]
         assert restored == test_data
     
     def test_safe_pickle_nested_structures(self, temp_db):
@@ -217,7 +217,7 @@ class TestSafePickle:
         pickled = pickle.dumps(nested)
         db["nested"] = pickled
         
-        restored = pickle.loads(db["nested"])
+        restored = db["nested"]
         assert restored == nested
     
     def test_safe_pickle_forbidden_objects(self, temp_db):
@@ -260,7 +260,7 @@ class TestCombinedSecurity:
         pickled = pickle.dumps(data)
         db["user:alice"] = pickled
         
-        restored = pickle.loads(db["user:alice"])
+        restored = db["user:alice"]
         assert restored == data
     
     def test_combined_performance(self, temp_db):
@@ -285,7 +285,7 @@ class TestCombinedSecurity:
         # 読み込みテスト
         start = time.time()
         for i in range(500):
-            _ = pickle.loads(db[f"item_{i}"])
+            _ = db[f"item_{i}"]
         read_time = time.time() - start
         
         # 性能要件（両方有効でも実用的な速度）
@@ -338,7 +338,7 @@ class TestPersistenceModes:
             enable_safe_pickle=True
         )
         
-        restored = pickle.loads(db2["item"])
+        restored = db2["item"]
         assert restored == data
 
 
@@ -438,6 +438,7 @@ class TestJSONBSecurity:
         db["valid_none"] = None
         
         # すべて正常に保存・取得できる
+        print(f"valid_list: {db['valid_list']}, type: {type(db['valid_list'])}")
         assert db["valid_dict"] == {"key": "value"}
         assert db["valid_list"] == [1, 2, 3]
         assert db["valid_str"] == "string"
