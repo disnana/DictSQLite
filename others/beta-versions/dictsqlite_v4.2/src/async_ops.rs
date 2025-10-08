@@ -38,7 +38,7 @@ pub struct AsyncDictSQLite {
 
     /// Buffer size threshold for auto-flush
     buffer_size: usize,
-    
+
     /// Tokio runtime for async operations
     runtime: Arc<Runtime>,
 }
@@ -90,11 +90,11 @@ impl AsyncDictSQLite {
 
         // Initialize write buffer (v4.2 optimization)
         let write_buffer = Arc::new(Mutex::new(HashMap::with_capacity(buffer_size)));
-        
+
         // Create Tokio runtime for async operations
         let runtime = Arc::new(
             Runtime::new()
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?,
         );
 
         Ok(AsyncDictSQLite {
@@ -318,14 +318,17 @@ impl AsyncDictSQLite {
         // Fallback to storage if not in memory mode
         if config.persist_mode != PersistMode::Memory {
             let key_clone = key.clone();
-            let value = runtime.spawn_blocking(move || {
-                let storage_guard = storage.lock().unwrap();
-                if let Some(ref storage_engine) = *storage_guard {
-                    storage_engine.get(&key_clone).ok().flatten()
-                } else {
-                    None
-                }
-            }).await.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+            let value = runtime
+                .spawn_blocking(move || {
+                    let storage_guard = storage.lock().unwrap();
+                    if let Some(ref storage_engine) = *storage_guard {
+                        storage_engine.get(&key_clone).ok().flatten()
+                    } else {
+                        None
+                    }
+                })
+                .await
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
             if let Some(val) = value {
                 // Promote to cache for future access
@@ -362,22 +365,26 @@ impl AsyncDictSQLite {
 
             // Auto-flush when buffer is full
             if should_flush {
-                runtime.spawn_blocking(move || {
-                    let mut buffer = write_buffer.lock().unwrap();
-                    if buffer.is_empty() {
-                        return Ok(());
-                    }
-
-                    // Get storage handle and write
-                    let mut storage_guard = storage.lock().unwrap();
-                    if let Some(ref mut storage_engine) = *storage_guard {
-                        for (k, v) in buffer.drain() {
-                            storage_engine.set(&k, &v)
-                                .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+                runtime
+                    .spawn_blocking(move || {
+                        let mut buffer = write_buffer.lock().unwrap();
+                        if buffer.is_empty() {
+                            return Ok(());
                         }
-                    }
-                    Ok::<(), PyErr>(())
-                }).await.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
+
+                        // Get storage handle and write
+                        let mut storage_guard = storage.lock().unwrap();
+                        if let Some(ref mut storage_engine) = *storage_guard {
+                            for (k, v) in buffer.drain() {
+                                storage_engine.set(&k, &v).map_err(|e| {
+                                    pyo3::exceptions::PyIOError::new_err(e.to_string())
+                                })?;
+                            }
+                        }
+                        Ok::<(), PyErr>(())
+                    })
+                    .await
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
             }
         }
 
@@ -407,19 +414,22 @@ impl AsyncDictSQLite {
 
         // Fetch cache misses from storage
         if !cache_misses.is_empty() && config.persist_mode != PersistMode::Memory {
-            let fetched = runtime.spawn_blocking(move || {
-                let storage_guard = storage.lock().unwrap();
-                let mut fetched_values = Vec::new();
-                
-                if let Some(ref storage_engine) = *storage_guard {
-                    for (idx, key) in cache_misses {
-                        if let Ok(Some(value)) = storage_engine.get(&key) {
-                            fetched_values.push((idx, key, value));
+            let fetched = runtime
+                .spawn_blocking(move || {
+                    let storage_guard = storage.lock().unwrap();
+                    let mut fetched_values = Vec::new();
+
+                    if let Some(ref storage_engine) = *storage_guard {
+                        for (idx, key) in cache_misses {
+                            if let Ok(Some(value)) = storage_engine.get(&key) {
+                                fetched_values.push((idx, key, value));
+                            }
                         }
                     }
-                }
-                fetched_values
-            }).await.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+                    fetched_values
+                })
+                .await
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
             for (idx, key, value) in fetched {
                 // Promote to cache
@@ -460,22 +470,26 @@ impl AsyncDictSQLite {
 
             // Auto-flush when buffer is full
             if should_flush {
-                runtime.spawn_blocking(move || {
-                    let mut buffer = write_buffer.lock().unwrap();
-                    if buffer.is_empty() {
-                        return Ok(());
-                    }
-
-                    // Get storage handle and write
-                    let mut storage_guard = storage.lock().unwrap();
-                    if let Some(ref mut storage_engine) = *storage_guard {
-                        for (k, v) in buffer.drain() {
-                            storage_engine.set(&k, &v)
-                                .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+                runtime
+                    .spawn_blocking(move || {
+                        let mut buffer = write_buffer.lock().unwrap();
+                        if buffer.is_empty() {
+                            return Ok(());
                         }
-                    }
-                    Ok::<(), PyErr>(())
-                }).await.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
+
+                        // Get storage handle and write
+                        let mut storage_guard = storage.lock().unwrap();
+                        if let Some(ref mut storage_engine) = *storage_guard {
+                            for (k, v) in buffer.drain() {
+                                storage_engine.set(&k, &v).map_err(|e| {
+                                    pyo3::exceptions::PyIOError::new_err(e.to_string())
+                                })?;
+                            }
+                        }
+                        Ok::<(), PyErr>(())
+                    })
+                    .await
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
             }
         }
 
