@@ -687,4 +687,14 @@ impl AsyncTableProxy {
 
         db.set_async(full_key, data)
     }
+
+    /// Dict-like access: key in table
+    fn __contains__(&self, key: String, py: Python) -> PyResult<bool> {
+        let full_key = format!("{}:{}", self.table_name, key);
+        let db = self.db.borrow(py);
+        
+        // Check if key exists by trying to get it
+        let result = db.get_async(full_key, py)?;
+        Ok(result.is_some())
+    }
 }
