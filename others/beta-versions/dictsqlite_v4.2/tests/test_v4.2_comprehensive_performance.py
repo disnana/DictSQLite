@@ -37,25 +37,21 @@ except ImportError:
 def cleanup_db_files(db_path):
     """
     データベースファイルとWALファイルをクリーンアップ
-    Windows対応: リトライロジック付き
+    性能テスト用: 待機なしの高速クリーンアップ
     """
-    # 小さな遅延でファイルハンドルが確実に解放されるのを待つ
-    time.sleep(0.1)
-    
-    for attempt in range(3):
+    # 性能テストでは待機を入れない（測定結果に影響するため）
+    for ext in ['', '-wal', '-shm']:
         try:
-            for ext in ['', '-wal', '-shm']:
-                file_path = db_path + ext
-                if os.path.exists(file_path):
-                    os.unlink(file_path)
-            break
-        except PermissionError:
-            if attempt < 2:
-                time.sleep(0.2)  # 200ms待機してリトライ
-            # 最後の試行でも失敗した場合は無視
+            file_path = db_path + ext
+            if os.path.exists(file_path):
+                os.unlink(file_path)
+        except (FileNotFoundError, PermissionError):
+            # Windows環境でPermissionErrorが発生する可能性があるが、
+            # 性能測定に影響しないよう待機せず無視
+            pass
         except Exception:
-            # その他のエラー（FileNotFoundErrorなど）は無視
-            break
+            # その他のエラーも無視
+            pass
 
 
 class PerformanceTestSuite:

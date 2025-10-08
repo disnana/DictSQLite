@@ -26,22 +26,18 @@ from dictsqlite_fastest_beta_v4_step1 import AsyncDictSQLiteFastestBetaV4
 
 
 def cleanup_db_files(db_path):
-    """データベースファイルとWALファイルをクリーンアップ - Windows対応"""
-    time.sleep(0.1)
-    for attempt in range(3):
+    """データベースファイルとWALファイルをクリーンアップ - 高速版"""
+    # 性能比較テストのため、待機なしの高速クリーンアップ
+    for ext in ['', '-wal', '-shm']:
         try:
-            if os.path.exists(db_path):
-                os.unlink(db_path)
-            for ext in ['-wal', '-shm']:
-                wal_file = db_path + ext
-                if os.path.exists(wal_file):
-                    os.unlink(wal_file)
-            break
-        except PermissionError:
-            if attempt < 2:
-                time.sleep(0.2)
+            file_path = db_path + ext
+            if os.path.exists(file_path):
+                os.unlink(file_path)
+        except (FileNotFoundError, PermissionError):
+            # Windows環境でPermissionErrorが発生する可能性があるが無視
+            pass
         except Exception:
-            break
+            pass
 
 
 @pytest_asyncio.fixture
