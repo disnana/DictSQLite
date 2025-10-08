@@ -40,8 +40,9 @@ async def main():
         print("-" * 70)
         
         # Write 50 records concurrently
+        # AsyncDictSQLite also supports Pickle mode (default)
         write_tasks = [
-            db.aset(f"product:{i}", f"Product {i}".encode())
+            db.aset(f"product:{i}", f"Product {i}")  # Pickleモードで自動変換
             for i in range(50)
         ]
         await asyncio.gather(*write_tasks)
@@ -60,7 +61,7 @@ async def main():
         print("-" * 70)
         
         # Batch set
-        items = [(f"order:{i}", f"Order #{i}".encode()) for i in range(20)]
+        items = [(f"order:{i}", f"Order #{i}") for i in range(20)]  # Pickleモードで自動変換
         await db.abatch_set(items)
         print("✓ Batch set 20 orders")
         

@@ -28,6 +28,7 @@ def example_encryption():
     
     print("\nDictSQLite v4.2はネイティブでAES-256-GCM暗号化をサポートします。")
     print("データはディスク上で暗号化され、メモリ上でのみ復号化されます。")
+    print("Pickleモード（デフォルト）なので、Python オブジェクトを直接保存できます。")
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as f:
         db_path = f.name
@@ -40,18 +41,18 @@ def example_encryption():
             encryption_password='super_secret_password_2024'
         )
         
-        # 機密データの保存
-        db['api_key'] = b'sk-1234567890abcdef'
-        db['database_password'] = b'db_pass_xyz'
-        db['private_token'] = 'eyJhbGciOiJIUzI1NiIs...'.encode('utf-8')
+        # 機密データの保存（Pickleモードで自動シリアライズ）
+        db['api_key'] = 'sk-1234567890abcdef'
+        db['database_password'] = 'db_pass_xyz'
+        db['private_token'] = 'eyJhbGciOiJIUzI1NiIs...'
         
-        # 複雑なオブジェクトも暗号化して保存
+        # 複雑なオブジェクトも直接保存可能
         secret_config = {
             'aws_access_key': 'AKIAIOSFODNN7EXAMPLE',
             'aws_secret_key': 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
             'database_url': 'postgresql://user:pass@host/db'
         }
-        db['secret_config'] = pickle.dumps(secret_config)
+        db['secret_config'] = secret_config  # 自動的にpickle化される
         
         print("✓ 機密データを暗号化して保存しました")
         
@@ -69,9 +70,9 @@ def example_encryption():
             encryption_password='super_secret_password_2024'
         )
         
-        # データの復号化と読み込み
-        api_key = db2['api_key'].decode('utf-8')
-        config = pickle.loads(db2['secret_config'])
+        # データの復号化と読み込み（自動デシリアライズ）
+        api_key = db2['api_key']
+        config = db2['secret_config']
         
         print(f"✓ 復号化成功:")
         print(f"  API Key: {api_key[:10]}...")
@@ -107,6 +108,7 @@ def example_safe_pickle():
     
     print("\nSafe Pickleは信頼できないデータのデシリアライゼーションを")
     print("安全に行うための機能です。許可されたモジュールのみ読み込みます。")
+    print("Pickleモードでは自動シリアライズ/デシリアライズされます。")
     
     # カスタムクラスの定義（通常は別モジュール）
     class User:
@@ -125,23 +127,22 @@ def example_safe_pickle():
         safe_pickle_allowed_modules=['__main__', 'builtins']
     )
     
-    # 許可されたモジュールのオブジェクトを保存
+    # 許可されたモジュールのオブジェクトを直接保存
     user = User('Alice', 30)
-    db['user:alice'] = pickle.dumps(user)
+    db['user:alice'] = user  # 自動的にpickle化され、Safe Pickleで検証される
     
     print(f"✓ ユーザーオブジェクトを保存: {user}")
     
-    # 読み込み（Safe Pickleで検証される）
-    loaded_user_bytes = db['user:alice']
-    loaded_user = pickle.loads(loaded_user_bytes)
+    # 読み込み（Safe Pickleで検証・自動デシリアライズ）
+    loaded_user = db['user:alice']
     print(f"✓ Safe Pickleで読み込み: {loaded_user}")
     
-    # 基本的なPython型も使用可能
-    db['config'] = pickle.dumps({'theme': 'dark', 'lang': 'ja'})
-    db['scores'] = pickle.dumps([95, 87, 92, 88])
+    # 基本的なPython型も使用可能（自動シリアライズ）
+    db['config'] = {'theme': 'dark', 'lang': 'ja'}
+    db['scores'] = [95, 87, 92, 88]
     
-    config = pickle.loads(db['config'])
-    scores = pickle.loads(db['scores'])
+    config = db['config']
+    scores = db['scores']
     
     print(f"✓ 辞書: {config}")
     print(f"✓ リスト: {scores}")
@@ -184,7 +185,7 @@ def example_combined_security():
             }
         }
         
-        db['secure_data'] = pickle.dumps(secure_data)
+        db['secure_data'] = secure_data  # 自動的にpickle化され、暗号化される
         
         print("✓ データを暗号化 + Safe Pickleで保存")
         
@@ -203,7 +204,7 @@ def example_combined_security():
             safe_pickle_allowed_modules=['__main__', 'builtins']
         )
         
-        loaded_data = pickle.loads(db2['secure_data'])
+        loaded_data = db2['secure_data']  # 自動復号化・デシリアライズ
         print(f"\n✓ 復号化 + Safe Pickle検証成功:")
         print(f"  User ID: {loaded_data['user_id']}")
         print(f"  Permissions: {loaded_data['permissions']}")
@@ -234,7 +235,7 @@ def example_stats_monitoring():
     # データ投入
     print("\n1. データ投入...")
     for i in range(500):
-        db[f'key:{i}'] = f'value_{i}'.encode('utf-8')
+        db[f'key:{i}'] = f'value_{i}'  # Pickleモードで自動変換
     
     # 統計情報取得
     stats = db.stats()
@@ -247,7 +248,7 @@ def example_stats_monitoring():
     # さらにデータ追加
     print("\n2. さらにデータ追加...")
     for i in range(500, 1500):
-        db[f'key:{i}'] = f'value_{i}'.encode('utf-8')
+        db[f'key:{i}'] = f'value_{i}'  # Pickleモードで自動変換
     
     stats = db.stats()
     print(f"\n更新後のホットティアサイズ: {stats['hot_tier_size']}")
@@ -281,10 +282,10 @@ def example_large_values():
     # 大きなオブジェクト
     print("\n2. 大きなリストオブジェクトを保存...")
     large_list = list(range(100_000))  # 10万個の整数
-    db['large_list'] = pickle.dumps(large_list)
+    db['large_list'] = large_list  # Pickleモードで自動シリアライズ
     print(f"✓ {len(large_list):,}個の要素を保存")
     
-    loaded_list = pickle.loads(db['large_list'])
+    loaded_list = db['large_list']  # 自動デシリアライズ
     print(f"✓ {len(loaded_list):,}個の要素を読み込み")
     assert loaded_list == large_list
     print("✓ データ整合性確認OK")
@@ -308,7 +309,7 @@ def example_transaction_pattern():
         print("\n1. 通常のトランザクション")
         with DictSQLiteV4(db_path, buffer_size=500) as db:
             for i in range(1000):
-                db[f'trans:{i}'] = f'value_{i}'.encode('utf-8')
+                db[f'trans:{i}'] = f'value_{i}'  # Pickleモードで自動変換
             print("  ✓ 1000件のデータを書き込み")
             # withブロック終了時に自動的にflush()とclose()
         

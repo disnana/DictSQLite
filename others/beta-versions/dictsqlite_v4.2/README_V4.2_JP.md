@@ -123,33 +123,51 @@ buffer_size: usize,
 
 ## 📖 使用方法
 
-### 基本的な使い方（v4.1と同じ）
+### 基本的な使い方
 
 ```python
 from dictsqlite_v4 import DictSQLiteV4, AsyncDictSQLite
 
-# 同期版
+# 同期版（Pickleモードがデフォルト：Python オブジェクトを自動シリアライズ）
 db = DictSQLiteV4("mydb.db")
-db["key"] = b"value"
-print(db["key"])
+
+# 文字列、数値、辞書、リストなどを直接保存できます
+db["message"] = "Hello, World!"  # 自動的にpickle化
+db["count"] = 42
+db["config"] = {"theme": "dark", "lang": "ja"}
+
+# 自動的にデシリアライズされて元の型で取得
+print(db["message"])  # => "Hello, World!" (str型)
+print(db["count"])    # => 42 (int型)
+print(db["config"])   # => {'theme': 'dark', 'lang': 'ja'} (dict型)
 
 # 非同期版
 async_db = AsyncDictSQLite("mydb.db")
-async_db.set_async("key", b"value")
+async_db.set_async("key", "value")  # 自動シリアライズ
 print(async_db.get_async("key"))
 ```
 
-### v4.2の新機能: JSONモードとJSONBモード
+**重要**: Pickleモード（デフォルト）では、`pickle.dumps()`/`pickle.loads()`や`.encode()`/`.decode()`は**不要**です！
 
-DictSQLite v4.2では、データの保存形式を選択できるようになりました：
+### v4.2の新機能: ストレージモード
+
+DictSQLite v4.2では、用途に応じてデータの保存形式を選択できます：
 
 #### 1. Pickleモード（デフォルト）
 
-任意のPythonオブジェクトをサポート：
+**v1.8.8と同じように**、任意のPythonオブジェクトを自動シリアライズ：
 
 ```python
-db = DictSQLiteV4("data.db", storage_mode="pickle")  # デフォルト
-db["complex"] = {"nested": {"data": [1, 2, 3]}, "set": {1, 2, 3}}
+db = DictSQLiteV4("data.db")  # storage_mode="pickle"がデフォルト
+
+# 自動シリアライズ（手動pickle不要）
+db["user"] = {"name": "Alice", "age": 30}
+db["scores"] = [95, 87, 92]
+db["message"] = "Hello"
+
+# 自動デシリアライズ（手動unpickle不要）
+user = db["user"]  # => dict型
+print(user["name"])  # => "Alice"
 ```
 
 #### 2. JSONBモード（推奨★）
