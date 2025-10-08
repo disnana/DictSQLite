@@ -11,7 +11,6 @@ use std::sync::{Arc, Mutex};
 mod async_ops;
 mod cache;
 mod crypto;
-mod safe_pickle;
 mod storage;
 
 #[cfg(test)]
@@ -24,8 +23,102 @@ mod tests_storage;
 pub use async_ops::{AsyncDictSQLite, AsyncTableProxy};
 pub use cache::HybridCache;
 pub use crypto::CryptoEngine;
-pub use safe_pickle::{SafePicklePolicy, SafePickleValidator};
 pub use storage::{MemoryTier, StorageEngine};
+
+/// Safe Pickle Policy using Python's safe_pickle module
+#[derive(Debug)]
+pub struct SafePicklePolicy {
+    policy: PyObject,
+}
+
+impl SafePicklePolicy {
+    /// Create a new default policy
+    pub fn new() -> PyResult<Self> {
+        Python::with_gil(|py| {
+            let sys = py.import("sys")?;
+            let path = sys.getattr("path")?;
+            path.call_method1("append", ("modules",))?;
+            let safe_pickle = py.import("safe_pickle")?;
+            let policy_class = safe_pickle.getattr("SafePolicy")?;
+            // Call SafePolicy() without arguments - it now defaults denied_globals to DEFAULT_DENY
+            let policy = policy_class.call0()?;
+            Ok(SafePicklePolicy {
+                policy: policy.unbind(),
+            })
+        })
+    }
+
+    /// Create policy for a package
+    pub fn for_package(pkg_prefix: &str) -> PyResult<Self> {
+        Python::with_gil(|py| {
+            let sys = py.import("sys")?;
+            let path = sys.getattr("path")?;
+            path.call_method1("append", ("modules",))?;
+            let safe_pickle = py.import("safe_pickle")?;
+            let policy_class = safe_pickle.getattr("SafePolicy")?;
+            let policy = policy_class.call_method1("for_package", (pkg_prefix,))?;
+            Ok(SafePicklePolicy {
+                policy: policy.unbind(),
+            })
+        })
+    }
+
+    /// Add allowed module prefix
+    pub fn with_module_prefix(self, prefix: String) -> PyResult<Self> {
+        Python::with_gil(|py| {
+            let policy_bound = self.policy.bind(py);
+            let allowed_module_prefixes = policy_bound.getattr("allowed_module_prefixes")?;
+            allowed_module_prefixes.call_method1("append", (prefix,))?;
+            Ok(self)
+        })
+    }
+}
+
+impl Default for SafePicklePolicy {
+    fn default() -> Self {
+        Self::new().unwrap()
+    }
+}
+
+/// Safe Pickle Validator using Python's safe_pickle module
+pub struct SafePickleValidator {
+    policy: SafePicklePolicy,
+}
+
+impl SafePickleValidator {
+    /// Create a new validator with the given policy
+    pub fn new(policy: SafePicklePolicy) -> Self {
+        SafePickleValidator { policy }
+    }
+
+    /// Validate pickle data using Python's safe_loads
+    pub fn validate(&self, data: &[u8]) -> PyResult<()> {
+        // Try to load, if successful, it's valid
+        let _ = self.validate_and_load(data)?;
+        Ok(())
+    }
+
+    /// Validate and load pickle data using Python's safe_loads
+    pub fn validate_and_load(&self, data: &[u8]) -> PyResult<PyObject> {
+        Python::with_gil(|py| {
+            let sys = py.import("sys")?;
+            let path = sys.getattr("path")?;
+            path.call_method1("append", ("modules",))?;
+            let safe_pickle = py.import("safe_pickle")?;
+            let safe_loads = safe_pickle.getattr("safe_loads")?;
+            let kwargs = pyo3::types::PyDict::new(py);
+            kwargs.set_item("policy", self.policy.policy.bind(py))?;
+            let result = safe_loads.call((data,), Some(&kwargs))?;
+            Ok(result.unbind())
+        })
+    }
+}
+
+impl Default for SafePickleValidator {
+    fn default() -> Self {
+        SafePickleValidator::new(SafePicklePolicy::default())
+    }
+}
 
 /// Helper function to convert Python object to serde_json::Value
 fn pyobject_to_json_value(obj: PyObject, py: Python) -> PyResult<serde_json::Value> {
@@ -332,9 +425,9 @@ impl DictSQLiteV4 {
         let safe_pickle = if enable_safe_pickle {
             // Create policy with custom allowed modules if provided
             let policy = if let Some(modules) = safe_pickle_allowed_modules {
-                let mut policy = SafePicklePolicy::new();
+                let mut policy = SafePicklePolicy::new()?;
                 for module in modules {
-                    policy = policy.with_module_prefix(module);
+                    policy = policy.with_module_prefix(module.clone())?;
                 }
                 policy
             } else {
@@ -734,11 +827,26 @@ impl DictSQLiteV4 {
         // Deserialize based on storage mode
         match self.config.storage_mode {
             StorageMode::Pickle => {
-                // Use pickle module to deserialize
-                let pickle = py.import("pickle")?;
-                let loads = pickle.getattr("loads")?;
-                let unpickled = loads.call1((PyBytes::new(py, &data),))?;
-                Ok(unpickled.into())
+                // If safe_pickle is enabled, use safe_loads for validation
+                if self.config.enable_safe_pickle {
+                    if let Some(ref validator) = self.safe_pickle {
+                        // Use safe_pickle validator to load and validate
+                        let unpickled = validator.validate_and_load(&data)?;
+                        Ok(unpickled)
+                    } else {
+                        // Fallback: use regular pickle.loads
+                        let pickle = py.import("pickle")?;
+                        let loads = pickle.getattr("loads")?;
+                        let unpickled = loads.call1((PyBytes::new(py, &data),))?;
+                        Ok(unpickled.into())
+                    }
+                } else {
+                    // Use pickle module to deserialize
+                    let pickle = py.import("pickle")?;
+                    let loads = pickle.getattr("loads")?;
+                    let unpickled = loads.call1((PyBytes::new(py, &data),))?;
+                    Ok(unpickled.into())
+                }
             }
             StorageMode::Json => {
                 // Deserialize from JSON text
@@ -779,11 +887,27 @@ impl DictSQLiteV4 {
         // Convert value based on storage mode
         let data: Vec<u8> = match self.config.storage_mode {
             StorageMode::Pickle => {
-                // Use pickle module to serialize
-                let pickle = py.import("pickle")?;
-                let dumps = pickle.getattr("dumps")?;
-                let pickled = dumps.call1((value,))?;
-                pickled.extract::<Vec<u8>>()?
+                // If value is already bytes, check if it's pickled data
+                // Pickle data starts with 0x80 (protocol 2+) or other specific markers
+                if let Ok(bytes_data) = value.extract::<Vec<u8>>(py) {
+                    // Check if it looks like pickle data (starts with pickle protocol marker)
+                    if !bytes_data.is_empty() && (bytes_data[0] == 0x80 || bytes_data[0] == 0x00) {
+                        // Likely pre-pickled data, use directly for safe_pickle validation
+                        bytes_data
+                    } else {
+                        // Plain bytes, need to pickle
+                        let pickle = py.import("pickle")?;
+                        let dumps = pickle.getattr("dumps")?;
+                        let pickled = dumps.call1((value,))?;
+                        pickled.extract::<Vec<u8>>()?
+                    }
+                } else {
+                    // Not bytes, use pickle module to serialize
+                    let pickle = py.import("pickle")?;
+                    let dumps = pickle.getattr("dumps")?;
+                    let pickled = dumps.call1((value,))?;
+                    pickled.extract::<Vec<u8>>()?
+                }
             }
             StorageMode::Json => {
                 // Convert to JSON text

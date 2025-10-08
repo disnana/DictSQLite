@@ -9,7 +9,8 @@ import tempfile
 import os
 from pathlib import Path
 
-# Rust拡張モジュールが利用可能か確認
+# Python wrapper (with safe_pickle validation) が利用可能か確認
+# Note: Rust拡張を直接インポートするのではなく、Pythonラッパー経由で使う
 try:
     from dictsqlite_v4 import DictSQLiteV4
     DICTSQLITE_V4_AVAILABLE = True
@@ -194,8 +195,8 @@ class TestSafePickle:
         pickled = pickle.dumps(test_data)
         db["safe_data"] = pickled
         
-        # 読み込みと復元
-        restored = pickle.loads(db["safe_data"])
+        # 読み込みと復元 - safe_pickle有効でも自動的にunpickleされる
+        restored = db["safe_data"]
         assert restored == test_data
     
     def test_safe_pickle_nested_structures(self, temp_db):
@@ -216,7 +217,8 @@ class TestSafePickle:
         pickled = pickle.dumps(nested)
         db["nested"] = pickled
         
-        restored = pickle.loads(db["nested"])
+        # safe_pickle有効でも自動的にunpickleされる
+        restored = db["nested"]
         assert restored == nested
     
     def test_safe_pickle_forbidden_objects(self, temp_db):
@@ -259,7 +261,8 @@ class TestCombinedSecurity:
         pickled = pickle.dumps(data)
         db["user:alice"] = pickled
         
-        restored = pickle.loads(db["user:alice"])
+        # safe_pickle有効でも自動的にunpickleされる
+        restored = db["user:alice"]
         assert restored == data
     
     def test_combined_performance(self, temp_db):
@@ -284,7 +287,7 @@ class TestCombinedSecurity:
         # 読み込みテスト
         start = time.time()
         for i in range(500):
-            _ = pickle.loads(db[f"item_{i}"])
+            _ = db[f"item_{i}"]
         read_time = time.time() - start
         
         # 性能要件（両方有効でも実用的な速度）
@@ -292,8 +295,8 @@ class TestCombinedSecurity:
         assert read_time < 1.0, f"読み込みが遅すぎます: {read_time}秒"
         
         print(f"\n暗号化+Safe Pickleパフォーマンス:")
-        print(f"  書き込み: {500/write_time:.0f} ops/sec")
-        print(f"  読み込み: {500/read_time:.0f} ops/sec")
+        print(f"  書き込み: {500/max(write_time, 0.001):.0f} ops/sec")
+        print(f"  読み込み: {500/max(read_time, 0.001):.0f} ops/sec")
 
 
 @pytest.mark.skipif(not DICTSQLITE_V4_AVAILABLE, reason="DictSQLiteV4 module not built")
@@ -337,7 +340,8 @@ class TestPersistenceModes:
             enable_safe_pickle=True
         )
         
-        restored = pickle.loads(db2["item"])
+        # safe_pickle有効でも自動的にunpickleされる
+        restored = db2["item"]
         assert restored == data
 
 
@@ -437,6 +441,7 @@ class TestJSONBSecurity:
         db["valid_none"] = None
         
         # すべて正常に保存・取得できる
+        print(f"valid_list: {db['valid_list']}, type: {type(db['valid_list'])}")
         assert db["valid_dict"] == {"key": "value"}
         assert db["valid_list"] == [1, 2, 3]
         assert db["valid_str"] == "string"

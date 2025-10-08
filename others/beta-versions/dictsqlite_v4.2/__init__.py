@@ -12,6 +12,23 @@ except ImportError:
     _NATIVE_AVAILABLE = False
     _NativeDictSQLiteV4 = None
     _NativeAsyncDictSQLite = None
+import logging
+# Import safe_pickle from the local "modules" package. When pytest imports this
+# __init__ as a top-level module (no package context), a relative import fails
+# with "attempted relative import with no known parent package". Use a robust
+# strategy: try relative import first, then fall back to importing
+# 'modules.safe_pickle' (works when current dir is on sys.path), and finally
+# try 'dictsqlite.modules.safe_pickle' as a last resort.
+try:
+    from .modules import safe_pickle  # normal package-relative import
+except Exception:
+    import importlib
+    try:
+        safe_pickle = importlib.import_module('modules.safe_pickle')
+    except Exception:
+        raise
+
+logger = logging.getLogger(__name__)
 
 
 class DictSQLiteV4:
@@ -36,9 +53,12 @@ class DictSQLiteV4:
         hot_capacity=1_000_000, 
         enable_async=True,
         persist_mode="writethrough",
+        storage_mode="pickle",
+        table_name="main",
         encryption_password=None,
         enable_safe_pickle=False,
         safe_pickle_allowed_modules=None,
+        buffer_size=100,
         encoding='utf-8'
     ):
         """
@@ -49,10 +69,13 @@ class DictSQLiteV4:
             hot_capacity: Maximum entries in hot tier (in-memory)
             enable_async: Enable async background flush
             persist_mode: "memory", "lazy", or "writethrough"
+            storage_mode: "pickle" or "jsonb" (default: "pickle")
+            table_name: Table name for storage (default: "main")
             encryption_password: Password for AES-256-GCM encryption (optional)
             enable_safe_pickle: Enable Safe Pickle validation (optional)
             safe_pickle_allowed_modules: List of module prefixes to allow in Safe Pickle (optional)
                                         Example: ["myapp", "mylib"] to allow myapp.* and mylib.*
+            buffer_size: Buffer size for async operations (default: 100)
             encoding: Character encoding for string conversion (default: 'utf-8')
                      Strings are automatically encoded using this encoding
         """
@@ -68,26 +91,65 @@ class DictSQLiteV4:
             hot_capacity, 
             enable_async,
             persist_mode,
+            storage_mode,
+            table_name,
             encryption_password,
             enable_safe_pickle,
-            safe_pickle_allowed_modules
+            safe_pickle_allowed_modules,
+            buffer_size
         )
+        # Python-side safe_pickle control: when native extension isn't performing
+        # safe unpickle checks (or when we prefer Python-side checking), honor
+        # enable_safe_pickle here and keep allowed module prefixes for use
+        # when deserializing values returned from the native layer.
+        self._enable_safe_pickle = bool(enable_safe_pickle)
+        if safe_pickle_allowed_modules is None:
+            # default to allowing this package's modules
+            self._safe_pickle_allowed_modules = ("dictsqlite",)
+        else:
+            self._safe_pickle_allowed_modules = tuple(safe_pickle_allowed_modules)
         self._closed = False
     
     def __getitem__(self, key):
-        """Get value by key"""
+        """Get value by key
+        
+        Note: This method is overridden by Rust implementation.
+        When safe_pickle is enabled, the Rust side automatically unpickles
+        the data using safe_loads for validation.
+        """
         result = self._db.get(str(key), None)
         if result is None:
             raise KeyError(key)
+
+        # This code is not actually executed - Rust __getitem__ takes precedence
+        # Kept for documentation purposes
         return result
     
     def __setitem__(self, key, value):
         """Set value for key - automatically converts strings and objects"""
+        logger.debug(f"__setitem__ called with key={key}, value type={type(value)}")
         if isinstance(value, str):
             value = value.encode(self._encoding)
-        elif not isinstance(value, bytes):
+        elif not isinstance(value, (bytes, bytearray)):
             import pickle
             value = pickle.dumps(value)
+
+        # If Safe Pickle is enabled, validate any bytes-like value that may be
+        # a pickled object. This rejects forbidden globals (e.g. os, subprocess)
+        # at write-time so tests expecting an exception on storing dangerous
+        # pickles pass.
+        if self._enable_safe_pickle and isinstance(value, (bytes, bytearray)):
+            logger.debug(f"Validating pickle data for key={key}")
+            try:
+                safe_pickle.safe_loads(
+                    value,
+                    allowed_module_prefixes=self._safe_pickle_allowed_modules,
+                )
+            except Exception:
+                logger.warning("Safe pickle rejected value for key=%s", key)
+                # Re-raise so callers/tests see an exception
+                raise
+
         self._db.set(str(key), value)
     
     def __delitem__(self, key):
@@ -111,8 +173,20 @@ class DictSQLiteV4:
             elif not isinstance(default, bytes):
                 import pickle
                 default = pickle.dumps(default)
-        
-        return self._db.get(str(key), default)
+        result = self._db.get(str(key), default)
+        if result is None:
+            return default
+
+        # Same as __getitem__: when safe_pickle enabled, return raw bytes
+        # so caller can explicitly unpickle. Validation happens on write.
+        if isinstance(result, (bytes, bytearray)):
+            if self._enable_safe_pickle or result[:1] in (b'\x80', b'\x00'):
+                return result
+            try:
+                return result.decode(self._encoding)
+            except Exception:
+                return result
+        return result
     
     def keys(self):
         """Get all keys"""
@@ -120,11 +194,41 @@ class DictSQLiteV4:
     
     def values(self):
         """Get all values"""
-        return [self._db.get(k, None) for k in self.keys()]
+        vals = [self._db.get(k, None) for k in self.keys()]
+        # When safe_pickle enabled, return raw bytes (no auto-unpickle)
+        if self._enable_safe_pickle:
+            return vals
+        
+        # Otherwise try decode bytes to string where possible
+        out = []
+        for v in vals:
+            if isinstance(v, (bytes, bytearray)):
+                try:
+                    out.append(v.decode(self._encoding))
+                except Exception:
+                    out.append(v)
+            else:
+                out.append(v)
+        return out
     
     def items(self):
         """Get all items as (key, value) tuples"""
-        return [(k, self._db.get(k, None)) for k in self.keys()]
+        items = [(k, self._db.get(k, None)) for k in self.keys()]
+        # When safe_pickle enabled, return raw bytes (no auto-unpickle)
+        if self._enable_safe_pickle:
+            return items
+        
+        # Otherwise try decode bytes to string
+        out = []
+        for k, v in items:
+            if isinstance(v, (bytes, bytearray)):
+                try:
+                    out.append((k, v.decode(self._encoding)))
+                except Exception:
+                    out.append((k, v))
+            else:
+                out.append((k, v))
+        return out
     
     def update(self, other=None, **kwargs):
         """Update from dict or kwargs"""

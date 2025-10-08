@@ -154,7 +154,8 @@ def benchmark_safe_pickle(iterations=10000):
         print(f"\n読み込みテスト ({iterations:,} 回)...")
         start = time.time()
         for i in range(iterations):
-            _ = pickle.loads(db[f"key_{i}"])
+            # __getitem__ already returns the unpickled object when storage_mode is Pickle
+            _ = db[f"key_{i}"]
         read_time = time.time() - start
         
         read_ops = iterations / read_time
@@ -210,7 +211,8 @@ def benchmark_combined(iterations=10000):
         print(f"\n読み込みテスト ({iterations:,} 回)...")
         start = time.time()
         for i in range(iterations):
-            _ = pickle.loads(db[f"key_{i}"])
+            # __getitem__ already returns the unpickled object when storage_mode is Pickle
+            _ = db[f"key_{i}"]
         read_time = time.time() - start
         
         read_ops = iterations / read_time
