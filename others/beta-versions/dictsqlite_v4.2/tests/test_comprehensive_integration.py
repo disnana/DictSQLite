@@ -61,11 +61,11 @@ class TestStorageModeIntegration:
             "nested": {"key": "value"}
         }
         
-        pickled = pickle.dumps(test_obj)
-        db["encrypted_pickle"] = pickled
+        # storage_mode="pickle"の場合、自動的にpickle化されて保存される
+        db["encrypted_pickle"] = test_obj
         
-        # 復元
-        retrieved = pickle.loads(db["encrypted_pickle"])
+        # 復元 - storage_mode="pickle"の場合、自動的にunpickleされる
+        retrieved = db["encrypted_pickle"]
         assert retrieved == test_obj
         
         db.close()
