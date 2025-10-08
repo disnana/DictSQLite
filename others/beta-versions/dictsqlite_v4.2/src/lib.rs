@@ -141,9 +141,10 @@ impl FromStr for PersistMode {
 }
 
 /// Storage mode for data serialization
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 pub enum StorageMode {
     /// Pickle format (default, supports any Python object)
+    #[default]
     Pickle,
     
     /// JSON text format (human-readable, limited types)
@@ -154,12 +155,6 @@ pub enum StorageMode {
     
     /// Raw bytes (no conversion)
     Bytes,
-}
-
-impl Default for StorageMode {
-    fn default() -> Self {
-        StorageMode::Pickle  // Backward compatibility
-    }
 }
 
 impl FromStr for StorageMode {
