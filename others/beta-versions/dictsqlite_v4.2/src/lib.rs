@@ -695,9 +695,7 @@ impl DictSQLiteV4 {
 
     /// Close database (flush if needed)
     fn close(&self) -> PyResult<()> {
-        if self.config.persist_mode == PersistMode::Lazy {
-            self.flush()?;
-        }
+        self.flush()?;
         Ok(())
     }
 

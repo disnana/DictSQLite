@@ -224,17 +224,10 @@ class TestSafePickle:
         db = DictSQLiteV4(temp_db, enable_safe_pickle=True)
         
         # 危険な関数をpickleしようとする
-        import os
-        
-        # os.systemのような危険な関数は拒否されるべき
-        # （注: pickleできないかもしれないが、できる場合は拒否）
-        try:
-            dangerous = pickle.dumps(os.system)
-            with pytest.raises(Exception):
-                db["dangerous"] = dangerous
-        except (TypeError, pickle.PicklingError):
-            # pickle自体が失敗する場合もある
-            pass
+        # __import__ は危険な関数として禁止されるべき
+        dangerous = pickle.dumps(__import__)
+        with pytest.raises(Exception):
+            db["dangerous"] = dangerous
 
 
 @pytest.mark.skipif(not DICTSQLITE_V4_AVAILABLE, reason="DictSQLiteV4 module not built")
