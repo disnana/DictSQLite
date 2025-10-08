@@ -3,7 +3,10 @@
 # Optimized for maximum performance benchmarking
 
 set -e
-trap 'echo; read -p "Press Enter to exit..."' EXIT
+# 最後に一時停止するのはローカル実行時のみ
+if [ -z "$CI" ]; then
+    trap 'echo; read -p "Press Enter to exit..."' EXIT
+fi
 
 echo "================================"
 echo "DictSQLite v4.2 Production Build"
