@@ -195,6 +195,128 @@ def test_async_table_support():
         print("✅ Async table support test passed")
 
 
+def test_async_batch_operations_with_jsonb():
+    """Test async batch operations with JSONB mode"""
+    try:
+        from dictsqlite_v4 import AsyncDictSQLite
+    except ImportError:
+        pytest.skip("dictsqlite_v4 not built yet")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_async_batch.db")
+        
+        # Create async DB with JSONB mode
+        db = AsyncDictSQLite(db_path, storage_mode="jsonb")
+        
+        # Batch set with complex data
+        items = [
+            (f"user_{i}", {"name": f"User{i}", "age": 20 + i, "active": True})
+            for i in range(10)
+        ]
+        db.batch_set(items)
+        
+        # Batch get
+        keys = [f"user_{i}" for i in range(5)]
+        results = db.batch_get(keys)
+        
+        # Verify
+        assert len(results) == 5
+        assert results[0] is not None
+        
+        db.close()
+        print("✅ Async batch operations with JSONB test passed")
+
+
+def test_async_multiple_tables():
+    """Test async operations with multiple tables"""
+    try:
+        from dictsqlite_v4 import AsyncDictSQLite
+    except ImportError:
+        pytest.skip("dictsqlite_v4 not built yet")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_multi_tables.db")
+        
+        # Create async DB
+        db = AsyncDictSQLite(db_path, storage_mode="jsonb")
+        
+        # Create multiple tables
+        users = db.table("users")
+        products = db.table("products")
+        orders = db.table("orders")
+        
+        # Add data to different tables
+        users["u1"] = {"name": "Alice", "email": "alice@example.com"}
+        products["p1"] = {"name": "Laptop", "price": 1000}
+        orders["o1"] = {"user": "u1", "product": "p1", "qty": 1}
+        
+        # Verify data isolation
+        assert "u1" in users
+        assert "p1" in products
+        assert "o1" in orders
+        
+        # Verify correct data
+        assert users["u1"]["email"] == "alice@example.com"
+        assert products["p1"]["price"] == 1000
+        assert orders["o1"]["qty"] == 1
+        
+        db.close()
+        print("✅ Async multiple tables test passed")
+
+
+def test_persistence_across_sessions():
+    """Test that JSONB data persists across sessions"""
+    try:
+        from dictsqlite_v4 import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite_v4 not built yet")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_persist.db")
+        
+        # Session 1: Write data
+        db1 = DictSQLiteV4(db_path, storage_mode="jsonb", persist_mode="writethrough")
+        db1["key1"] = {"data": "value1", "count": 42}
+        db1.flush()
+        db1.close()
+        
+        # Session 2: Read data
+        db2 = DictSQLiteV4(db_path, storage_mode="jsonb")
+        retrieved = db2["key1"]
+        assert retrieved == {"data": "value1", "count": 42}
+        db2.close()
+        
+        print("✅ Persistence across sessions test passed")
+
+
+def test_table_persistence():
+    """Test that table data persists correctly"""
+    try:
+        from dictsqlite_v4 import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite_v4 not built yet")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_table_persist.db")
+        
+        # Session 1: Write to tables
+        db1 = DictSQLiteV4(db_path, storage_mode="jsonb", persist_mode="writethrough")
+        users = db1.table("users")
+        users["alice"] = {"name": "Alice", "role": "admin"}
+        db1.flush()
+        db1.close()
+        
+        # Session 2: Read from tables
+        db2 = DictSQLiteV4(db_path, storage_mode="jsonb")
+        users2 = db2.table("users")
+        retrieved = users2["alice"]
+        assert retrieved["name"] == "Alice"
+        assert retrieved["role"] == "admin"
+        db2.close()
+        
+        print("✅ Table persistence test passed")
+
+
 def test_mixed_storage_modes():
     """Test that different storage modes work correctly"""
     try:
@@ -239,6 +361,10 @@ if __name__ == "__main__":
         test_table_support_basic()
         test_table_with_default_table_name()
         test_async_table_support()
+        test_async_batch_operations_with_jsonb()
+        test_async_multiple_tables()
+        test_persistence_across_sessions()
+        test_table_persistence()
         test_mixed_storage_modes()
         print("\n✅ All tests passed!")
     except Exception as e:

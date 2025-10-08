@@ -248,6 +248,153 @@ users["user1"] = {"name": "Alice", "age": 30}
 print(users["user1"])
 ```
 
+### 非同期版の詳しい使い方
+
+AsyncDictSQLiteは高並行性シナリオ向けに最適化されています。
+
+#### 基本的な非同期操作
+
+```python
+from dictsqlite_v4 import AsyncDictSQLite
+
+# 非同期データベース作成（JSONBモード推奨）
+async_db = AsyncDictSQLite(
+    "async.db",
+    capacity=1_000_000,
+    persist_mode="lazy",
+    storage_mode="jsonb",        # 新機能
+    table_name="main",           # 新機能
+    buffer_size=100
+)
+
+# 基本的な読み書き
+async_db.set_async("key1", {"data": "value1"})
+result = async_db.get_async("key1")
+print(result)  # {"data": "value1"}
+
+# 終了時にフラッシュ
+async_db.flush()
+async_db.close()
+```
+
+#### JSONBモードでの非同期操作
+
+```python
+from dictsqlite_v4 import AsyncDictSQLite
+
+# JSONBモードで作成
+db = AsyncDictSQLite("async_jsonb.db", storage_mode="jsonb")
+
+# 辞書操作（自動シリアライズ）
+db["config"] = {
+    "settings": {"theme": "dark", "lang": "ja"},
+    "features": ["feature1", "feature2"],
+    "enabled": True
+}
+
+# 取得（自動デシリアライズ）
+config = db["config"]
+print(config["settings"]["theme"])  # "dark"
+```
+
+#### テーブル操作（非同期版）
+
+```python
+from dictsqlite_v4 import AsyncDictSQLite
+
+# データベース作成
+db = AsyncDictSQLite("multi_table.db", storage_mode="jsonb")
+
+# テーブルプロキシ取得
+users = db.table("users")
+sessions = db.table("sessions")
+cache = db.table("cache")
+
+# 各テーブルに並行アクセス可能
+users["user1"] = {"name": "Alice", "role": "admin"}
+sessions["sess1"] = {"user_id": "user1", "token": "abc123"}
+cache["key1"] = {"data": [1, 2, 3], "ttl": 3600}
+
+# 読み取り
+print(users["user1"])
+print(sessions["sess1"])
+print(cache["key1"])
+```
+
+#### バッチ操作（高性能）
+
+```python
+from dictsqlite_v4 import AsyncDictSQLite
+
+db = AsyncDictSQLite("batch.db", storage_mode="jsonb")
+
+# バッチ書き込み（並列処理で高速）
+items = [
+    (f"key_{i}", {"value": i, "data": f"item_{i}"})
+    for i in range(1000)
+]
+db.batch_set(items)
+
+# バッチ読み込み
+keys = [f"key_{i}" for i in range(100)]
+results = db.batch_get(keys)
+
+# 高速バッチ読み込み（バイト列直接）
+fast_results = db.batch_get_fast(keys)
+```
+
+#### デフォルトテーブル名での非同期操作
+
+```python
+from dictsqlite_v4 import AsyncDictSQLite
+
+# 特定のテーブルをデフォルトに設定
+users_db = AsyncDictSQLite(
+    "app.db",
+    table_name="users",          # デフォルトテーブル
+    storage_mode="jsonb"
+)
+
+# すべての操作は自動的に"users"テーブルに
+users_db["alice"] = {"name": "Alice", "age": 30}
+users_db["bob"] = {"name": "Bob", "age": 25}
+
+print(users_db["alice"])  # {"name": "Alice", "age": 30}
+```
+
+#### 統計とモニタリング
+
+```python
+from dictsqlite_v4 import AsyncDictSQLite
+
+db = AsyncDictSQLite("stats.db", storage_mode="jsonb", capacity=10000)
+
+# データ追加
+for i in range(100):
+    db[f"key_{i}"] = {"value": i}
+
+# 統計取得
+cache_size, capacity = db.stats()
+print(f"Cache: {cache_size}/{capacity}")  # Cache: 100/10000
+```
+
+#### 注意事項
+
+**非同期版の特徴:**
+- ✅ GILなしでキャッシュアクセス（純粋メモリ操作）
+- ✅ シャード単位の並行アクセス（CPUコア数に最適化）
+- ✅ Rayonによる並列バッチ処理
+- ✅ 書き込みバッファリング（300倍高速化）
+
+**使い分け:**
+- `AsyncDictSQLite`: 高並行性、複数スレッドからのアクセス
+- `DictSQLiteV4`: 単一スレッド、シンプルな使用
+
+**persist_modeの選択:**
+- `memory`: 最速（メモリのみ、永続化なし）
+- `lazy`: 高速（定期フラッシュで永続化）
+- `writethrough`: 安全（即座に永続化、やや低速）
+
 ### v4.2の新機能: バッファサイズの調整
 
 ```python

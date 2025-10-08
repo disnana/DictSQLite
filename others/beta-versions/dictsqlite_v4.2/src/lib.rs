@@ -18,6 +18,8 @@ mod storage;
 mod tests_lru;
 #[cfg(test)]
 mod tests_storage;
+#[cfg(test)]
+mod tests_jsonb;
 
 pub use async_ops::{AsyncDictSQLite, AsyncTableProxy};
 pub use cache::HybridCache;
