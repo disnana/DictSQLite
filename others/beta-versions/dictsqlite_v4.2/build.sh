@@ -47,15 +47,26 @@ ls -lh target/wheels/*.whl 2>/dev/null || echo "No wheels found"
 echo ""
 
 # Optionally install
-read -p "Install the built package? (y/N): " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo "📥 Installing..."
+if [ -n "$CI" ]; then
+    # In CI environment, automatically install
+    echo "📥 Installing built package (CI mode)..."
     pip install --force-reinstall target/wheels/*.whl
     echo "✅ Installed successfully!"
     echo ""
-    echo "Test installation:"
-    python -c "from dictsqlite_v4 import DictSQLiteV4; print('✅ DictSQLiteV4 imported successfully')"
+    echo "🔍 Verifying installation..."
+    python -c "from dictsqlite_v4 import DictSQLiteV4, AsyncDictSQLite; print('✅ DictSQLiteV4 imported successfully'); print('✅ AsyncDictSQLite imported successfully')"
+else
+    # In local environment, ask user
+    read -p "Install the built package? (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo "📥 Installing..."
+        pip install --force-reinstall target/wheels/*.whl
+        echo "✅ Installed successfully!"
+        echo ""
+        echo "Test installation:"
+        python -c "from dictsqlite_v4 import DictSQLiteV4; print('✅ DictSQLiteV4 imported successfully')"
+    fi
 fi
 
 echo ""
