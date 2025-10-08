@@ -218,15 +218,34 @@ class DictSQLiteV4:
 class AsyncDictSQLite:
     """
     Async version of DictSQLite v4.0 for high-concurrency scenarios
+    
+    This class now provides true asyncio support with awaitable methods.
+    
+    New async methods (awaitable):
+        - async aget(key): Get value asynchronously
+        - async aset(key, value): Set value asynchronously
+        - async abatch_get(keys): Batch get asynchronously
+        - async abatch_set(items): Batch set asynchronously
+    
+    Backward-compatible sync methods:
+        - get(key): Get value (synchronous wrapper)
+        - set(key, value): Set value (synchronous wrapper)
+        - batch_get(keys): Batch get (synchronous wrapper)
+        - batch_set(items): Batch set (synchronous wrapper)
     """
     
-    def __init__(self, db_path, capacity=1_000_000):
+    def __init__(self, db_path, capacity=1_000_000, persist_mode="lazy", 
+                 storage_mode="pickle", table_name="main", buffer_size=100):
         """
         Initialize Async DictSQLite
         
         Args:
             db_path: Path to database file
-            capacity: Maximum entries
+            capacity: Maximum entries in cache
+            persist_mode: "memory", "lazy", or "writethrough"
+            storage_mode: "pickle", "json", "jsonb", or "bytes"
+            table_name: Default table name for operations
+            buffer_size: Write buffer size for batching (default: 100)
         """
         if not _NATIVE_AVAILABLE:
             raise RuntimeError(
@@ -234,14 +253,75 @@ class AsyncDictSQLite:
                 "Please build it using: cd dictsqlite_v4 && maturin build --release"
             )
         
-        self._db = _NativeAsyncDictSQLite(db_path, capacity)
+        self._db = _NativeAsyncDictSQLite(
+            db_path, capacity, persist_mode, storage_mode, table_name, buffer_size
+        )
     
+    # New awaitable async methods
+    async def aget(self, key):
+        """Get value asynchronously (awaitable)
+        
+        Args:
+            key: Key to retrieve
+            
+        Returns:
+            Value as bytes, or None if not found
+        """
+        result = await self._db.aget(str(key))
+        return result
+    
+    async def aset(self, key, value):
+        """Set value asynchronously (awaitable)
+        
+        Args:
+            key: Key to set
+            value: Value to store (will be converted to bytes if needed)
+        """
+        if isinstance(value, str):
+            value = value.encode('utf-8')
+        elif not isinstance(value, bytes):
+            import pickle
+            value = pickle.dumps(value)
+        await self._db.aset(str(key), value)
+    
+    async def abatch_get(self, keys):
+        """Batch get values asynchronously (awaitable)
+        
+        Args:
+            keys: List of keys to retrieve
+            
+        Returns:
+            List of values (or None for missing keys)
+        """
+        return await self._db.abatch_get([str(k) for k in keys])
+    
+    async def abatch_set(self, items):
+        """Batch set values asynchronously (awaitable)
+        
+        Args:
+            items: List of (key, value) tuples or dict
+        """
+        if isinstance(items, dict):
+            items = items.items()
+        
+        prepared = []
+        for key, value in items:
+            if isinstance(value, str):
+                value = value.encode('utf-8')
+            elif not isinstance(value, bytes):
+                import pickle
+                value = pickle.dumps(value)
+            prepared.append((str(key), value))
+        
+        await self._db.abatch_set(prepared)
+    
+    # Backward-compatible synchronous methods
     def get(self, key):
-        """Get value (async)"""
+        """Get value (synchronous wrapper for backward compatibility)"""
         return self._db.get_async(str(key))
     
     def set(self, key, value):
-        """Set value (async)"""
+        """Set value (synchronous wrapper for backward compatibility)"""
         if isinstance(value, str):
             value = value.encode('utf-8')
         elif not isinstance(value, bytes):
@@ -250,11 +330,11 @@ class AsyncDictSQLite:
         self._db.set_async(str(key), value)
     
     def batch_get(self, keys):
-        """Batch get (optimized for concurrent access)"""
+        """Batch get (synchronous wrapper for backward compatibility)"""
         return self._db.batch_get([str(k) for k in keys])
     
     def batch_set(self, items):
-        """Batch set (optimized for concurrent writes)"""
+        """Batch set (synchronous wrapper for backward compatibility)"""
         prepared = []
         for key, value in items:
             if isinstance(value, str):
@@ -270,6 +350,50 @@ class AsyncDictSQLite:
         """Get cache statistics"""
         size, capacity = self._db.stats()
         return {"size": size, "capacity": capacity}
+    
+    def flush(self):
+        """Flush cached data to storage"""
+        self._db.flush()
+    
+    def close(self):
+        """Close database and flush data"""
+        self._db.close()
+    
+    def clear(self):
+        """Clear all data"""
+        self._db.clear()
+    
+    # Dict-like interface (synchronous)
+    def __getitem__(self, key):
+        """Get value by key"""
+        return self._db.__getitem__(str(key))
+    
+    def __setitem__(self, key, value):
+        """Set value for key"""
+        self._db.__setitem__(str(key), value)
+    
+    def table(self, table_name):
+        """Get a table proxy for accessing a specific table"""
+        return self._db.table(table_name)
+    
+    # Context manager support
+    def __enter__(self):
+        """Context manager entry"""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensure data is flushed"""
+        self.close()
+        return False
+    
+    async def __aenter__(self):
+        """Async context manager entry"""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit"""
+        self.close()
+        return False
 
 
 def is_native_available():
