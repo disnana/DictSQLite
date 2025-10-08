@@ -177,7 +177,7 @@ def example_combined():
         # データを読み込み
         print("\n保存されたユーザー:")
         for i in range(1, len(users) + 1):
-            user = pickle.loads(db[f"user:{i}"])
+            user = db[f"user:{i}"]
             # Security: Don't log sensitive data (salary) in clear text
             print(f"  {user['name']:10s} - {user['role']:10s} - [REDACTED]")
         
