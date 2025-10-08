@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{StorageMode, Config};
+    use crate::{Config, StorageMode};
     use std::str::FromStr;
 
     #[test]
@@ -12,28 +12,13 @@ mod tests {
             StorageMode::from_str("pickle").unwrap(),
             StorageMode::Pickle
         );
-        assert_eq!(
-            StorageMode::from_str("json").unwrap(),
-            StorageMode::Json
-        );
-        assert_eq!(
-            StorageMode::from_str("jsonb").unwrap(),
-            StorageMode::JsonB
-        );
-        assert_eq!(
-            StorageMode::from_str("bytes").unwrap(),
-            StorageMode::Bytes
-        );
+        assert_eq!(StorageMode::from_str("json").unwrap(), StorageMode::Json);
+        assert_eq!(StorageMode::from_str("jsonb").unwrap(), StorageMode::JsonB);
+        assert_eq!(StorageMode::from_str("bytes").unwrap(), StorageMode::Bytes);
 
         // Test case insensitivity
-        assert_eq!(
-            StorageMode::from_str("JSONB").unwrap(),
-            StorageMode::JsonB
-        );
-        assert_eq!(
-            StorageMode::from_str("Json").unwrap(),
-            StorageMode::Json
-        );
+        assert_eq!(StorageMode::from_str("JSONB").unwrap(), StorageMode::JsonB);
+        assert_eq!(StorageMode::from_str("Json").unwrap(), StorageMode::Json);
 
         // Test invalid mode
         assert!(StorageMode::from_str("invalid").is_err());
@@ -92,9 +77,9 @@ mod tests {
         let table_name = "users";
         let key = "user1";
         let full_key = format!("{}:{}", table_name, key);
-        
+
         assert_eq!(full_key, "users:user1");
-        
+
         // Test extraction
         let parts: Vec<&str> = full_key.splitn(2, ':').collect();
         assert_eq!(parts.len(), 2);
@@ -107,11 +92,11 @@ mod tests {
         // Test that empty table name and "main" are treated the same
         let config = Config::default();
         assert_eq!(config.table_name, "main");
-        
+
         // Keys without prefix should go to main table
         let key = "key1";
         let table_name = &config.table_name;
-        
+
         let should_prefix = !table_name.is_empty() && table_name != "main";
         assert!(!should_prefix); // Should not prefix for "main"
     }
