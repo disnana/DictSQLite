@@ -1,0 +1,10 @@
+diff a/others/beta-versions/dictsqlite_v4.2/examples/v4_usage_examples.py b/others/beta-versions/dictsqlite_v4.2/examples/v4_usage_examples.py	(rejected hunks)
+@@ -177,7 +177,7 @@
+         # データを読み込み
+         print("\n保存されたユーザー:")
+         for i in range(1, len(users) + 1):
+-            user = db[f"user:{i}"]
++            user = pickle.loads(db[f"user:{i}"])
+             # Security: Don't log sensitive data (salary) in clear text
+             print(f"  {user['name']:10s} - {user['role']:10s} - [REDACTED]")
+         

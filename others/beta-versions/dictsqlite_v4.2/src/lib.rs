@@ -40,6 +40,7 @@ impl SafePicklePolicy {
             path.call_method1("append", ("modules",))?;
             let safe_pickle = py.import("safe_pickle")?;
             let policy_class = safe_pickle.getattr("SafePolicy")?;
+            // Call SafePolicy() without arguments - it now defaults denied_globals to DEFAULT_DENY
             let policy = policy_class.call0()?;
             Ok(SafePicklePolicy {
                 policy: policy.unbind(),
@@ -823,6 +824,12 @@ impl DictSQLiteV4 {
         // Extract bytes from result
         let data: Vec<u8> = result.extract(py)?;
 
+        // If safe_pickle is enabled, return raw bytes without unpickling
+        // This allows Python side to explicitly unpickle with validation
+        if self.config.enable_safe_pickle && self.config.storage_mode == StorageMode::Pickle {
+            return Ok(PyBytes::new(py, &data).into());
+        }
+
         // Deserialize based on storage mode
         match self.config.storage_mode {
             StorageMode::Pickle => {
@@ -871,11 +878,27 @@ impl DictSQLiteV4 {
         // Convert value based on storage mode
         let data: Vec<u8> = match self.config.storage_mode {
             StorageMode::Pickle => {
-                // Use pickle module to serialize
-                let pickle = py.import("pickle")?;
-                let dumps = pickle.getattr("dumps")?;
-                let pickled = dumps.call1((value,))?;
-                pickled.extract::<Vec<u8>>()?
+                // If value is already bytes, check if it's pickled data
+                // Pickle data starts with 0x80 (protocol 2+) or other specific markers
+                if let Ok(bytes_data) = value.extract::<Vec<u8>>(py) {
+                    // Check if it looks like pickle data (starts with pickle protocol marker)
+                    if !bytes_data.is_empty() && (bytes_data[0] == 0x80 || bytes_data[0] == 0x00) {
+                        // Likely pre-pickled data, use directly for safe_pickle validation
+                        bytes_data
+                    } else {
+                        // Plain bytes, need to pickle
+                        let pickle = py.import("pickle")?;
+                        let dumps = pickle.getattr("dumps")?;
+                        let pickled = dumps.call1((value,))?;
+                        pickled.extract::<Vec<u8>>()?
+                    }
+                } else {
+                    // Not bytes, use pickle module to serialize
+                    let pickle = py.import("pickle")?;
+                    let dumps = pickle.getattr("dumps")?;
+                    let pickled = dumps.call1((value,))?;
+                    pickled.extract::<Vec<u8>>()?
+                }
             }
             StorageMode::Json => {
                 // Convert to JSON text

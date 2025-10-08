@@ -195,8 +195,9 @@ class TestSafePickle:
         pickled = pickle.dumps(test_data)
         db["safe_data"] = pickled
         
-        # 読み込みと復元
-        restored = db["safe_data"]
+        # 読み込みと復元 - safe_pickle有効時は明示的にunpickleが必要
+        restored_bytes = db["safe_data"]
+        restored = pickle.loads(restored_bytes)
         assert restored == test_data
     
     def test_safe_pickle_nested_structures(self, temp_db):
@@ -217,7 +218,9 @@ class TestSafePickle:
         pickled = pickle.dumps(nested)
         db["nested"] = pickled
         
-        restored = db["nested"]
+        # safe_pickle有効時は明示的にunpickleが必要
+        restored_bytes = db["nested"]
+        restored = pickle.loads(restored_bytes)
         assert restored == nested
     
     def test_safe_pickle_forbidden_objects(self, temp_db):
@@ -260,7 +263,9 @@ class TestCombinedSecurity:
         pickled = pickle.dumps(data)
         db["user:alice"] = pickled
         
-        restored = db["user:alice"]
+        # safe_pickle有効時は明示的にunpickleが必要
+        restored_bytes = db["user:alice"]
+        restored = pickle.loads(restored_bytes)
         assert restored == data
     
     def test_combined_performance(self, temp_db):
@@ -293,8 +298,8 @@ class TestCombinedSecurity:
         assert read_time < 1.0, f"読み込みが遅すぎます: {read_time}秒"
         
         print(f"\n暗号化+Safe Pickleパフォーマンス:")
-        print(f"  書き込み: {500/write_time:.0f} ops/sec")
-        print(f"  読み込み: {500/read_time:.0f} ops/sec")
+        print(f"  書き込み: {500/max(write_time, 0.001):.0f} ops/sec")
+        print(f"  読み込み: {500/max(read_time, 0.001):.0f} ops/sec")
 
 
 @pytest.mark.skipif(not DICTSQLITE_V4_AVAILABLE, reason="DictSQLiteV4 module not built")
@@ -338,7 +343,9 @@ class TestPersistenceModes:
             enable_safe_pickle=True
         )
         
-        restored = db2["item"]
+        # safe_pickle有効時は明示的にunpickleが必要
+        restored_bytes = db2["item"]
+        restored = pickle.loads(restored_bytes)
         assert restored == data
 
 

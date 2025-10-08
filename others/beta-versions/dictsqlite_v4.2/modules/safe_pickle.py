@@ -65,7 +65,7 @@ class SafePolicy:  # pylint: disable=too-few-public-methods
         allowed_module_prefixes: Iterable[str] = (),
         allowed_builtins: Iterable[str] | None = None,
         allowed_globals: Iterable[str] = (),
-        denied_globals: Iterable[str] = (),
+        denied_globals: Iterable[str] | None = None,
         allow_functions_from_prefixes: bool = False,
         allow_classes_from_prefixes: bool = True,
         validator=None,
@@ -75,7 +75,8 @@ class SafePolicy:  # pylint: disable=too-few-public-methods
             DEFAULT_SAFE_BUILTINS if allowed_builtins is None else allowed_builtins
         )
         self.allowed_globals = set(allowed_globals)
-        self.denied_globals = set(denied_globals)
+        # デフォルトでDEFAULT_DENYを使用（Noneの場合）
+        self.denied_globals = set(DEFAULT_DENY if denied_globals is None else denied_globals)
         self.allow_functions_from_prefixes = bool(allow_functions_from_prefixes)
         self.allow_classes_from_prefixes = bool(allow_classes_from_prefixes)
         self.validator = validator

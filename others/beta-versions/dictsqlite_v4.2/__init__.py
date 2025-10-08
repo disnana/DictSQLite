@@ -137,6 +137,7 @@ class DictSQLiteV4:
     
     def __setitem__(self, key, value):
         """Set value for key - automatically converts strings and objects"""
+        logger.debug(f"__setitem__ called with key={key}, value type={type(value)}")
         if isinstance(value, str):
             value = value.encode(self._encoding)
         elif not isinstance(value, (bytes, bytearray)):
@@ -148,6 +149,7 @@ class DictSQLiteV4:
         # at write-time so tests expecting an exception on storing dangerous
         # pickles pass.
         if self._enable_safe_pickle and isinstance(value, (bytes, bytearray)):
+            logger.debug(f"Validating pickle data for key={key}")
             try:
                 safe_pickle.safe_loads(
                     value,
