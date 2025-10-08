@@ -75,25 +75,25 @@ fn pyobject_to_json_value(obj: PyObject, py: Python) -> PyResult<serde_json::Val
 
 /// Helper function to convert serde_json::Value to Python object
 fn json_value_to_pyobject(value: serde_json::Value, py: Python) -> PyResult<PyObject> {
-    use pyo3::types::{PyDict, PyList};
+    use pyo3::types::{PyDict, PyList, PyBool, PyInt, PyFloat, PyString};
     
     match value {
         serde_json::Value::Null => Ok(py.None()),
-        serde_json::Value::Bool(b) => Ok(b.into_py(py)),
+        serde_json::Value::Bool(b) => Ok(PyBool::new(py, b).to_owned().unbind().into()),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                Ok(i.into_py(py))
+                Ok(PyInt::new(py, i).to_owned().unbind().into())
             } else if let Some(u) = n.as_u64() {
-                Ok(u.into_py(py))
+                Ok(PyInt::new(py, u).to_owned().unbind().into())
             } else if let Some(f) = n.as_f64() {
-                Ok(f.into_py(py))
+                Ok(PyFloat::new(py, f).to_owned().unbind().into())
             } else {
                 Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                     "Invalid number",
                 ))
             }
         }
-        serde_json::Value::String(s) => Ok(s.into_py(py)),
+        serde_json::Value::String(s) => Ok(PyString::new(py, &s).to_owned().unbind().into()),
         serde_json::Value::Array(arr) => {
             let list = PyList::empty(py);
             for item in arr {
