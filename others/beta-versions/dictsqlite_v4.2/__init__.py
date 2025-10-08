@@ -12,6 +12,27 @@ except ImportError:
     _NATIVE_AVAILABLE = False
     _NativeDictSQLiteV4 = None
     _NativeAsyncDictSQLite = None
+import logging
+# Import safe_pickle from the local "modules" package. When pytest imports this
+# __init__ as a top-level module (no package context), a relative import fails
+# with "attempted relative import with no known parent package". Use a robust
+# strategy: try relative import first, then fall back to importing
+# 'modules.safe_pickle' (works when current dir is on sys.path), and finally
+# try 'dictsqlite.modules.safe_pickle' as a last resort.
+try:
+    from .modules import safe_pickle  # normal package-relative import
+except Exception:
+    import importlib
+    try:
+        safe_pickle = importlib.import_module('modules.safe_pickle')
+    except Exception:
+        try:
+            safe_pickle = importlib.import_module('dictsqlite.modules.safe_pickle')
+        except Exception:
+            # If all imports fail, re-raise the original error to surface it.
+            raise
+
+logger = logging.getLogger(__name__)
 
 
 class DictSQLiteV4:
@@ -72,6 +93,16 @@ class DictSQLiteV4:
             enable_safe_pickle,
             safe_pickle_allowed_modules
         )
+        # Python-side safe_pickle control: when native extension isn't performing
+        # safe unpickle checks (or when we prefer Python-side checking), honor
+        # enable_safe_pickle here and keep allowed module prefixes for use
+        # when deserializing values returned from the native layer.
+        self._enable_safe_pickle = bool(enable_safe_pickle)
+        if safe_pickle_allowed_modules is None:
+            # default to allowing this package's modules
+            self._safe_pickle_allowed_modules = ("dictsqlite",)
+        else:
+            self._safe_pickle_allowed_modules = tuple(safe_pickle_allowed_modules)
         self._closed = False
     
     def __getitem__(self, key):
@@ -79,6 +110,26 @@ class DictSQLiteV4:
         result = self._db.get(str(key), None)
         if result is None:
             raise KeyError(key)
+
+        # If enabled, try safe unpickle for bytes-like values
+        if self._enable_safe_pickle:
+            try:
+                if isinstance(result, (bytes, bytearray)):
+                    # Attempt safe unpickle using our modules.safe_pickle
+                    obj = safe_pickle.safe_loads(
+                        result,
+                        allowed_module_prefixes=self._safe_pickle_allowed_modules,
+                    )
+                    return obj
+            except Exception as e:  # pickle.UnpicklingError, ValueError, etc.
+                logger.warning("SafeUnpickler failed for key=%s: %s", key, e)
+
+        # Fallback: if bytes, try to decode as text using encoding; otherwise return raw
+        if isinstance(result, (bytes, bytearray)):
+            try:
+                return result.decode(self._encoding)
+            except Exception:
+                return result
         return result
     
     def __setitem__(self, key, value):
@@ -111,8 +162,27 @@ class DictSQLiteV4:
             elif not isinstance(default, bytes):
                 import pickle
                 default = pickle.dumps(default)
-        
-        return self._db.get(str(key), default)
+        result = self._db.get(str(key), default)
+        if result is None:
+            return default
+
+        if self._enable_safe_pickle:
+            try:
+                if isinstance(result, (bytes, bytearray)):
+                    obj = safe_pickle.safe_loads(
+                        result,
+                        allowed_module_prefixes=self._safe_pickle_allowed_modules,
+                    )
+                    return obj
+            except Exception as e:
+                logger.warning("SafeUnpickler failed for key=%s (get): %s", key, e)
+
+        if isinstance(result, (bytes, bytearray)):
+            try:
+                return result.decode(self._encoding)
+            except Exception:
+                return result
+        return result
     
     def keys(self):
         """Get all keys"""
@@ -120,11 +190,62 @@ class DictSQLiteV4:
     
     def values(self):
         """Get all values"""
-        return [self._db.get(k, None) for k in self.keys()]
+        vals = [self._db.get(k, None) for k in self.keys()]
+        if not self._enable_safe_pickle:
+            # try decode bytes to string where possible for consistency
+            out = []
+            for v in vals:
+                if isinstance(v, (bytes, bytearray)):
+                    try:
+                        out.append(v.decode(self._encoding))
+                    except Exception:
+                        out.append(v)
+                else:
+                    out.append(v)
+            return out
+
+        out = []
+        for v in vals:
+            if isinstance(v, (bytes, bytearray)):
+                try:
+                    out.append(safe_pickle.safe_loads(v, allowed_module_prefixes=self._safe_pickle_allowed_modules))
+                except Exception:
+                    try:
+                        out.append(v.decode(self._encoding))
+                    except Exception:
+                        out.append(v)
+            else:
+                out.append(v)
+        return out
     
     def items(self):
         """Get all items as (key, value) tuples"""
-        return [(k, self._db.get(k, None)) for k in self.keys()]
+        items = [(k, self._db.get(k, None)) for k in self.keys()]
+        if not self._enable_safe_pickle:
+            out = []
+            for k, v in items:
+                if isinstance(v, (bytes, bytearray)):
+                    try:
+                        out.append((k, v.decode(self._encoding)))
+                    except Exception:
+                        out.append((k, v))
+                else:
+                    out.append((k, v))
+            return out
+
+        out = []
+        for k, v in items:
+            if isinstance(v, (bytes, bytearray)):
+                try:
+                    out.append((k, safe_pickle.safe_loads(v, allowed_module_prefixes=self._safe_pickle_allowed_modules)))
+                except Exception:
+                    try:
+                        out.append((k, v.decode(self._encoding)))
+                    except Exception:
+                        out.append((k, v))
+            else:
+                out.append((k, v))
+        return out
     
     def update(self, other=None, **kwargs):
         """Update from dict or kwargs"""
