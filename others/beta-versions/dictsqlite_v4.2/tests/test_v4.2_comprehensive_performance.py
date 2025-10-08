@@ -34,6 +34,30 @@ except ImportError:
     sys.exit(1)
 
 
+def cleanup_db_files(db_path):
+    """
+    データベースファイルとWALファイルをクリーンアップ
+    Windows対応: リトライロジック付き
+    """
+    # 小さな遅延でファイルハンドルが確実に解放されるのを待つ
+    time.sleep(0.1)
+    
+    for attempt in range(3):
+        try:
+            for ext in ['', '-wal', '-shm']:
+                file_path = db_path + ext
+                if os.path.exists(file_path):
+                    os.unlink(file_path)
+            break
+        except PermissionError:
+            if attempt < 2:
+                time.sleep(0.2)  # 200ms待機してリトライ
+            # 最後の試行でも失敗した場合は無視
+        except Exception:
+            # その他のエラー（FileNotFoundErrorなど）は無視
+            break
+
+
 class PerformanceTestSuite:
     """Comprehensive performance test suite for v4.2"""
     
@@ -128,11 +152,7 @@ class PerformanceTestSuite:
                 db.close()
                 
             finally:
-                for ext in ['', '-wal', '-shm']:
-                    try:
-                        os.unlink(db_path + ext)
-                    except FileNotFoundError:
-                        pass
+                cleanup_db_files(db_path)
         
         # Show improvement
         baseline = results.get(1, 0)
@@ -176,11 +196,7 @@ class PerformanceTestSuite:
                 db.close()
                 
             finally:
-                for ext in ['', '-wal', '-shm']:
-                    try:
-                        os.unlink(db_path + ext)
-                    except FileNotFoundError:
-                        pass
+                cleanup_db_files(db_path)
         
         # Show improvement
         baseline = results.get(1, 0)
@@ -221,11 +237,7 @@ class PerformanceTestSuite:
                 db.close()
                 
             finally:
-                for ext in ['', '-wal', '-shm']:
-                    try:
-                        os.unlink(db_path + ext)
-                    except FileNotFoundError:
-                        pass
+                cleanup_db_files(db_path)
         
         print(f"\n💡 モード比較:")
         for mode, ops in sorted(results.items(), key=lambda x: x[1], reverse=True):
@@ -282,11 +294,7 @@ class PerformanceTestSuite:
                 db.close()
                 
             finally:
-                for ext in ['', '-wal', '-shm']:
-                    try:
-                        os.unlink(db_path + ext)
-                    except FileNotFoundError:
-                        pass
+                cleanup_db_files(db_path)
         
         # Calculate overhead
         if False in results and True in results:
@@ -330,11 +338,7 @@ class PerformanceTestSuite:
                 db.close()
                 
             finally:
-                for ext in ['', '-wal', '-shm']:
-                    try:
-                        os.unlink(db_path + ext)
-                    except FileNotFoundError:
-                        pass
+                cleanup_db_files(db_path)
         
         # Calculate overhead
         if False in results and True in results:
@@ -434,11 +438,7 @@ class PerformanceTestSuite:
                 db.close()
                 
             finally:
-                for ext in ['', '-wal', '-shm']:
-                    try:
-                        os.unlink(db_path + ext)
-                    except FileNotFoundError:
-                        pass
+                cleanup_db_files(db_path)
     
     def test_combined_features(self):
         """Test 8: All features combined"""
@@ -480,11 +480,7 @@ class PerformanceTestSuite:
                 db.close()
                 
             finally:
-                for ext in ['', '-wal', '-shm']:
-                    try:
-                        os.unlink(db_path + ext)
-                    except FileNotFoundError:
-                        pass
+                cleanup_db_files(db_path)
         
         # Show comparison
         baseline = results.get('baseline', 0)

@@ -7,6 +7,7 @@ import asyncio
 import tempfile
 import os
 import sys
+import time
 import pytest
 
 # Add the parent directory to path to import the wrapper
@@ -25,6 +26,33 @@ except ImportError as e:
     except ImportError:
         print("Error: Could not import AsyncDictSQLite")
         sys.exit(1)
+
+
+def cleanup_db_files(db_path):
+    """
+    データベースファイルとWALファイルをクリーンアップ
+    Windows対応: リトライロジック付き
+    """
+    # 小さな遅延でファイルハンドルが確実に解放されるのを待つ
+    time.sleep(0.1)
+    
+    for attempt in range(3):
+        try:
+            if os.path.exists(db_path):
+                os.unlink(db_path)
+            # WALファイルもクリーンアップ
+            for ext in ['-wal', '-shm']:
+                wal_file = db_path + ext
+                if os.path.exists(wal_file):
+                    os.unlink(wal_file)
+            break
+        except PermissionError:
+            if attempt < 2:
+                time.sleep(0.2)  # 200ms待機してリトライ
+            # 最後の試行でも失敗した場合は無視
+        except Exception:
+            # その他のエラーは無視
+            break
 
 
 @pytest.mark.asyncio
@@ -69,12 +97,7 @@ async def test_async_get_set():
         traceback.print_exc()
         return False
     finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
-        for ext in ['-wal', '-shm']:
-            wal_file = db_path + ext
-            if os.path.exists(wal_file):
-                os.unlink(wal_file)
+        cleanup_db_files(db_path)
 
 
 @pytest.mark.asyncio
@@ -129,12 +152,7 @@ async def test_async_batch_operations():
         traceback.print_exc()
         return False
     finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
-        for ext in ['-wal', '-shm']:
-            wal_file = db_path + ext
-            if os.path.exists(wal_file):
-                os.unlink(wal_file)
+        cleanup_db_files(db_path)
 
 
 @pytest.mark.asyncio
@@ -183,12 +201,7 @@ async def test_concurrent_async_operations():
         traceback.print_exc()
         return False
     finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
-        for ext in ['-wal', '-shm']:
-            wal_file = db_path + ext
-            if os.path.exists(wal_file):
-                os.unlink(wal_file)
+        cleanup_db_files(db_path)
 
 
 @pytest.mark.asyncio
@@ -232,12 +245,7 @@ async def test_async_persistence():
         traceback.print_exc()
         return False
     finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
-        for ext in ['-wal', '-shm']:
-            wal_file = db_path + ext
-            if os.path.exists(wal_file):
-                os.unlink(wal_file)
+        cleanup_db_files(db_path)
 
 
 @pytest.mark.asyncio
@@ -282,12 +290,7 @@ async def test_backward_compatibility():
         traceback.print_exc()
         return False
     finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
-        for ext in ['-wal', '-shm']:
-            wal_file = db_path + ext
-            if os.path.exists(wal_file):
-                os.unlink(wal_file)
+        cleanup_db_files(db_path)
 
 
 async def main():
