@@ -27,3 +27,9 @@ classifiers = [
 	"Programming Language :: Python :: 3.11",
 	"Programming Language :: Python :: 3.12",
 ]
+
+[tool.maturin]
+# Include Python source files in the package
+python-source = "."
+# Specify the module name for the native extension
+module-name = "dictsqlite._native"
