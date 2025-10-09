@@ -1,6 +1,6 @@
 [package]
 name = "dictsqlite"
-version = "2.0.3"
+version = "2.0.4"
 edition = "2021"
 authors = ["Disnana <support@disnana.com>"]
 description = "High-performance DictSQLite v2 with I/O optimizations (300x async, 43x sync speedup) - Buffered writes and batch operations"
