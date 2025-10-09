@@ -31,6 +31,17 @@ fi
 echo "✅ Maturin found: $(maturin --version)"
 echo ""
 
+# Validate package name configuration
+echo "🔍 Validating package name configuration..."
+if python validate_package_name.py; then
+    echo ""
+else
+    echo ""
+    echo "❌ Package name validation failed!"
+    echo "Please fix the configuration before building."
+    exit 1
+fi
+
 # Navigate to dictsqlite_v4.2 directory
 cd "$(dirname "$0")"
 
@@ -72,7 +83,7 @@ echo ""
 # Verify installation
 echo "🔍 Verifying installation..."
 python3 -c "
-from dictsqlite_v4 import DictSQLiteV4, AsyncDictSQLite
+from dictsqlite import DictSQLiteV4, AsyncDictSQLite
 print('✅ DictSQLiteV4 imported successfully')
 print('✅ AsyncDictSQLite imported successfully')
 

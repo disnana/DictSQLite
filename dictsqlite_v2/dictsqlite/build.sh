@@ -30,6 +30,17 @@ fi
 echo "✅ Maturin found: $(maturin --version)"
 echo ""
 
+# Validate package name configuration
+echo "🔍 Validating package name configuration..."
+if python validate_package_name.py; then
+    echo ""
+else
+    echo ""
+    echo "❌ Package name validation failed!"
+    echo "Please fix the configuration before building."
+    exit 1
+fi
+
 # Navigate to dictsqlite_v4 directory
 cd "$(dirname "$0")"
 
