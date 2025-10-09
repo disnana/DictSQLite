@@ -86,6 +86,6 @@ harness = false
 # native library. Use `dictsqlite` to keep the top-level project package name.
 name = "dictsqlite"
 # Location of a long description for PyPI (relative to this Cargo.toml)
-long-description-file = "README_V4.2_JP.md"
+long-description-file = "Pypi.md"
 
 # Note: classifiers and requires-python must be set in pyproject.toml (PEP 621)
