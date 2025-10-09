@@ -8,9 +8,9 @@ from .conftest import windows_safe_temp_db
 
 # Import the built module
 try:
-    from dictsqlite_v4 import DictSQLiteV4
+    from dictsqlite import DictSQLiteV4
 except ImportError:
-    print("Error: dictsqlite_v4 module not found. Please build with 'maturin develop'")
+    print("Error: dictsqlite module not found. Please build with 'maturin develop'")
     sys.exit(1)
 
 

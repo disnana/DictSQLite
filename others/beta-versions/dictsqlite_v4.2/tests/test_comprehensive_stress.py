@@ -19,7 +19,7 @@ from pathlib import Path
 
 # Rust拡張モジュールが利用可能か確認
 try:
-    from dictsqlite_v4 import DictSQLiteV4, AsyncDictSQLite
+    from dictsqlite import DictSQLiteV4, AsyncDictSQLite
     DICTSQLITE_V4_AVAILABLE = True
 except ImportError:
     DICTSQLITE_V4_AVAILABLE = False

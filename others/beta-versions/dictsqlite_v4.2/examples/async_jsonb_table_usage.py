@@ -5,7 +5,7 @@ AsyncDictSQLiteの新機能（JSONB、テーブルサポート）の使い方を
 """
 
 try:
-    from dictsqlite_v4 import AsyncDictSQLite
+    from dictsqlite import AsyncDictSQLite
 except ImportError:
     print("❌ Please build dictsqlite_v4 first with: maturin develop --release")
     exit(1)
