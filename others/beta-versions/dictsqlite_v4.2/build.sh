@@ -54,7 +54,11 @@ done
 WHEELS_DIR="$(pwd)/target/wheels"
 if [ $CLEAN_WHEELS -eq 1 ]; then
     echo "🧹 Cleaning wheels directory: $WHEELS_DIR"
-    rm -f "$WHEELS_DIR"/*.whl 2>/dev/null || true
+    if [ -d "$WHEELS_DIR" ]; then
+        rm -f "$WHEELS_DIR"/*.whl 2>/dev/null || true
+    else
+        echo "ℹ️  Wheels directory does not exist, skipping cleanup"
+    fi
 else
     echo "ℹ️  Skipping wheels cleanup (use --clean-wheels to force)"
 fi
@@ -66,15 +70,23 @@ echo ""
 echo "✅ Build completed successfully!"
 echo ""
 echo "📦 Wheels available in: target/wheels/"
-ls -lh target/wheels/*.whl 2>/dev/null || echo "No wheels found"
+if compgen -G "target/wheels/*.whl" > /dev/null; then
+    ls -lh target/wheels/*.whl
+else
+    echo "No wheels found"
+fi
 echo ""
 
 # Optionally install
 if [ -n "$CI" ]; then
     # In CI environment, automatically install
     echo "📥 Installing built package (CI mode)..."
-    pip install --force-reinstall target/wheels/*.whl
-    echo "✅ Installed successfully!"
+    if compgen -G "target/wheels/*.whl" > /dev/null; then
+        pip install --force-reinstall target/wheels/*.whl
+        echo "✅ Installed successfully!"
+    else
+        echo "⚠️  No wheel found to install. Skipping installation."
+    fi
     echo ""
     echo "🔍 Verifying installation..."
     python -c "from dictsqlite import DictSQLiteV4, AsyncDictSQLite; print('✅ DictSQLiteV4 imported successfully'); print('✅ AsyncDictSQLite imported successfully')"
@@ -84,8 +96,12 @@ else
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         echo "📥 Installing..."
-        pip install --force-reinstall target/wheels/*.whl
-        echo "✅ Installed successfully!"
+        if compgen -G "target/wheels/*.whl" > /dev/null; then
+            pip install --force-reinstall target/wheels/*.whl
+            echo "✅ Installed successfully!"
+        else
+            echo "⚠️  No wheel found to install. Skipping installation."
+        fi
         echo ""
         echo "Test installation:"
         python -c "from dictsqlite import DictSQLiteV4; print('✅ DictSQLiteV4 imported successfully')"
