@@ -6,6 +6,10 @@ build-backend = "maturin"
  
 # PEP 621 project metadata required by maturin >= 0.14
 [project]
+# IMPORTANT: This name determines the wheel package name and must match the
+# Python module name defined in src/lib.rs (#[pymodule] fn dictsqlite).
+# Do NOT use "dictsqlite_v2" here, even though the directory is dictsqlite_v2/dictsqlite.
+# The correct import should be: from dictsqlite import DictSQLiteV4
 name = "dictsqlite"
 version = "2.0.4"
 description = "High-performance DictSQLite v2 with I/O optimizations"

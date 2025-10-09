@@ -81,9 +81,11 @@ name = "ops_benchmark"
 harness = false
 
 [package.metadata.maturin]
-# Name used for the Python distribution. Must match the pyo3 module init name
-# (#[pymodule] fn <name>) so Python can find the PyInit_<name> symbol in the
-# native library. Use `dictsqlite` to keep the top-level project package name.
+# IMPORTANT: The Python package name is primarily controlled by pyproject.toml [project] name.
+# This 'name' field is kept for backward compatibility and documentation, but modern maturin
+# (>= 0.14) uses pyproject.toml [project] name as the primary source.
+# Both must be set to "dictsqlite" to match the Python module name (#[pymodule] fn dictsqlite).
+# Do NOT change this to "dictsqlite_v2" even though the directory is dictsqlite_v2/dictsqlite.
 name = "dictsqlite"
 # Location of a long description for PyPI (relative to this Cargo.toml)
 long-description-file = "Pypi.md"
