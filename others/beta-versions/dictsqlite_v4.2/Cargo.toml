@@ -1,13 +1,13 @@
 [package]
-name = "dictsqlite_v4"
-version = "4.2.0"
+name = "dictsqlite"
+version = "2.0.0"
 edition = "2021"
 authors = ["Disnana <support@disnana.com>"]
 description = "High-performance DictSQLite v4.2 with I/O optimizations (300x async, 43x sync speedup) - Buffered writes and batch operations"
 license = "MIT"
 
 [lib]
-name = "dictsqlite_v4"
+name = "dictsqlite"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
@@ -79,3 +79,13 @@ inherits = "release"
 [[bench]]
 name = "ops_benchmark"
 harness = false
+
+[package.metadata.maturin]
+# Name used for the Python distribution. Must match the pyo3 module init name
+# (#[pymodule] fn <name>) so Python can find the PyInit_<name> symbol in the
+# native library. Use `dictsqlite` to keep the top-level project package name.
+name = "dictsqlite"
+# Location of a long description for PyPI (relative to this Cargo.toml)
+long-description-file = "README_V4.2_JP.md"
+
+# Note: classifiers and requires-python must be set in pyproject.toml (PEP 621)

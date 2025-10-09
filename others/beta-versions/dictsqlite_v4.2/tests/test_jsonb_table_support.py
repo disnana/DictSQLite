@@ -10,9 +10,9 @@ def test_jsonb_mode_basic():
     """Test basic JSONB mode functionality"""
     # Import after building
     try:
-        from dictsqlite_v4 import DictSQLiteV4
+        from dictsqlite import DictSQLiteV4
     except ImportError:
-        pytest.skip("dictsqlite_v4 not built yet")
+        pytest.skip("dictsqlite not built yet")
     
     with windows_safe_temp_dir() as tmpdir:
         db_path = os.path.join(tmpdir, "test_jsonb.db")
@@ -64,9 +64,9 @@ def test_jsonb_mode_basic():
 def test_json_mode_basic():
     """Test basic JSON mode functionality"""
     try:
-        from dictsqlite_v4 import DictSQLiteV4
+        from dictsqlite import DictSQLiteV4
     except ImportError:
-        pytest.skip("dictsqlite_v4 not built yet")
+        pytest.skip("dictsqlite not built yet")
     
     with windows_safe_temp_dir() as tmpdir:
         db_path = os.path.join(tmpdir, "test_json.db")
@@ -94,9 +94,9 @@ def test_json_mode_basic():
 def test_table_support_basic():
     """Test basic table support"""
     try:
-        from dictsqlite_v4 import DictSQLiteV4
+        from dictsqlite import DictSQLiteV4
     except ImportError:
-        pytest.skip("dictsqlite_v4 not built yet")
+        pytest.skip("dictsqlite not built yet")
     
     with windows_safe_temp_dir() as tmpdir:
         db_path = os.path.join(tmpdir, "test_tables.db")
@@ -149,9 +149,9 @@ def test_table_support_basic():
 def test_table_with_default_table_name():
     """Test using default table name parameter"""
     try:
-        from dictsqlite_v4 import DictSQLiteV4
+        from dictsqlite import DictSQLiteV4
     except ImportError:
-        pytest.skip("dictsqlite_v4 not built yet")
+        pytest.skip("dictsqlite not built yet")
     
     with windows_safe_temp_dir() as tmpdir:
         db_path = os.path.join(tmpdir, "test_default_table.db")
@@ -172,9 +172,9 @@ def test_table_with_default_table_name():
 def test_async_table_support():
     """Test async table support"""
     try:
-        from dictsqlite_v4 import AsyncDictSQLite
+        from dictsqlite import AsyncDictSQLite
     except ImportError:
-        pytest.skip("dictsqlite_v4 not built yet")
+        pytest.skip("dictsqlite not built yet")
     
     with windows_safe_temp_dir() as tmpdir:
         db_path = os.path.join(tmpdir, "test_async_tables.db")
@@ -198,9 +198,9 @@ def test_async_table_support():
 def test_async_batch_operations_with_jsonb():
     """Test async batch operations with JSONB mode"""
     try:
-        from dictsqlite_v4 import AsyncDictSQLite
+        from dictsqlite import AsyncDictSQLite
     except ImportError:
-        pytest.skip("dictsqlite_v4 not built yet")
+        pytest.skip("dictsqlite not built yet")
     
     with windows_safe_temp_dir() as tmpdir:
         db_path = os.path.join(tmpdir, "test_async_batch.db")
@@ -223,9 +223,9 @@ def test_async_batch_operations_with_jsonb():
 def test_async_multiple_tables():
     """Test async operations with multiple tables"""
     try:
-        from dictsqlite_v4 import AsyncDictSQLite
+        from dictsqlite import AsyncDictSQLite
     except ImportError:
-        pytest.skip("dictsqlite_v4 not built yet")
+        pytest.skip("dictsqlite not built yet")
     
     with windows_safe_temp_dir() as tmpdir:
         db_path = os.path.join(tmpdir, "test_multi_tables.db")
@@ -260,9 +260,9 @@ def test_async_multiple_tables():
 def test_persistence_across_sessions():
     """Test that JSONB data persists across sessions"""
     try:
-        from dictsqlite_v4 import DictSQLiteV4
+        from dictsqlite import DictSQLiteV4
     except ImportError:
-        pytest.skip("dictsqlite_v4 not built yet")
+        pytest.skip("dictsqlite not built yet")
     
     with windows_safe_temp_dir() as tmpdir:
         db_path = os.path.join(tmpdir, "test_persist.db")
@@ -285,9 +285,9 @@ def test_persistence_across_sessions():
 def test_table_persistence():
     """Test that table data persists correctly"""
     try:
-        from dictsqlite_v4 import DictSQLiteV4
+        from dictsqlite import DictSQLiteV4
     except ImportError:
-        pytest.skip("dictsqlite_v4 not built yet")
+        pytest.skip("dictsqlite not built yet")
     
     with windows_safe_temp_dir() as tmpdir:
         db_path = os.path.join(tmpdir, "test_table_persist.db")
@@ -313,9 +313,9 @@ def test_table_persistence():
 def test_mixed_storage_modes():
     """Test that different storage modes work correctly"""
     try:
-        from dictsqlite_v4 import DictSQLiteV4
+        from dictsqlite import DictSQLiteV4
     except ImportError:
-        pytest.skip("dictsqlite_v4 not built yet")
+        pytest.skip("dictsqlite not built yet")
     
     with windows_safe_temp_dir() as tmpdir:
         # Test Pickle mode (default)

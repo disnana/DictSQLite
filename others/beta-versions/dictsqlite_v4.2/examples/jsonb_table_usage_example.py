@@ -7,7 +7,7 @@ Example usage of DictSQLite v4.2 with JSONB mode and table support
 # maturin develop --release
 
 try:
-    from dictsqlite_v4 import DictSQLiteV4, AsyncDictSQLite
+    from dictsqlite import DictSQLiteV4, AsyncDictSQLite
 except ImportError:
     print("❌ Please build dictsqlite_v4 first with: maturin develop --release")
     exit(1)

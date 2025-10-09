@@ -5,8 +5,8 @@ High-performance wrapper with enhanced security features
 """
 
 try:
-    from dictsqlite_v4 import DictSQLiteV4 as _NativeDictSQLiteV4
-    from dictsqlite_v4 import AsyncDictSQLite as _NativeAsyncDictSQLite
+    from dictsqlite import DictSQLiteV4 as _NativeDictSQLiteV4
+    from dictsqlite import AsyncDictSQLite as _NativeAsyncDictSQLite
     _NATIVE_AVAILABLE = True
 except ImportError:
     _NATIVE_AVAILABLE = False
@@ -81,8 +81,8 @@ class DictSQLiteV4:
         """
         if not _NATIVE_AVAILABLE:
             raise RuntimeError(
-                "DictSQLite v4.0 native extension not available. "
-                "Please build it using: cd dictsqlite_v4 && maturin build --release"
+                "DictSQLite native extension not available. "
+                "Please build it using: cd dictsqlite && maturin build --release"
             )
         
         self._encoding = encoding

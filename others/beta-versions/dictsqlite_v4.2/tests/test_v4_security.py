@@ -13,7 +13,7 @@ from pathlib import Path
 # Python wrapper (with safe_pickle validation) が利用可能か確認
 # Note: Rust拡張を直接インポートするのではなく、Pythonラッパー経由で使う
 try:
-    from dictsqlite_v4 import DictSQLiteV4
+    from dictsqlite import DictSQLiteV4
     DICTSQLITE_V4_AVAILABLE = True
 except ImportError:
     DICTSQLITE_V4_AVAILABLE = False
@@ -390,7 +390,7 @@ class TestSQLInjectionProtection:
 def test_module_import():
     """モジュールのインポートテスト"""
     if DICTSQLITE_V4_AVAILABLE:
-        from dictsqlite_v4 import DictSQLiteV4
+        from dictsqlite import DictSQLiteV4
         assert DictSQLiteV4 is not None
     else:
         pytest.skip("DictSQLiteV4 module not available")
@@ -509,7 +509,7 @@ class TestJSONBSecurity:
     
     def test_async_jsonb_security(self, temp_db):
         """非同期版JSONBのセキュリティテスト"""
-        from dictsqlite_v4 import AsyncDictSQLite
+        from dictsqlite import AsyncDictSQLite
         
         db = AsyncDictSQLite(
             temp_db,

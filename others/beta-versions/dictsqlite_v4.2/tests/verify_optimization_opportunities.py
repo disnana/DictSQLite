@@ -14,10 +14,10 @@ import statistics
 from pathlib import Path
 
 try:
-    from dictsqlite_v4 import DictSQLiteV4, AsyncDictSQLite
+    from dictsqlite import DictSQLiteV4, AsyncDictSQLite
 except ImportError:
-    print("⚠️  dictsqlite_v4 モジュールが見つかりません")
-    print("ビルド方法: cd dictsqlite_v4.1 && maturin develop --release")
+    print("⚠️  dictsqlite モジュールが見つかりません")
+    print("ビルド方法: cd dictsqlite && maturin develop --release")
     sys.exit(1)
 
 

@@ -12,9 +12,9 @@ import statistics
 from typing import Dict, List, Tuple
 
 try:
-    from dictsqlite_v4 import DictSQLiteV4, AsyncDictSQLite
+    from dictsqlite import DictSQLiteV4, AsyncDictSQLite
 except ImportError:
-    print("Error: dictsqlite_v4 module not found. Please build with 'maturin develop'")
+    print("Error: dictsqlite module not found. Please build with 'maturin develop'")
     sys.exit(1)
 
 

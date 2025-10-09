@@ -9,9 +9,9 @@ from .conftest import windows_safe_temp_dir
 def test_async_table_contains_basic():
     """Test basic __contains__ functionality for AsyncTableProxy"""
     try:
-        from dictsqlite_v4 import AsyncDictSQLite
+        from dictsqlite import AsyncDictSQLite
     except ImportError:
-        pytest.skip("dictsqlite_v4 not built yet")
+        pytest.skip("dictsqlite not built yet")
     
     with windows_safe_temp_dir() as tmpdir:
         db_path = os.path.join(tmpdir, "test_async_contains.db")
@@ -48,9 +48,9 @@ def test_async_table_contains_basic():
 def test_async_table_contains_with_different_storage_modes():
     """Test __contains__ with different storage modes"""
     try:
-        from dictsqlite_v4 import AsyncDictSQLite
+        from dictsqlite import AsyncDictSQLite
     except ImportError:
-        pytest.skip("dictsqlite_v4 not built yet")
+        pytest.skip("dictsqlite not built yet")
     
     for storage_mode in ["pickle", "json", "jsonb"]:
         with windows_safe_temp_dir() as tmpdir:
@@ -80,9 +80,9 @@ def test_async_table_contains_with_different_storage_modes():
 def test_async_table_contains_multiple_tables():
     """Test __contains__ with multiple tables to ensure proper isolation"""
     try:
-        from dictsqlite_v4 import AsyncDictSQLite
+        from dictsqlite import AsyncDictSQLite
     except ImportError:
-        pytest.skip("dictsqlite_v4 not built yet")
+        pytest.skip("dictsqlite not built yet")
     
     with windows_safe_temp_dir() as tmpdir:
         db_path = os.path.join(tmpdir, "test_multi_table_contains.db")

@@ -1255,7 +1255,7 @@ impl TableProxy {
 
 /// Python module definition
 #[pymodule]
-fn dictsqlite_v4(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn dictsqlite(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<DictSQLiteV4>()?;
     m.add_class::<AsyncDictSQLite>()?;
     m.add_class::<TableProxy>()?;

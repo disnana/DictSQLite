@@ -21,7 +21,7 @@ except ImportError as e:
     print(f"Error importing wrapper: {e}")
     print("Trying direct import...")
     try:
-        from dictsqlite_v4 import AsyncDictSQLite
+        from dictsqlite import AsyncDictSQLite
         print("Warning: Using native AsyncDictSQLite directly (async context manager not available)")
     except ImportError:
         print("Error: Could not import AsyncDictSQLite")
