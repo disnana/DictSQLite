@@ -31,7 +31,7 @@ except Exception:
 logger = logging.getLogger(__name__)
 
 
-class DictSQLite:
+class DictSQLiteV4:
     """
     High-performance DictSQLite v4.0 with security features
     
@@ -506,7 +506,7 @@ def is_native_available():
 
 
 __all__ = [
-    'DictSQLite',
+    'DictSQLiteV4',
     'AsyncDictSQLite',
     'is_native_available',
 ]
