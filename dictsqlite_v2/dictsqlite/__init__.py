@@ -264,8 +264,12 @@ class DictSQLiteV4:
         return iter(self.keys())
     
     def __repr__(self):
-        """String representation"""
-        return f"<DictSQLiteV4 at {id(self):x} with {len(self)} entries>"
+        """String representation: show all dict-like contents"""
+        try:
+            items = dict(self.items())
+            return f"<DictSQLiteV4 {items} >"
+        except Exception as e:
+            return f"<DictSQLiteV4 (error in __repr__): {e}>"
     
     def clear(self):
         """Clear all data"""
