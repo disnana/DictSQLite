@@ -87,13 +87,12 @@ def test_async_persistence_lazy_mode():
         db2.close()
         
         print("\n✅ Test PASSED: Lazy persistence works correctly")
-        return True
         
     except Exception as e:
         print(f"\n❌ Test FAILED: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
     finally:
         cleanup_db_files(db_path)
 
@@ -133,13 +132,12 @@ def test_async_persistence_writethrough_mode():
         db2.close()
         
         print("\n✅ Test PASSED: WriteThrough persistence works correctly")
-        return True
         
     except Exception as e:
         print(f"\n❌ Test FAILED: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
     finally:
         cleanup_db_files(db_path)
 
@@ -178,13 +176,12 @@ def test_async_persistence_memory_mode():
         db2.close()
         
         print("\n✅ Test PASSED: Memory-only mode works correctly")
-        return True
         
     except Exception as e:
         print(f"\n❌ Test FAILED: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
     finally:
         cleanup_db_files(db_path)
 
@@ -228,13 +225,12 @@ def test_async_batch_operations_with_persistence():
         db2.close()
         
         print("\n✅ Test PASSED: Batch operations with persistence work correctly")
-        return True
         
     except Exception as e:
         print(f"\n❌ Test FAILED: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
     finally:
         cleanup_db_files(db_path)
 
