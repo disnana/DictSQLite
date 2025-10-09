@@ -36,6 +36,29 @@ cd "$(dirname "$0")"
 echo "🔨 Building DictSQLite v4.0 in release mode..."
 echo ""
 
+# Optional: clean wheels directory before build
+# Default: CLEAN_WHEELS=1 (clean by default)
+# Use --no-clean-wheels to skip cleaning, or --clean-wheels to force it
+CLEAN_WHEELS=1
+for arg in "$@"; do
+    case "$arg" in
+        --no-clean-wheels)
+            CLEAN_WHEELS=0
+            ;;
+        --clean-wheels)
+            CLEAN_WHEELS=1
+            ;;
+    esac
+done
+
+WHEELS_DIR="$(pwd)/target/wheels"
+if [ $CLEAN_WHEELS -eq 1 ]; then
+    echo "🧹 Cleaning wheels directory: $WHEELS_DIR"
+    rm -f "$WHEELS_DIR"/*.whl 2>/dev/null || true
+else
+    echo "ℹ️  Skipping wheels cleanup (use --clean-wheels to force)"
+fi
+
 # Build with maturin
 maturin build --release
 
