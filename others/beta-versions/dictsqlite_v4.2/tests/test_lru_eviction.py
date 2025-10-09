@@ -4,7 +4,7 @@ Test LRU Eviction functionality (Phase 1, Task 1.2)
 """
 import os
 import sys
-from conftest import windows_safe_temp_db
+from .conftest import windows_safe_temp_db
 
 # Import the built module
 try:

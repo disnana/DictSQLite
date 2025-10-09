@@ -4,7 +4,8 @@ Test Dictionary-Compatible API methods (Phase 2, Task 2.2)
 """
 import os
 import sys
-from conftest import windows_safe_temp_db
+import pytest
+from .conftest import windows_safe_temp_db
 
 # Import the built module
 try:
@@ -64,7 +65,6 @@ def test_dict_items_values_methods():
         db.close()
         
         print("\n✅ Test PASSED: items(), values(), keys() work correctly")
-        return True
 
 
 def test_dict_update_method():
@@ -101,7 +101,6 @@ def test_dict_update_method():
         db.close()
         
         print("\n✅ Test PASSED: update() works correctly")
-        return True
 
 
 def test_dict_pop_method():
@@ -143,7 +142,6 @@ def test_dict_pop_method():
         db.close()
         
         print("\n✅ Test PASSED: pop() works correctly")
-        return True
 
 
 def test_dict_setdefault_method():
@@ -176,7 +174,6 @@ def test_dict_setdefault_method():
         db.close()
         
         print("\n✅ Test PASSED: setdefault() works correctly")
-        return True
 
 
 def test_dict_compatibility_with_persistence():
@@ -226,7 +223,6 @@ def test_dict_compatibility_with_persistence():
         db2.close()
         
         print("\n✅ Test PASSED: Dict methods work correctly with persistence")
-        return True
 
 
 def run_all_tests():

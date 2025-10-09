@@ -3,7 +3,7 @@ Test JSONB mode and table support for DictSQLite v4.2
 """
 import os
 import pytest
-from conftest import windows_safe_temp_dir
+from .conftest import windows_safe_temp_dir
 
 
 def test_jsonb_mode_basic():

@@ -3,7 +3,7 @@ Test AsyncTableProxy __contains__ implementation
 """
 import os
 import pytest
-from conftest import windows_safe_temp_dir
+from .conftest import windows_safe_temp_dir
 
 
 def test_async_table_contains_basic():
