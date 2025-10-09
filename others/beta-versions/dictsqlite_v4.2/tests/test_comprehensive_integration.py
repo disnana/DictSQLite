@@ -33,11 +33,27 @@ def temp_db():
     with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as f:
         db_path = f.name
     yield db_path
-    # クリーンアップ
-    try:
-        os.unlink(db_path)
-    except:
-        pass
+    # クリーンアップ - Windows対応: リトライロジックを追加
+    # Windows環境ではファイルハンドルの解放に時間がかかることがあるため、
+    # 小さな遅延とリトライを実装
+    time.sleep(0.1)  # 100ms待機してファイルハンドルを確実に解放
+    for attempt in range(3):
+        try:
+            if os.path.exists(db_path):
+                os.unlink(db_path)
+            # WALファイルもクリーンアップ
+            for ext in ['-wal', '-shm']:
+                wal_file = db_path + ext
+                if os.path.exists(wal_file):
+                    os.unlink(wal_file)
+            break
+        except PermissionError:
+            if attempt < 2:
+                time.sleep(0.2)  # 200ms待機してリトライ
+            # 最後の試行でも失敗した場合は無視（テスト環境のクリーンアップ）
+        except Exception:
+            # その他のエラーは無視
+            break
 
 
 @pytest.mark.skipif(not DICTSQLITE_V4_AVAILABLE, reason="DictSQLiteV4 module not built")

@@ -29,11 +29,16 @@ async def temp_db():
     
     yield db_path
     
-    # クリーンアップ
-    try:
-        os.unlink(db_path)
-    except Exception:
-        pass
+    # クリーンアップ - 高速版（性能テストのため待機なし）
+    for ext in ['', '-wal', '-shm']:
+        try:
+            file_path = db_path + ext
+            if os.path.exists(file_path):
+                os.unlink(file_path)
+        except (FileNotFoundError, PermissionError):
+            pass
+        except Exception:
+            pass
 
 
 @pytest.mark.asyncio
