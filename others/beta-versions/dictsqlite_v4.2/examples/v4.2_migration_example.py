@@ -39,18 +39,19 @@ def migration_example_1_simple_strings():
     """)
     
     print("\n【v4.2への移行】")
-    db = DictSQLiteV4(':memory:')
+    print("Pickleモード（デフォルト）では、v1.8.8と同様に自動変換されます！")
+    db = DictSQLiteV4(':memory:')  # デフォルトでstorage_mode="pickle"
     
-    # 文字列をbytesに変換して保存
-    db['user:alice'] = 'Alice Smith'.encode('utf-8')
-    db['user:bob'] = 'Bob Jones'.encode('utf-8')
+    # 文字列を直接保存（Pickleモードで自動シリアライズ）
+    db['user:alice'] = 'Alice Smith'
+    db['user:bob'] = 'Bob Jones'
     
-    # bytes型で読み込み、strに変換
-    alice_bytes = db['user:alice']
-    alice = alice_bytes.decode('utf-8')
+    # 自動デシリアライズされて文字列が返る
+    alice = db['user:alice']
     
     print(f"✓ Alice: {alice}")
     print(f"  型: {type(alice)}")
+    print(f"  v1.8.8と同じように使えます！")
     
     db.close()
 
@@ -74,23 +75,25 @@ def migration_example_2_complex_data():
     """)
     
     print("\n【v4.2への移行】")
-    db = DictSQLiteV4(':memory:')
+    print("Pickleモード（デフォルト）なら、v1.8.8と全く同じように使えます！")
+    db = DictSQLiteV4(':memory:')  # デフォルトでstorage_mode="pickle"
     
-    # pickle.dumps()で明示的にシリアライズ
+    # 辞書やリストを直接保存（自動シリアライズ）
     config_data = {'theme': 'dark', 'lang': 'ja', 'version': '2.0'}
-    db['config'] = pickle.dumps(config_data)
+    db['config'] = config_data
     
     scores_data = [95, 87, 92, 88, 91]
-    db['scores'] = pickle.dumps(scores_data)
+    db['scores'] = scores_data
     
-    # pickle.loads()で明示的にデシリアライズ
-    config = pickle.loads(db['config'])
-    scores = pickle.loads(db['scores'])
+    # 自動デシリアライズされて元の型で取得
+    config = db['config']
+    scores = db['scores']
     
     print(f"✓ Config: {config}")
     print(f"  Theme: {config['theme']}")
     print(f"✓ Scores: {scores}")
     print(f"  Average: {sum(scores)/len(scores):.1f}")
+    print(f"  v1.8.8と同じように、pickle.dumps/loadsは不要です！")
     
     db.close()
 
@@ -116,9 +119,9 @@ def migration_example_3_encryption():
         # パラメータ名が encryption_password に変更
         db = DictSQLiteV4(db_path, encryption_password='my_password')
         
-        # bytes型で保存
-        db['api_key'] = 'sk-1234567890'.encode('utf-8')
-        db['secret_token'] = b'eyJhbGciOiJIUzI1NiIs...'
+        # Pickleモードなら文字列を直接保存可能
+        db['api_key'] = 'sk-1234567890'
+        db['secret_token'] = 'eyJhbGciOiJIUzI1NiIs...'
         
         print("✓ 暗号化データを保存しました")
         
@@ -130,7 +133,7 @@ def migration_example_3_encryption():
         
         # 再度開いて復号化
         db2 = DictSQLiteV4(db_path, encryption_password='my_password')
-        api_key = db2['api_key'].decode('utf-8')
+        api_key = db2['api_key']  # 自動復号化・デシリアライズ
         print(f"✓ 復号化成功: {api_key}")
         
         db2.close()

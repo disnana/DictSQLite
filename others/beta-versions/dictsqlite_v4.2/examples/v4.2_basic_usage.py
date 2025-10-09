@@ -26,21 +26,20 @@ def example_1_basic_usage():
     print("="*70)
     
     # メモリ上のデータベース（永続化なし）
+    # デフォルトはPickleモード：Python オブジェクトを自動的にシリアライズ
     db = DictSQLiteV4(":memory:")
     
-    # 基本的な書き込み（bytes型）
-    db["user:alice"] = b"Alice Smith"
-    db["user:bob"] = b"Bob Jones"
+    # 文字列を直接保存（Pickleモードで自動シリアライズ）
+    db["user:alice"] = "Alice Smith"
+    db["user:bob"] = "Bob Jones"
+    db["user:charlie"] = "Charlie Brown"
     
-    # 文字列をbytesに変換して保存
-    db["user:charlie"] = "Charlie Brown".encode('utf-8')
+    print("✓ データを保存しました（Pickleモードで自動シリアライズ）")
     
-    print("✓ データを保存しました")
-    
-    # 読み込み
+    # 読み込み（自動デシリアライズされて元の文字列が返る）
     alice = db["user:alice"]
-    print(f"  Alice (bytes): {alice}")
-    print(f"  Alice (str): {alice.decode('utf-8')}")
+    print(f"  Alice: {alice}")
+    print(f"  型: {type(alice)}")
     
     # 存在確認
     if "user:alice" in db:
@@ -79,8 +78,9 @@ def example_2_file_persistence():
         print(f"データベースパス: {db_path}")
         db = DictSQLiteV4(db_path)
         
-        db["message"] = b"Hello, DictSQLite v4.2!"
-        db["count"] = b"42"
+        # Pickleモードなら文字列や数値を直接保存可能
+        db["message"] = "Hello, DictSQLite v4.2!"
+        db["count"] = 42
         
         print("✓ データを保存しました")
         db.close()
@@ -89,12 +89,13 @@ def example_2_file_persistence():
         print("\nデータベースを再度開きます...")
         db2 = DictSQLiteV4(db_path)
         
-        message = db2["message"].decode('utf-8')
-        count = db2["count"].decode('utf-8')
+        # 自動デシリアライズされて元の型で取得
+        message = db2["message"]
+        count = db2["count"]
         
         print(f"✓ 読み込み成功:")
-        print(f"  message: {message}")
-        print(f"  count: {count}")
+        print(f"  message: {message} (型: {type(message).__name__})")
+        print(f"  count: {count} (型: {type(count).__name__})")
         
         db2.close()
         
@@ -140,7 +141,7 @@ def example_3_buffer_size():
         
         start = time.time()
         for i in range(100):
-            db_large[f"key:{i}"] = f"value_{i}".encode('utf-8')
+            db_large[f"key:{i}"] = f"value_{i}"  # Pickleモードで自動変換
         elapsed_large = time.time() - start
         
         print(f"  100件の書き込み: {elapsed_large:.4f}秒")
@@ -175,7 +176,7 @@ def example_4_bulk_insert():
     
     # 大量データの準備
     data = {
-        f"record:{i}": f"data_{i}".encode('utf-8')
+        f"record:{i}": f"data_{i}"  # Pickleモードで自動変換
         for i in range(1000)
     }
     
@@ -225,7 +226,7 @@ def example_5_context_manager():
             
             # データ書き込み
             for i in range(100):
-                db[f"item:{i}"] = f"value_{i}".encode('utf-8')
+                db[f"item:{i}"] = f"value_{i}"  # Pickleモードで自動変換
             
             print("✓ 100件のデータを書き込みました")
             print("ブロック終了時に自動的にflush()とclose()が呼ばれます")
@@ -238,8 +239,8 @@ def example_5_context_manager():
             count = len(list(db.keys()))
             print(f"✓ データベースを再度開いて確認: {count}件のエントリ")
             
-            # サンプル取得
-            sample = db["item:0"].decode('utf-8')
+            # サンプル取得（自動デシリアライズ）
+            sample = db["item:0"]
             print(f"  item:0 = {sample}")
     
     finally:
@@ -284,7 +285,7 @@ def example_6_persist_modes():
         db_wt = DictSQLiteV4(db_path, persist_mode="writethrough", buffer_size=100)
         
         for i in range(150):
-            db_wt[f"key:{i}"] = f"value_{i}".encode('utf-8')
+            db_wt[f"key:{i}"] = f"value_{i}"  # Pickleモードで自動変換
         
         print("  ✓ buffer_size(100)に達すると自動的にディスクに書き込み")
         print("  ✓ データの安全性とパフォーマンスのバランスが良い")
