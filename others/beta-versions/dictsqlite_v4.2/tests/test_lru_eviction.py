@@ -2,10 +2,9 @@
 """
 Test LRU Eviction functionality (Phase 1, Task 1.2)
 """
-import tempfile
 import os
 import sys
-import time
+from conftest import windows_safe_temp_db
 
 # Import the built module
 try:
@@ -21,10 +20,7 @@ def test_lru_eviction_basic():
     print("Test 1: Basic LRU Eviction")
     print("="*60)
     
-    fd, db_path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    
-    try:
+    with windows_safe_temp_db() as db_path:
         print("Step 1: Creating DictSQLiteV4 with small capacity (10 items)...")
         db = DictSQLiteV4(db_path, hot_capacity=10, persist_mode="lazy")
         
@@ -54,7 +50,6 @@ def test_lru_eviction_basic():
         print("\nStep 5: Flushing and verifying persistence...")
         db.flush()
         db.close()
-        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         # Reopen and check
         db2 = DictSQLiteV4(db_path, hot_capacity=10, persist_mode="lazy")
@@ -62,24 +57,10 @@ def test_lru_eviction_basic():
             value = db2.get(f"key_{i}", None)
             assert value is not None, f"key_{i} should persist"
         db2.close()
-        time.sleep(0.1)  # Windows: Wait for file handles to be released
         print("✓ Data persisted correctly")
         
         print("\n✅ Test PASSED: LRU eviction works correctly")
         return True
-        
-    except Exception as e:
-        print(f"\n❌ Test FAILED: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
-        for ext in ['-wal', '-shm']:
-            wal_file = db_path + ext
-            if os.path.exists(wal_file):
-                os.unlink(wal_file)
 
 
 def test_lru_eviction_access_pattern():
@@ -88,10 +69,7 @@ def test_lru_eviction_access_pattern():
     print("Test 2: LRU Eviction with Access Patterns")
     print("="*60)
     
-    fd, db_path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    
-    try:
+    with windows_safe_temp_db() as db_path:
         print("Step 1: Creating DictSQLiteV4 with capacity=5...")
         db = DictSQLiteV4(db_path, hot_capacity=5, persist_mode="lazy")
         
@@ -125,23 +103,9 @@ def test_lru_eviction_access_pattern():
         print("✓ All data accessible")
         
         db.close()
-        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("\n✅ Test PASSED: LRU access pattern respected")
         return True
-        
-    except Exception as e:
-        print(f"\n❌ Test FAILED: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
-        for ext in ['-wal', '-shm']:
-            wal_file = db_path + ext
-            if os.path.exists(wal_file):
-                os.unlink(wal_file)
 
 
 def test_lru_eviction_memory_mode():
@@ -176,7 +140,6 @@ def test_lru_eviction_memory_mode():
         print("✓ Recent items retained")
         
         db.close()
-        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("\n✅ Test PASSED: Memory mode eviction works correctly")
         return True
@@ -194,10 +157,7 @@ def test_lru_eviction_large_dataset():
     print("Test 4: LRU Eviction with Large Dataset")
     print("="*60)
     
-    fd, db_path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    
-    try:
+    with windows_safe_temp_db() as db_path:
         print("Step 1: Creating DictSQLiteV4 with capacity=100...")
         db = DictSQLiteV4(db_path, hot_capacity=100, persist_mode="lazy")
         
@@ -216,7 +176,6 @@ def test_lru_eviction_large_dataset():
         print("\nStep 4: Flushing and verifying all data persisted...")
         db.flush()
         db.close()
-        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         db2 = DictSQLiteV4(db_path, hot_capacity=100, persist_mode="lazy")
         print("Step 5: Reading all 500 items back...")
@@ -227,24 +186,10 @@ def test_lru_eviction_large_dataset():
                 print(f"  Read: {i + 1}/500 items")
         
         db2.close()
-        time.sleep(0.1)  # Windows: Wait for file handles to be released
         print("\n✓ All 500 items persisted and readable")
         
         print("\n✅ Test PASSED: Large dataset handled correctly")
         return True
-        
-    except Exception as e:
-        print(f"\n❌ Test FAILED: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
-        for ext in ['-wal', '-shm']:
-            wal_file = db_path + ext
-            if os.path.exists(wal_file):
-                os.unlink(wal_file)
 
 
 def run_all_tests():

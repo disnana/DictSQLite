@@ -2,9 +2,8 @@
 Test AsyncTableProxy __contains__ implementation
 """
 import os
-import tempfile
-import time
 import pytest
+from conftest import windows_safe_temp_dir
 
 
 def test_async_table_contains_basic():
@@ -14,7 +13,7 @@ def test_async_table_contains_basic():
     except ImportError:
         pytest.skip("dictsqlite_v4 not built yet")
     
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with windows_safe_temp_dir() as tmpdir:
         db_path = os.path.join(tmpdir, "test_async_contains.db")
         
         # Create async DB with JSONB mode
@@ -43,7 +42,6 @@ def test_async_table_contains_basic():
         assert "user3" not in users
         
         db.close()
-        time.sleep(0.1)  # Windows: Wait for file handles to be released
         print("✅ Async table contains basic test passed")
 
 
@@ -55,7 +53,7 @@ def test_async_table_contains_with_different_storage_modes():
         pytest.skip("dictsqlite_v4 not built yet")
     
     for storage_mode in ["pickle", "json", "jsonb"]:
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with windows_safe_temp_dir() as tmpdir:
             db_path = os.path.join(tmpdir, f"test_contains_{storage_mode}.db")
             
             db = AsyncDictSQLite(db_path, storage_mode=storage_mode)
@@ -75,7 +73,6 @@ def test_async_table_contains_with_different_storage_modes():
             assert "p2" not in products
             
             db.close()
-            time.sleep(0.1)  # Windows: Wait for file handles to be released
     
     print(f"✅ Async table contains with different storage modes test passed")
 
@@ -87,7 +84,7 @@ def test_async_table_contains_multiple_tables():
     except ImportError:
         pytest.skip("dictsqlite_v4 not built yet")
     
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with windows_safe_temp_dir() as tmpdir:
         db_path = os.path.join(tmpdir, "test_multi_table_contains.db")
         
         db = AsyncDictSQLite(db_path, storage_mode="jsonb")
@@ -116,7 +113,6 @@ def test_async_table_contains_multiple_tables():
         assert "p1" not in orders
         
         db.close()
-        time.sleep(0.1)  # Windows: Wait for file handles to be released
         print("✅ Async table contains multiple tables test passed")
 
 

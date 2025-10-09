@@ -2,10 +2,9 @@
 """
 Test Dictionary-Compatible API methods (Phase 2, Task 2.2)
 """
-import tempfile
 import os
 import sys
-import time
+from conftest import windows_safe_temp_db
 
 # Import the built module
 try:
@@ -21,10 +20,7 @@ def test_dict_items_values_methods():
     print("Test 1: items() and values() Methods")
     print("="*60)
     
-    fd, db_path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    
-    try:
+    with windows_safe_temp_db() as db_path:
         print("Step 1: Creating database and adding test data...")
         db = DictSQLiteV4(db_path, persist_mode="lazy")
         
@@ -66,23 +62,9 @@ def test_dict_items_values_methods():
         print("✓ keys() returns correct keys")
         
         db.close()
-        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("\n✅ Test PASSED: items(), values(), keys() work correctly")
         return True
-        
-    except Exception as e:
-        print(f"\n❌ Test FAILED: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
-        for ext in ['-wal', '-shm']:
-            wal_file = db_path + ext
-            if os.path.exists(wal_file):
-                os.unlink(wal_file)
 
 
 def test_dict_update_method():
@@ -91,10 +73,7 @@ def test_dict_update_method():
     print("Test 2: update() Method")
     print("="*60)
     
-    fd, db_path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    
-    try:
+    with windows_safe_temp_db() as db_path:
         print("Step 1: Creating database...")
         db = DictSQLiteV4(db_path, persist_mode="lazy")
         
@@ -120,23 +99,9 @@ def test_dict_update_method():
         print("✓ Item count is correct")
         
         db.close()
-        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("\n✅ Test PASSED: update() works correctly")
         return True
-        
-    except Exception as e:
-        print(f"\n❌ Test FAILED: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
-        for ext in ['-wal', '-shm']:
-            wal_file = db_path + ext
-            if os.path.exists(wal_file):
-                os.unlink(wal_file)
 
 
 def test_dict_pop_method():
@@ -145,10 +110,7 @@ def test_dict_pop_method():
     print("Test 3: pop() Method")
     print("="*60)
     
-    fd, db_path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    
-    try:
+    with windows_safe_temp_db() as db_path:
         print("Step 1: Creating database and adding test data...")
         db = DictSQLiteV4(db_path, persist_mode="lazy")
         
@@ -179,23 +141,9 @@ def test_dict_pop_method():
         print("✓ pop() returns None when no default specified")
         
         db.close()
-        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("\n✅ Test PASSED: pop() works correctly")
         return True
-        
-    except Exception as e:
-        print(f"\n❌ Test FAILED: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
-        for ext in ['-wal', '-shm']:
-            wal_file = db_path + ext
-            if os.path.exists(wal_file):
-                os.unlink(wal_file)
 
 
 def test_dict_setdefault_method():
@@ -204,10 +152,7 @@ def test_dict_setdefault_method():
     print("Test 4: setdefault() Method")
     print("="*60)
     
-    fd, db_path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    
-    try:
+    with windows_safe_temp_db() as db_path:
         print("Step 1: Creating database...")
         db = DictSQLiteV4(db_path, persist_mode="lazy")
         
@@ -229,23 +174,9 @@ def test_dict_setdefault_method():
         print("✓ Item count is correct")
         
         db.close()
-        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("\n✅ Test PASSED: setdefault() works correctly")
         return True
-        
-    except Exception as e:
-        print(f"\n❌ Test FAILED: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
-        for ext in ['-wal', '-shm']:
-            wal_file = db_path + ext
-            if os.path.exists(wal_file):
-                os.unlink(wal_file)
 
 
 def test_dict_compatibility_with_persistence():
@@ -254,10 +185,7 @@ def test_dict_compatibility_with_persistence():
     print("Test 5: Dict Methods with Persistence")
     print("="*60)
     
-    fd, db_path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    
-    try:
+    with windows_safe_temp_db() as db_path:
         print("Step 1: Creating database and using dict methods...")
         db1 = DictSQLiteV4(db_path, persist_mode="lazy")
         
@@ -296,23 +224,9 @@ def test_dict_compatibility_with_persistence():
         print("✓ setdefault() works on persisted data")
         
         db2.close()
-        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("\n✅ Test PASSED: Dict methods work correctly with persistence")
         return True
-        
-    except Exception as e:
-        print(f"\n❌ Test FAILED: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    finally:
-        if os.path.exists(db_path):
-            os.unlink(db_path)
-        for ext in ['-wal', '-shm']:
-            wal_file = db_path + ext
-            if os.path.exists(wal_file):
-                os.unlink(wal_file)
 
 
 def run_all_tests():
