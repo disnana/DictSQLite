@@ -264,9 +264,9 @@ def example_large_values():
     print("="*70)
     
     print("\nDictSQLite v4.2は大きなバイナリデータも効率的に扱えます。")
-    
+
     db = DictSQLiteV4(':memory:', hot_capacity=100)
-    
+
     # 大きなバイナリデータ
     print("\n1. 大きなバイナリデータ（1MB）を保存...")
     large_data = b'X' * (1024 * 1024)  # 1MB
