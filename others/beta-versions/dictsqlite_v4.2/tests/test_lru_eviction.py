@@ -5,6 +5,7 @@ Test LRU Eviction functionality (Phase 1, Task 1.2)
 import tempfile
 import os
 import sys
+import time
 
 # Import the built module
 try:
@@ -53,6 +54,7 @@ def test_lru_eviction_basic():
         print("\nStep 5: Flushing and verifying persistence...")
         db.flush()
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         # Reopen and check
         db2 = DictSQLiteV4(db_path, hot_capacity=10, persist_mode="lazy")
@@ -60,6 +62,7 @@ def test_lru_eviction_basic():
             value = db2.get(f"key_{i}", None)
             assert value is not None, f"key_{i} should persist"
         db2.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         print("✓ Data persisted correctly")
         
         print("\n✅ Test PASSED: LRU eviction works correctly")
@@ -122,6 +125,7 @@ def test_lru_eviction_access_pattern():
         print("✓ All data accessible")
         
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("\n✅ Test PASSED: LRU access pattern respected")
         return True
@@ -172,6 +176,7 @@ def test_lru_eviction_memory_mode():
         print("✓ Recent items retained")
         
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("\n✅ Test PASSED: Memory mode eviction works correctly")
         return True
@@ -211,6 +216,7 @@ def test_lru_eviction_large_dataset():
         print("\nStep 4: Flushing and verifying all data persisted...")
         db.flush()
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         db2 = DictSQLiteV4(db_path, hot_capacity=100, persist_mode="lazy")
         print("Step 5: Reading all 500 items back...")
@@ -221,6 +227,7 @@ def test_lru_eviction_large_dataset():
                 print(f"  Read: {i + 1}/500 items")
         
         db2.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         print("\n✓ All 500 items persisted and readable")
         
         print("\n✅ Test PASSED: Large dataset handled correctly")

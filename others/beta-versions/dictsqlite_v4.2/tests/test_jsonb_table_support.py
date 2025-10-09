@@ -3,6 +3,7 @@ Test JSONB mode and table support for DictSQLite v4.2
 """
 import os
 import tempfile
+import time
 import pytest
 
 
@@ -58,6 +59,7 @@ def test_jsonb_mode_basic():
         assert db["flag"] is True
         
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         print("✅ JSONB mode basic test passed")
 
 
@@ -88,6 +90,7 @@ def test_json_mode_basic():
         assert retrieved == test_data
         
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         print("✅ JSON mode basic test passed")
 
 
@@ -143,6 +146,7 @@ def test_table_support_basic():
         assert len(products) == 2
         
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         print("✅ Table support basic test passed")
 
 
@@ -166,6 +170,7 @@ def test_table_with_default_table_name():
         assert users_db["user1"]["name"] == "Alice"
         
         users_db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         print("✅ Default table name test passed")
 
 
@@ -192,6 +197,7 @@ def test_async_table_support():
         assert users["user1"]["name"] == "Alice"
         
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         print("✅ Async table support test passed")
 
 
@@ -217,6 +223,7 @@ def test_async_batch_operations_with_jsonb():
         assert db["user_0"]["name"] == "User0"
         
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         print("✅ Async batch operations with JSONB test passed")
 
 
@@ -254,6 +261,7 @@ def test_async_multiple_tables():
         assert orders["o1"]["qty"] == 1
         
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         print("✅ Async multiple tables test passed")
 
 
@@ -278,6 +286,7 @@ def test_persistence_across_sessions():
         retrieved = db2["key1"]
         assert retrieved == {"data": "value1", "count": 42}
         db2.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("✅ Persistence across sessions test passed")
 
@@ -306,6 +315,7 @@ def test_table_persistence():
         assert retrieved["name"] == "Alice"
         assert retrieved["role"] == "admin"
         db2.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("✅ Table persistence test passed")
 
@@ -323,24 +333,28 @@ def test_mixed_storage_modes():
         db_pickle["data"] = {"key": "value"}
         assert db_pickle["data"] == {"key": "value"}
         db_pickle.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         # Test JSON mode
         db_json = DictSQLiteV4(os.path.join(tmpdir, "json.db"), storage_mode="json")
         db_json["data"] = {"key": "value"}
         assert db_json["data"] == {"key": "value"}
         db_json.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         # Test JSONB mode
         db_jsonb = DictSQLiteV4(os.path.join(tmpdir, "jsonb.db"), storage_mode="jsonb")
         db_jsonb["data"] = {"key": "value"}
         assert db_jsonb["data"] == {"key": "value"}
         db_jsonb.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         # Test Bytes mode
         db_bytes = DictSQLiteV4(os.path.join(tmpdir, "bytes.db"), storage_mode="bytes")
         db_bytes["data"] = b"Hello, World!"
         assert db_bytes["data"] == b"Hello, World!"
         db_bytes.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("✅ Mixed storage modes test passed")
 

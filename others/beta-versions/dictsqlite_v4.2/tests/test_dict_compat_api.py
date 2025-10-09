@@ -5,6 +5,7 @@ Test Dictionary-Compatible API methods (Phase 2, Task 2.2)
 import tempfile
 import os
 import sys
+import time
 
 # Import the built module
 try:
@@ -65,6 +66,7 @@ def test_dict_items_values_methods():
         print("✓ keys() returns correct keys")
         
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("\n✅ Test PASSED: items(), values(), keys() work correctly")
         return True
@@ -118,6 +120,7 @@ def test_dict_update_method():
         print("✓ Item count is correct")
         
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("\n✅ Test PASSED: update() works correctly")
         return True
@@ -176,6 +179,7 @@ def test_dict_pop_method():
         print("✓ pop() returns None when no default specified")
         
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("\n✅ Test PASSED: pop() works correctly")
         return True
@@ -225,6 +229,7 @@ def test_dict_setdefault_method():
         print("✓ Item count is correct")
         
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("\n✅ Test PASSED: setdefault() works correctly")
         return True
@@ -291,6 +296,7 @@ def test_dict_compatibility_with_persistence():
         print("✓ setdefault() works on persisted data")
         
         db2.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         
         print("\n✅ Test PASSED: Dict methods work correctly with persistence")
         return True

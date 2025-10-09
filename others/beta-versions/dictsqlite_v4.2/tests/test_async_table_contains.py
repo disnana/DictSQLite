@@ -3,6 +3,7 @@ Test AsyncTableProxy __contains__ implementation
 """
 import os
 import tempfile
+import time
 import pytest
 
 
@@ -42,6 +43,7 @@ def test_async_table_contains_basic():
         assert "user3" not in users
         
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         print("✅ Async table contains basic test passed")
 
 
@@ -73,6 +75,7 @@ def test_async_table_contains_with_different_storage_modes():
             assert "p2" not in products
             
             db.close()
+            time.sleep(0.1)  # Windows: Wait for file handles to be released
     
     print(f"✅ Async table contains with different storage modes test passed")
 
@@ -113,6 +116,7 @@ def test_async_table_contains_multiple_tables():
         assert "p1" not in orders
         
         db.close()
+        time.sleep(0.1)  # Windows: Wait for file handles to be released
         print("✅ Async table contains multiple tables test passed")
 
 
