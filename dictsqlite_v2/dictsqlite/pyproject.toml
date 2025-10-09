@@ -29,7 +29,7 @@ classifiers = [
 ]
 
 [tool.maturin]
-# Include Python source files in the package
-python-source = "."
-# Specify the module name for the native extension
+# Python source files are in the python/ subdirectory
+python-source = "python"
+# Specify the module name for the native extension as a submodule
 module-name = "dictsqlite._native"
