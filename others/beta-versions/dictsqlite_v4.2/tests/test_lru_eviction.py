@@ -60,7 +60,6 @@ def test_lru_eviction_basic():
         print("✓ Data persisted correctly")
         
         print("\n✅ Test PASSED: LRU eviction works correctly")
-        return True
 
 
 def test_lru_eviction_access_pattern():
@@ -105,7 +104,6 @@ def test_lru_eviction_access_pattern():
         db.close()
         
         print("\n✅ Test PASSED: LRU access pattern respected")
-        return True
 
 
 def test_lru_eviction_memory_mode():
@@ -142,13 +140,12 @@ def test_lru_eviction_memory_mode():
         db.close()
         
         print("\n✅ Test PASSED: Memory mode eviction works correctly")
-        return True
         
     except Exception as e:
         print(f"\n❌ Test FAILED: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
 
 
 def test_lru_eviction_large_dataset():
@@ -189,7 +186,6 @@ def test_lru_eviction_large_dataset():
         print("\n✓ All 500 items persisted and readable")
         
         print("\n✅ Test PASSED: Large dataset handled correctly")
-        return True
 
 
 def run_all_tests():

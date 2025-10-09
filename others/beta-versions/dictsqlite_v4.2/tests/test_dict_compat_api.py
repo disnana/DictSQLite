@@ -23,7 +23,7 @@ def test_dict_items_values_methods():
     
     with windows_safe_temp_db() as db_path:
         print("Step 1: Creating database and adding test data...")
-        db = DictSQLiteV4(db_path, persist_mode="lazy")
+        db = DictSQLiteV4(db_path, persist_mode="lazy", storage_mode="bytes")
         
         test_data = {
             "key1": b"value1",
@@ -75,7 +75,7 @@ def test_dict_update_method():
     
     with windows_safe_temp_db() as db_path:
         print("Step 1: Creating database...")
-        db = DictSQLiteV4(db_path, persist_mode="lazy")
+        db = DictSQLiteV4(db_path, persist_mode="lazy", storage_mode="bytes")
         
         print("\nStep 2: Adding initial data...")
         db["existing_key"] = b"existing_value"
@@ -111,7 +111,7 @@ def test_dict_pop_method():
     
     with windows_safe_temp_db() as db_path:
         print("Step 1: Creating database and adding test data...")
-        db = DictSQLiteV4(db_path, persist_mode="lazy")
+        db = DictSQLiteV4(db_path, persist_mode="lazy", storage_mode="bytes")
         
         db["pop_key1"] = b"pop_value1"
         db["pop_key2"] = b"pop_value2"
@@ -152,7 +152,7 @@ def test_dict_setdefault_method():
     
     with windows_safe_temp_db() as db_path:
         print("Step 1: Creating database...")
-        db = DictSQLiteV4(db_path, persist_mode="lazy")
+        db = DictSQLiteV4(db_path, persist_mode="lazy", storage_mode="bytes")
         
         print("\nStep 2: Using setdefault() on non-existent key...")
         value = db.setdefault("new_key", b"default_value")
@@ -184,7 +184,7 @@ def test_dict_compatibility_with_persistence():
     
     with windows_safe_temp_db() as db_path:
         print("Step 1: Creating database and using dict methods...")
-        db1 = DictSQLiteV4(db_path, persist_mode="lazy")
+        db1 = DictSQLiteV4(db_path, persist_mode="lazy", storage_mode="bytes")
         
         # Use various dict methods
         db1.update({"key1": b"value1", "key2": b"value2"})
@@ -198,7 +198,7 @@ def test_dict_compatibility_with_persistence():
         db1.close()
         
         print("\nStep 3: Reopening and verifying all methods work...")
-        db2 = DictSQLiteV4(db_path, persist_mode="lazy")
+        db2 = DictSQLiteV4(db_path, persist_mode="lazy", storage_mode="bytes")
         
         # Test items()
         items = dict(db2.items())

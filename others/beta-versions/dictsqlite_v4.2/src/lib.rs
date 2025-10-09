@@ -625,8 +625,26 @@ impl DictSQLiteV4 {
 
     /// Delete key
     fn delete(&self, key: String) -> PyResult<()> {
+        // Track that we're removing this
+        self.access_tracker.lock().unwrap().pop(&key);
+        
+        // Remove from hot tier
         self.hot_tier.remove(&key);
-        // TODO: Also remove from warm/cold tiers
+        
+        // Remove from write buffer (v4.2)
+        if self.config.persist_mode == PersistMode::WriteThrough {
+            let mut buffer = self.write_buffer.lock().unwrap();
+            buffer.retain(|(k, _)| k != &key);
+        }
+        
+        // Also remove from storage
+        if self.config.persist_mode != PersistMode::Memory {
+            let mut storage_guard = self.storage.lock().unwrap();
+            if let Some(ref mut storage) = *storage_guard {
+                let _ = storage.delete(&key);
+            }
+        }
+        
         Ok(())
     }
 
@@ -642,28 +660,65 @@ impl DictSQLiteV4 {
 
     /// Get all keys
     fn keys(&self, _py: Python) -> PyResult<Vec<String>> {
-        let keys: Vec<String> = self
+        use std::collections::HashSet;
+        
+        // Collect keys from hot tier
+        let mut all_keys: HashSet<String> = self
             .hot_tier
             .iter()
             .map(|entry| entry.key().clone())
             .collect();
-        Ok(keys)
+        
+        // Also get keys from storage if not in memory-only mode
+        if self.config.persist_mode != PersistMode::Memory {
+            let storage_guard = self.storage.lock().unwrap();
+            if let Some(ref storage) = *storage_guard {
+                if let Ok(storage_keys) = storage.keys() {
+                    all_keys.extend(storage_keys);
+                }
+            }
+        }
+        
+        Ok(all_keys.into_iter().collect())
     }
 
     /// Get all items as (key, value) tuples (dict-compatible)
     fn items(&self, py: Python) -> PyResult<Vec<(String, PyObject)>> {
-        let items: Vec<(String, PyObject)> = self
-            .hot_tier
-            .iter()
-            .map(|entry| {
-                let value = if let Some(ref crypto) = self.crypto {
+        use std::collections::HashMap;
+        
+        // First, get all items from storage
+        let mut all_items: HashMap<String, Vec<u8>> = HashMap::new();
+        
+        if self.config.persist_mode != PersistMode::Memory {
+            let storage_guard = self.storage.lock().unwrap();
+            if let Some(ref storage) = *storage_guard {
+                if let Ok(keys) = storage.keys() {
+                    for key in keys {
+                        if let Ok(Some(value)) = storage.get(&key) {
+                            all_items.insert(key, value);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Then overlay with hot tier items (which take precedence)
+        for entry in self.hot_tier.iter() {
+            all_items.insert(entry.key().clone(), entry.value().clone());
+        }
+        
+        // Convert to Python objects
+        let items: Vec<(String, PyObject)> = all_items
+            .into_iter()
+            .map(|(key, value)| {
+                let data = if let Some(ref crypto) = self.crypto {
                     crypto
-                        .decrypt(entry.value())
-                        .unwrap_or_else(|_| entry.value().clone())
+                        .decrypt(&value)
+                        .unwrap_or_else(|_| value.clone())
                 } else {
-                    entry.value().clone()
+                    value
                 };
-                (entry.key().clone(), PyBytes::new(py, &value).into())
+                (key, PyBytes::new(py, &data).into())
             })
             .collect();
         Ok(items)
@@ -671,18 +726,41 @@ impl DictSQLiteV4 {
 
     /// Get all values (dict-compatible)
     fn values(&self, py: Python) -> PyResult<Vec<PyObject>> {
-        let values: Vec<PyObject> = self
-            .hot_tier
-            .iter()
-            .map(|entry| {
-                let value = if let Some(ref crypto) = self.crypto {
+        use std::collections::HashMap;
+        
+        // First, get all items from storage
+        let mut all_items: HashMap<String, Vec<u8>> = HashMap::new();
+        
+        if self.config.persist_mode != PersistMode::Memory {
+            let storage_guard = self.storage.lock().unwrap();
+            if let Some(ref storage) = *storage_guard {
+                if let Ok(keys) = storage.keys() {
+                    for key in keys {
+                        if let Ok(Some(value)) = storage.get(&key) {
+                            all_items.insert(key, value);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Then overlay with hot tier items (which take precedence)
+        for entry in self.hot_tier.iter() {
+            all_items.insert(entry.key().clone(), entry.value().clone());
+        }
+        
+        // Convert to Python objects
+        let values: Vec<PyObject> = all_items
+            .into_values()
+            .map(|value| {
+                let data = if let Some(ref crypto) = self.crypto {
                     crypto
-                        .decrypt(entry.value())
-                        .unwrap_or_else(|_| entry.value().clone())
+                        .decrypt(&value)
+                        .unwrap_or_else(|_| value.clone())
                 } else {
-                    entry.value().clone()
+                    value
                 };
-                PyBytes::new(py, &value).into()
+                PyBytes::new(py, &data).into()
             })
             .collect();
         Ok(values)
@@ -775,12 +853,46 @@ impl DictSQLiteV4 {
 
     /// Get number of items in hot tier
     fn len(&self) -> PyResult<usize> {
-        Ok(self.hot_tier.len())
+        use std::collections::HashSet;
+        
+        // Collect all unique keys
+        let mut all_keys: HashSet<String> = self
+            .hot_tier
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect();
+        
+        // Also get keys from storage if not in memory-only mode
+        if self.config.persist_mode != PersistMode::Memory {
+            let storage_guard = self.storage.lock().unwrap();
+            if let Some(ref storage) = *storage_guard {
+                if let Ok(storage_keys) = storage.keys() {
+                    all_keys.extend(storage_keys);
+                }
+            }
+        }
+        
+        Ok(all_keys.len())
     }
 
     /// Check if key exists
     fn contains(&self, key: String) -> PyResult<bool> {
-        Ok(self.hot_tier.contains_key(&key))
+        // First check hot tier
+        if self.hot_tier.contains_key(&key) {
+            return Ok(true);
+        }
+        
+        // Then check storage
+        if self.config.persist_mode != PersistMode::Memory {
+            let storage_guard = self.storage.lock().unwrap();
+            if let Some(ref storage) = *storage_guard {
+                if let Ok(Some(_)) = storage.get(&key) {
+                    return Ok(true);
+                }
+            }
+        }
+        
+        Ok(false)
     }
 
     /// Clear all data
