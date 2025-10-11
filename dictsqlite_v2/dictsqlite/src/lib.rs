@@ -893,7 +893,25 @@ impl DictSQLiteV4 {
 
     /// Clear all data
     fn clear(&self) -> PyResult<()> {
+        // Clear hot tier (in-memory cache)
         self.hot_tier.clear();
+        
+        // Clear write buffer to prevent pending writes from re-populating the database
+        self.write_buffer.lock().unwrap().clear();
+        
+        // Clear storage if not in memory-only mode
+        if self.config.persist_mode != PersistMode::Memory {
+            let mut storage_guard = self.storage.lock().unwrap();
+            if let Some(ref mut storage) = *storage_guard {
+                storage.clear().map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                        "Failed to clear storage: {}",
+                        e
+                    ))
+                })?;
+            }
+        }
+        
         Ok(())
     }
 
