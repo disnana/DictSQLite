@@ -223,6 +223,10 @@ class DictSQLite:
         """Clear all data"""
         self._db.clear()
 
+    def table(self, table_name):
+        """Get a table proxy for accessing a specific table"""
+        return self._db.table(table_name)
+
     def bulk_insert(self, items):
         """Bulk insert items - uses __setitem__ for proper serialization"""
         if isinstance(items, dict):
