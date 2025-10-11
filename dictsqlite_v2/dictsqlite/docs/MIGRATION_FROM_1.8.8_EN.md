@@ -93,7 +93,7 @@ Detailed migration steps
 
 Edge cases and incompatibilities
 --------------------------------
-- If you have custom lower-level on-disk formats, or used direct SQL access into the underlying sqlite tables, verify table schema and storage_mode because v4 may format values differently (pickle vs raw bytes vs jsonb columns).
+- If you have custom lower-level on-disk formats, or used direct SQL access into the underlying sqlite tables, verify table schema and storage_mode because the current wrapper may format values differently (pickle vs raw bytes vs jsonb columns).
 - If you used `password` for encryption and opened existing encrypted DBs, the rename to `encryption_password` is only a parameter name change — the underlying crypto is compatible if the same password is used.
 - Safe Pickle: enabling it may reject objects that previously succeeded; update `safe_pickle_allowed_modules` or avoid enabling if you need full compatibility.
 
@@ -107,7 +107,7 @@ If you see a RuntimeError about the native extension not being available, build 
 
 Run tests and examples
 ----------------------
-- Examples: `dictsqlite_v2/dictsqlite/examples/` includes migration samples (e.g. `v4.2_migration_example.py`). Run them to verify behavior.
+- Examples: `dictsqlite_v2/dictsqlite/examples/` includes migration samples (e.g. `v4.2_migration_example.py`). Run them to verify behavior (note: some example filenames include the internal 'v4' label but the examples target the current wrapper API).
 - Tests: run pytest in the python wrapper directory to validate your environment. Example:
 
     cd dictsqlite_v2/dictsqlite/python
