@@ -1,22 +1,25 @@
-Migration guide: DictSQLite v1.8.8 -> v4.x (English)
+Migration guide: DictSQLite v1.8.8 -> current wrapper (internal 'v4' label) (English)
 
 Purpose
 -------
-This document helps you migrate code and data written against DictSQLite v1.8.8 to the new v4.x Python wrapper present in this tree. The goal is minimal friction: v4 defaults aim to be compatible with v1.8.8 when possible (default storage_mode is 'pickle').
+This document helps you migrate code and data written against DictSQLite v1.8.8 to the new current Python wrapper present in this tree. The goal is minimal friction: the current wrapper's defaults aim to be compatible with v1.8.8 when possible (default storage_mode is 'pickle').
 
 Summary of important changes
 ----------------------------
-- The canonical Python wrapper in this package exposes `DictSQLite` (notably examples may show `DictSQLiteV4`). The `V4` suffix is optional — your code may import `DictSQLite` directly. Example:
+- Python wrapper exposes `DictSQLite`. Examples that previously showed `DictSQLiteV4` should just `from dictsqlite import DictSQLite`.
 
-    # Preferred (recommended in docs)
+    # Recommended (examples used in docs)
     from dictsqlite import DictSQLite
 
-    # If your code (or examples) show DictSQLiteV4, treat it as the same implementation:
+    # If your code (or examples) show DictSQLiteV4, treat it as the same implementation (optional alias):
+
+    ```
     from dictsqlite import DictSQLiteV4 as DictSQLite
+    ```
 
 - Constructor parameter rename for encryption:
     - v1.8.8: `password='mypw'`
-    - v4.x: `encryption_password='mypw'`
+    - current wrapper: `encryption_password='mypw'`
 
 - Default serialization (storage_mode) is `pickle`. This preserves behavior of storing Python objects without explicit pickle.dumps/loads in many cases.
 
@@ -45,7 +48,7 @@ Detailed migration steps
        # v1.8.8
        db = DictSQLite('secrets.db', password='my_password')
 
-       # v4.x
+       # current wrapper
        db = DictSQLite('secrets.db', encryption_password='my_password')
 
    - Verify that `stats()['encryption_enabled']` returns True after opening.
@@ -125,14 +128,14 @@ Appendix: quick code map (old -> new)
 ------------------------------------
 - Constructor
     v1.8.8: `DictSQLite(path, password='pw')`
-    v4.x:    `DictSQLite(path, encryption_password='pw')`
+    current wrapper:    `DictSQLite(path, encryption_password='pw')`
 
 - Bulk writes
     v1.8.8: loop assignments
-    v4.x:    prefer `bulk_insert()` or async batch APIs
+    current wrapper:    prefer `bulk_insert()` or async batch APIs
 
 - Async API
     v1.x: helper/wrapper functions
-    v4.x: `AsyncDictSQLite` with `aget`/`aset` awaitable methods
+    current wrapper: `AsyncDictSQLite` with `aget`/`aset` awaitable methods
 
 If you want, I can also generate a small migration script that detects common patterns and prints suggested replacements for your codebase. Just tell me whether you'd like a draft script or more examples.
