@@ -1,4 +1,7 @@
-# DictSQLite
+> **BETA / ベータ版:** このドキュメントは DictSQLite v2 のベータ版に対応しています。機能やドキュメントの場所は変更される可能性があります。
+
+> BETA: This document corresponds to the beta version of DictSQLite v2. Features and documentation may be subject to change.
+# DictSQLite Version 2（Beta）
 
 ## English Version  
 (日本語のREADMEは下にあります)
