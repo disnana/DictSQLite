@@ -5,8 +5,8 @@ High-performance wrapper with enhanced security features
 """
 
 try:
-    from dictsqlite import DictSQLiteV4 as _NativeDictSQLiteV4
-    from dictsqlite import AsyncDictSQLite as _NativeAsyncDictSQLite
+    from dictsqlite._native import DictSQLiteV4 as _NativeDictSQLiteV4
+    from dictsqlite._native import AsyncDictSQLite as _NativeAsyncDictSQLite
     _NATIVE_AVAILABLE = True
 except ImportError:
     _NATIVE_AVAILABLE = False
