@@ -55,12 +55,12 @@ Detailed migration steps
 
 3) Serialization / storage_mode
    - Default `storage_mode='pickle'` preserves many existing workflows. If your old code stored pickled bytes manually, be aware that:
-     - When you used to store raw pickled bytes, the wrapper in v4 may still return bytes; you can use `pickle.loads()` to decode.
+     - When you used to store raw pickled bytes, the current wrapper may still return bytes; you can use `pickle.loads()` to decode.
      - If you rely on non-pickled JSONB formats, set `storage_mode='jsonb'` explicitly when opening.
 
 4) Safe Pickle
    - If you want to enable safer decoding for untrusted data, set `enable_safe_pickle=True` and optionally set `safe_pickle_allowed_modules=['myapp']`.
-   - When enabled, v4 will validate pickled payloads and raise on suspicious objects.
+   - When enabled, the current wrapper will validate pickled payloads and raise on suspicious objects.
 
 5) Bulk operations and performance
    - For loops of db[key] = value still work and are buffered by default. For best throughput, use `bulk_insert(dict_or_iter)` which is optimized for large batches.
@@ -72,14 +72,14 @@ Detailed migration steps
 6) Async migration
    - If you used older async helpers, move to the new awaitable API:
 
-       # v4.x
+       # current wrapper
        from dictsqlite import AsyncDictSQLite
        async def main():
            db = AsyncDictSQLite(':memory:')
            await db.aset('k', {'x': 1})
            v = await db.aget('k')
 
-   - If you have synchronous callsites that relied on the pre-v4 wrappers, the v4 async class still provides `get`/`set` sync wrappers, but migrating to awaitable methods is recommended.
+   - If you have synchronous callsites that relied on older wrappers, the async class provided by the current wrapper still provides `get`/`set` sync wrappers, but migrating to awaitable methods is recommended.
 
 7) Table / namespace usage
    - Use `db.table('other')` to access another table/namespace if your v1 code used multiple tables.
