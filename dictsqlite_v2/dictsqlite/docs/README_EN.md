@@ -12,11 +12,7 @@ This package contains an internal implementation version labeled "v4". That is a
 from dictsqlite import DictSQLite
 ```
 
-If you see `DictSQLiteV4` in examples, you can either import it directly or alias it to `DictSQLite` for compatibility:
-
-```python
-from dictsqlite import DictSQLiteV4 as DictSQLite
-```
+If you encounter examples that mention `DictSQLiteV4`, treat it as an implementation name; you can import it directly if present, or simply use the public `DictSQLite` exported by the package. (Avoid relying on `DictSQLiteV4` unless your installation exposes that symbol.)
 
 Quick usage (synchronous)
 -------------------------
@@ -48,10 +44,13 @@ with DictSQLite('app.db') as db:
 Async usage (awaitable)
 -----------------------
 ```python
-from dictsqlite import AsyncDictSQLite
+# If your installation exposes AsyncDictSQLite, import it. Some examples show
+# implementation-level names; the public `DictSQLite` class is the recommended import.
+# from dictsqlite import AsyncDictSQLite
 import asyncio
 
 async def main():
+    # Use AsyncDictSQLite if available in your environment
     db = AsyncDictSQLite(':memory:')
     await db.aset('k', 'value')
     v = await db.aget('k')

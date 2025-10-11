@@ -2,14 +2,21 @@ DictSQLite v4 — 使い方例（日本語）
 
 インポート（2通りの等価な書き方）
 --------------------------------
-# 推奨される公開 API 名
-from dictsqlite import DictSQLite
+推奨される公開 API 名:
 
-# 実装名を使った例（リポジトリ内の例に出てくることがある）
+```python
+from dictsqlite import DictSQLite
+```
+
+実装名を使った例（リポジトリ内の例に出てくることがある）:
+
+```python
 from dictsqlite import DictSQLiteV4 as DictSQLite
+```
 
 基本的な同期使用例
 -----------------
+```python
 from dictsqlite import DictSQLite
 
 db = DictSQLite(':memory:')
@@ -26,9 +33,11 @@ for k in db.keys():
     print(k, db[k])
 
 db.close()
+```
 
 暗号化の例
 ---------
+```python
 from dictsqlite import DictSQLite
 
 # encryption_password を指定して AES-256-GCM 暗号化を有効にする
@@ -43,9 +52,11 @@ db.close()
 db2 = DictSQLite('secure.db', encryption_password='my_password')
 print(db2['token'])
 db2.close()
+```
 
 一括挿入（bulk_insert）の例
 -------------------------
+```python
 from dictsqlite import DictSQLite
 
 db = DictSQLite(':memory:')
@@ -58,9 +69,11 @@ print('Inserted', len(list(db.keys())))
 
 # クリア
 db.clear()
+```
 
 非同期の例
 ---------
+```python
 import asyncio
 from dictsqlite import AsyncDictSQLite
 
@@ -71,9 +84,11 @@ async def async_demo():
     print('async get:', v)
 
 asyncio.run(async_demo())
+```
 
 Safe Pickle の例
 ----------------
+```python
 from dictsqlite import DictSQLite
 
 # enable_safe_pickle を使うと unpickle の検証が入る
@@ -90,17 +105,17 @@ if isinstance(val, (bytes, bytearray)):
         # 生のバイト列として扱う
         pass
 
-テーブルプロキシ
---------------
+# テーブルプロキシ
 other = db.table('other_table')
 # テーブルプロキシ上でも多くの同様の API を使える
 
-統計とフラッシュ
----------------
+# 統計とフラッシュ
 print(db.stats())
 db.flush()
 
+# 閉じる
 db.close()
+```
 
 備考
 ---
