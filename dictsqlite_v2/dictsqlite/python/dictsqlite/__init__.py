@@ -31,26 +31,26 @@ except Exception:
 logger = logging.getLogger(__name__)
 
 
-class DictSQLiteV4:
+class DictSQLite:
     """
     High-performance DictSQLite v4.0 with security features
-    
+
     Features:
     - 100M+ ops/sec with lock-free concurrent hashmap
     - Optional AES-256-GCM encryption
     - Optional Safe Pickle validation
     - SQL injection protection
-    
+
     Compatible with DictSQLite v1/v2/v3 API:
     - Dict-like operations: `db['key'] = 'value'`, `db.get('key')`, etc.
-    - Context manager support: `with DictSQLiteV4(...) as db:`
+    - Context manager support: `with DictSQLite(...) as db:`
     - Iteration: `for key in db.keys():`
     """
-    
+
     def __init__(
-        self, 
-        db_path, 
-        hot_capacity=1_000_000, 
+        self,
+        db_path,
+        hot_capacity=1_000_000,
         enable_async=True,
         persist_mode="writethrough",
         storage_mode="pickle",
@@ -63,7 +63,7 @@ class DictSQLiteV4:
     ):
         """
         Initialize DictSQLite v4.0
-        
+
         Args:
             db_path: Path to database file
             hot_capacity: Maximum entries in hot tier (in-memory)
@@ -84,11 +84,11 @@ class DictSQLiteV4:
                 "DictSQLite native extension not available. "
                 "Please build it using: cd dictsqlite && maturin build --release"
             )
-        
+
         self._encoding = encoding
         self._db = _NativeDictSQLiteV4(
-            db_path, 
-            hot_capacity, 
+            db_path,
+            hot_capacity,
             enable_async,
             persist_mode,
             storage_mode,
@@ -109,10 +109,10 @@ class DictSQLiteV4:
         else:
             self._safe_pickle_allowed_modules = tuple(safe_pickle_allowed_modules)
         self._closed = False
-    
+
     def __getitem__(self, key):
         """Get value by key
-        
+
         Note: This method is overridden by Rust implementation.
         When safe_pickle is enabled, the Rust side automatically unpickles
         the data using safe_loads for validation.
@@ -124,7 +124,7 @@ class DictSQLiteV4:
         # This code is not actually executed - Rust __getitem__ takes precedence
         # Kept for documentation purposes
         return result
-    
+
     def __setitem__(self, key, value):
         """Set value for key - automatically converts strings and objects"""
         logger.debug(f"__setitem__ called with key={key}, value type={type(value)}")
@@ -151,19 +151,19 @@ class DictSQLiteV4:
                 raise
 
         self._db.set(str(key), value)
-    
+
     def __delitem__(self, key):
         """Delete key"""
         self._db.delete(str(key))
-    
+
     def __contains__(self, key):
         """Check if key exists"""
         return self._db.contains(str(key))
-    
+
     def __len__(self):
         """Get number of entries"""
         return self._db.len()
-    
+
     def get(self, key, default=None):
         """Get value with default"""
         # Convert default to bytes if needed
@@ -187,18 +187,18 @@ class DictSQLiteV4:
             except Exception:
                 return result
         return result
-    
+
     def keys(self):
         """Get all keys"""
         return self._db.keys()
-    
+
     def values(self):
         """Get all values"""
         vals = [self._db.get(k, None) for k in self.keys()]
         # When safe_pickle enabled, return raw bytes (no auto-unpickle)
         if self._enable_safe_pickle:
             return vals
-        
+
         # Otherwise try decode bytes to string where possible
         out = []
         for v in vals:
@@ -210,14 +210,14 @@ class DictSQLiteV4:
             else:
                 out.append(v)
         return out
-    
+
     def items(self):
         """Get all items as (key, value) tuples"""
         items = [(k, self._db.get(k, None)) for k in self.keys()]
         # When safe_pickle enabled, return raw bytes (no auto-unpickle)
         if self._enable_safe_pickle:
             return items
-        
+
         # Otherwise try decode bytes to string
         out = []
         for k, v in items:
@@ -229,7 +229,7 @@ class DictSQLiteV4:
             else:
                 out.append((k, v))
         return out
-    
+
     def update(self, other=None, **kwargs):
         """Update from dict or kwargs"""
         if other is not None:
@@ -241,13 +241,13 @@ class DictSQLiteV4:
                     self[key] = value
         for key, value in kwargs.items():
             self[key] = value
-    
+
     def setdefault(self, key, default=None):
         """Set default if key doesn't exist"""
         if key not in self:
             self[key] = default
         return self[key]
-    
+
     def pop(self, key, *default):
         """Remove and return value"""
         try:
@@ -258,28 +258,29 @@ class DictSQLiteV4:
             if default:
                 return default[0]
             raise
-    
+
     def __iter__(self):
         """Iterate over keys"""
         return iter(self.keys())
-    
+
     def __repr__(self):
         """String representation: show all dict-like contents"""
         try:
             items = dict(self.items())
-            return f"<DictSQLiteV4 {items} >"
+            return repr(items)
         except Exception as e:
-            return f"<DictSQLiteV4 (error in __repr__): {e}>"
-    
+            # logger.warning("")
+            return repr({})
+
     def clear(self):
         """Clear all data"""
         self._db.clear()
-    
+
     def bulk_insert(self, items):
         """Bulk insert items (optimized) - automatically converts strings and objects"""
         if isinstance(items, dict):
             items = items.items()
-        
+
         prepared = {}
         for key, value in items:
             if isinstance(value, str):
@@ -288,32 +289,32 @@ class DictSQLiteV4:
                 import pickle
                 value = pickle.dumps(value)
             prepared[str(key)] = value
-        
+
         self._db.bulk_insert(prepared)
-    
+
     def stats(self):
         """Get performance statistics"""
         return self._db.stats()
-    
+
     def flush(self):
         """Flush hot tier to storage"""
         self._db.flush()
-    
+
     def close(self):
         """Close database and flush all data"""
         if not self._closed:
             self.flush()
             self._closed = True
-    
+
     def __enter__(self):
         """Context manager entry"""
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - ensure data is flushed"""
         self.close()
         return False
-    
+
     def __del__(self):
         """Destructor - ensure data is flushed"""
         if not self._closed:
@@ -326,27 +327,27 @@ class DictSQLiteV4:
 class AsyncDictSQLite:
     """
     Async version of DictSQLite v4.0 for high-concurrency scenarios
-    
+
     This class now provides true asyncio support with awaitable methods.
-    
+
     New async methods (awaitable):
         - async aget(key): Get value asynchronously
         - async aset(key, value): Set value asynchronously
         - async abatch_get(keys): Batch get asynchronously
         - async abatch_set(items): Batch set asynchronously
-    
+
     Backward-compatible sync methods:
         - get(key): Get value (synchronous wrapper)
         - set(key, value): Set value (synchronous wrapper)
         - batch_get(keys): Batch get (synchronous wrapper)
         - batch_set(items): Batch set (synchronous wrapper)
     """
-    
-    def __init__(self, db_path, capacity=1_000_000, persist_mode="lazy", 
+
+    def __init__(self, db_path, capacity=1_000_000, persist_mode="lazy",
                  storage_mode="pickle", table_name="main", buffer_size=100):
         """
         Initialize Async DictSQLite
-        
+
         Args:
             db_path: Path to database file
             capacity: Maximum entries in cache
@@ -360,27 +361,27 @@ class AsyncDictSQLite:
                 "DictSQLite v4.0 native extension not available. "
                 "Please build it using: cd dictsqlite_v4 && maturin build --release"
             )
-        
+
         self._db = _NativeAsyncDictSQLite(
             db_path, capacity, persist_mode, storage_mode, table_name, buffer_size
         )
-    
+
     # New awaitable async methods
     async def aget(self, key):
         """Get value asynchronously (awaitable)
-        
+
         Args:
             key: Key to retrieve
-            
+
         Returns:
             Value as bytes, or None if not found
         """
         result = await self._db.aget(str(key))
         return result
-    
+
     async def aset(self, key, value):
         """Set value asynchronously (awaitable)
-        
+
         Args:
             key: Key to set
             value: Value to store (will be converted to bytes if needed)
@@ -391,27 +392,27 @@ class AsyncDictSQLite:
             import pickle
             value = pickle.dumps(value)
         await self._db.aset(str(key), value)
-    
+
     async def abatch_get(self, keys):
         """Batch get values asynchronously (awaitable)
-        
+
         Args:
             keys: List of keys to retrieve
-            
+
         Returns:
             List of values (or None for missing keys)
         """
         return await self._db.abatch_get([str(k) for k in keys])
-    
+
     async def abatch_set(self, items):
         """Batch set values asynchronously (awaitable)
-        
+
         Args:
             items: List of (key, value) tuples or dict
         """
         if isinstance(items, dict):
             items = items.items()
-        
+
         prepared = []
         for key, value in items:
             if isinstance(value, str):
@@ -420,14 +421,14 @@ class AsyncDictSQLite:
                 import pickle
                 value = pickle.dumps(value)
             prepared.append((str(key), value))
-        
+
         await self._db.abatch_set(prepared)
-    
+
     # Backward-compatible synchronous methods
     def get(self, key):
         """Get value (synchronous wrapper for backward compatibility)"""
         return self._db.get_async(str(key))
-    
+
     def set(self, key, value):
         """Set value (synchronous wrapper for backward compatibility)"""
         if isinstance(value, str):
@@ -436,11 +437,11 @@ class AsyncDictSQLite:
             import pickle
             value = pickle.dumps(value)
         self._db.set_async(str(key), value)
-    
+
     def batch_get(self, keys):
         """Batch get (synchronous wrapper for backward compatibility)"""
         return self._db.batch_get([str(k) for k in keys])
-    
+
     def batch_set(self, items):
         """Batch set (synchronous wrapper for backward compatibility)"""
         prepared = []
@@ -451,53 +452,53 @@ class AsyncDictSQLite:
                 import pickle
                 value = pickle.dumps(value)
             prepared.append((str(key), value))
-        
+
         self._db.batch_set(prepared)
-    
+
     def stats(self):
         """Get cache statistics"""
         size, capacity = self._db.stats()
         return {"size": size, "capacity": capacity}
-    
+
     def flush(self):
         """Flush cached data to storage"""
         self._db.flush()
-    
+
     def close(self):
         """Close database and flush data"""
         self._db.close()
-    
+
     def clear(self):
         """Clear all data"""
         self._db.clear()
-    
+
     # Dict-like interface (synchronous)
     def __getitem__(self, key):
         """Get value by key"""
         return self._db.__getitem__(str(key))
-    
+
     def __setitem__(self, key, value):
         """Set value for key"""
         self._db.__setitem__(str(key), value)
-    
+
     def table(self, table_name):
         """Get a table proxy for accessing a specific table"""
         return self._db.table(table_name)
-    
+
     # Context manager support
     def __enter__(self):
         """Context manager entry"""
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - ensure data is flushed"""
         self.close()
         return False
-    
+
     async def __aenter__(self):
         """Async context manager entry"""
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit"""
         self.close()
@@ -510,7 +511,7 @@ def is_native_available():
 
 
 __all__ = [
-    'DictSQLiteV4',
+    'DictSQLite',
     'AsyncDictSQLite',
     'is_native_available',
 ]
