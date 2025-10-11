@@ -1,8 +1,8 @@
-移行ガイド: DictSQLite v1.8.8 → v4.x（日本語）
+移行ガイド: DictSQLite v1.8.8 → 現在のラッパー（内部ラベル 'v4' 相当）（日本語）
 
 目的
 ----
-このドキュメントは DictSQLite v1.8.8 で書かれたコードやデータを、このリポジトリにある v4.x の Python ラッパーに移行する際の手順と注意点をまとめたものです。v4 のデフォルトはできる限り v1.8.8 と互換性（デフォルト storage_mode='pickle'）を保つようになっています。
+このドキュメントは DictSQLite v1.8.8 で書かれたコードやデータを、このリポジトリにある現在の Python ラッパーに移行する際の手順と注意点をまとめたものです。ラッパーのデフォルトはできる限り v1.8.8 と互換性（デフォルト storage_mode='pickle'）を保つようになっています。
 
 重要な変更点（要約）
 ------------------
@@ -11,16 +11,19 @@
     # 推奨（ドキュメントで使う例）
     from dictsqlite import DictSQLite
 
-    # もし既存コードや例が DictSQLiteV4 を使っている場合
+    # もし既存コードや例が DictSQLiteV4 を使っている場合（任意のエイリアスの例）
+
+    ```
     from dictsqlite import DictSQLiteV4 as DictSQLite
+    ```
 
 - 暗号化用のコンストラクタ引数名が変更されました:
     - v1.8.8: `password='mypw'`
-    - v4.x:    `encryption_password='mypw'`
+    - 現在のラッパー:    `encryption_password='mypw'`
 
 - デフォルトのシリアライズ方式は `storage_mode='pickle'` で、多くの Python オブジェクトを明示的な pickle.dumps/loads なしに扱えます。
 
-- 非同期 API は awaitable メソッド (`aget`, `aset`, `abatch_get`, `abatch_set`) を持つ `AsyncDictSQLite` に変更されました。互換性のために同期ラッパー (`get`, `set`, `batch_get`, `batch_set`) も残されています。
+- 非同期 API は awaitable メソッド（`aget`, `aset`, `abatch_get`, `abatch_set`）を持つ `AsyncDictSQLite` に変更されました。互換性のために同期ラッパー（`get`, `set`, `batch_get`, `batch_set`）も残されています。
 
 - Safe Pickle 機能が追加され、`enable_safe_pickle=True` とし `safe_pickle_allowed_modules` で許可モジュールを制限できます。
 
@@ -46,7 +49,7 @@
        # v1.8.8
        db = DictSQLite('secrets.db', password='my_password')
 
-       # v4.x
+       # 現在のラッパー
        db = DictSQLite('secrets.db', encryption_password='my_password')
 
    - 同じパスワードを使用すれば、既存の暗号化データベースを開けるはずです。
@@ -130,4 +133,3 @@
 - 非同期 API
     v1.x: 独自のヘルパ
     v4.x: `AsyncDictSQLite` の `aget`/`aset` を使用
-
