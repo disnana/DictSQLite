@@ -57,7 +57,7 @@
 
 3) シリアライズ動作（storage_mode）
    - デフォルトの `storage_mode='pickle'` は v1.8.8 と互換性を意図しています。
-   - もし以前に手動で pickle.dumps() して保存していた場合、v4 のラッパーがバイトを返すことがあるため、`pickle.loads()` を使って復元してください。
+   - もし以前に手動で pickle.dumps() して保存していた場合、現在のラッパーがバイトを返すことがあるため、`pickle.loads()` を使って復元してください。
    - JSONB や別フォーマットを使っていた場合は `storage_mode='jsonb'` を明示してください。
 
 4) Safe Pickle の導入
@@ -93,7 +93,7 @@
 
 互換性問題と注意点
 -------------------
-- 直接 sqlite テーブルに対して SQL を投げていた場合や、オンディスクフォーマットに依存している場合は注意してください。v4 は値を pickle や jsonb などで内部格納するため、スキーマやバイナリレイアウトが変わる可能性があります。
+- 直接 sqlite テーブルに対して SQL を投げていた場合や、オンディスクフォーマットに依存している場合は注意してください。現在のラッパーは値を pickle や jsonb などで内部格納するため、スキーマやバイナリレイアウトが変わる可能性があります。
 - `password` -> `encryption_password` はパラメータ名の変更だけなので、同じパスワードを使えば既存の暗号DBを開けるはずです。
 - Safe Pickle を有効にすると従来動いていた unpickle が失敗するケースがあります。必要に応じて `safe_pickle_allowed_modules` を調整してください。
 
@@ -107,7 +107,7 @@
 
 テストと例の実行
 ----------------
-- 例: `dictsqlite_v2/dictsqlite/examples/v4.2_migration_example.py` に移行サンプルがあります。実行して振る舞いを確認できます。
+- 例: `dictsqlite_v2/dictsqlite/examples/v4.2_migration_example.py` に移行サンプルがあります。実行して振る舞いを確認できます（ファイル名に内部ラベル 'v4' を含む場合がありますが、例の内容は現在のラッパー向けです）。
 - テスト: python wrapper ディレクトリで pytest を実行して環境の妥当性を確認してください。
 
     cd dictsqlite_v2/dictsqlite/python
@@ -128,8 +128,8 @@
 ---------------------------
 - コンストラクタ
     v1.8.8: `DictSQLite(path, password='pw')`
-    v4.x:    `DictSQLite(path, encryption_password='pw')`
+    現在のラッパー:    `DictSQLite(path, encryption_password='pw')`
 
 - 非同期 API
     v1.x: 独自のヘルパ
-    v4.x: `AsyncDictSQLite` の `aget`/`aset` を使用
+    現在のラッパー: `AsyncDictSQLite` の `aget`/`aset` を使用
