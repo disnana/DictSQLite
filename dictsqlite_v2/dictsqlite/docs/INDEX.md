@@ -1,16 +1,16 @@
-DictSQLite v4 — Docs Index / ドキュメント目次
+DictSQLite — Docs Index / ドキュメント目次
 
 English
 -------
 - README_EN.md — Quick start and overview (English)
 - EXAMPLES_EN.md — Practical examples: sync/async/encryption/bulk
-- MIGRATION_FROM_1.8.8_EN.md — Migration guide from v1.8.8 to v4.x (English)
+- MIGRATION_FROM_1.8.8_EN.md — Migration guide from v1.8.8 to the current wrapper (see note)
 
 日本語
 -----
 - README_JP.md — クイックスタート（日本語）
 - EXAMPLES_JP.md — 実用例: 同期/非同期/暗号化/一括挿入
-- MIGRATION_FROM_1.8.8_JP.md — v1.8.8 から v4.x への移行ガイド（日本語）
+- MIGRATION_FROM_1.8.8_JP.md — v1.8.8 から現在のラッパー（内部ラベル 'v4' 相当）への移行ガイド（日本語）
 
 Notes
 -----
