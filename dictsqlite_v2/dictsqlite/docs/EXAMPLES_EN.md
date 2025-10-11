@@ -1,4 +1,4 @@
-DictSQLite v4 — Examples (English)
+DictSQLite — Examples (English)
 
 Import (two equivalent styles)
 -----------------------------
@@ -10,7 +10,7 @@ from dictsqlite import DictSQLite
 
 If your environment or examples use the implementation name, it is equivalent:
 
-```python
+```
 from dictsqlite import DictSQLiteV4 as DictSQLite
 ```
 
