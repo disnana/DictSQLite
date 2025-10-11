@@ -210,6 +210,14 @@ class DictSQLite:
         """Iterate over keys"""
         return iter(self.keys())
 
+    def __eq__(self, other):
+        """Compare with dict or another DictSQLite instance"""
+        if isinstance(other, dict):
+            return dict(self.items()) == other
+        elif isinstance(other, DictSQLite):
+            return dict(self.items()) == dict(other.items())
+        return False
+
     def __repr__(self):
         """String representation: show all dict-like contents"""
         try:
