@@ -112,37 +112,27 @@ class DictSQLite:
 
     def __getitem__(self, key):
         """Get value by key
-
-        Note: This method is overridden by Rust implementation.
-        When safe_pickle is enabled, the Rust side automatically unpickles
-        the data using safe_loads for validation.
+        
+        This delegates to the Rust implementation which automatically unpickles
+        the data. When safe_pickle is enabled, the Rust side uses safe_loads
+        for validation.
         """
-        result = self._db.get(str(key), None)
-        if result is None:
-            raise KeyError(key)
-
-        # This code is not actually executed - Rust __getitem__ takes precedence
-        # Kept for documentation purposes
-        return result
+        # Call Rust's __getitem__ which properly deserializes the data
+        return self._db.__getitem__(str(key))
 
     def __setitem__(self, key, value):
-        """Set value for key - automatically converts strings and objects"""
+        """Set value for key - Rust handles serialization automatically"""
         logger.debug(f"__setitem__ called with key={key}, value type={type(value)}")
-        if isinstance(value, str):
-            value = value.encode(self._encoding)
-        elif not isinstance(value, (bytes, bytearray)):
+        
+        # If Safe Pickle is enabled, validate pickle-able values at write-time
+        # Only validate if value would be pickled (not strings in pickle mode)
+        if self._enable_safe_pickle and not isinstance(value, str):
             import pickle
-            value = pickle.dumps(value)
-
-        # If Safe Pickle is enabled, validate any bytes-like value that may be
-        # a pickled object. This rejects forbidden globals (e.g. os, subprocess)
-        # at write-time so tests expecting an exception on storing dangerous
-        # pickles pass.
-        if self._enable_safe_pickle and isinstance(value, (bytes, bytearray)):
-            logger.debug(f"Validating pickle data for key={key}")
+            # Try to pickle it to validate
             try:
+                pickled = pickle.dumps(value)
                 safe_pickle.safe_loads(
-                    value,
+                    pickled,
                     allowed_module_prefixes=self._safe_pickle_allowed_modules,
                 )
             except Exception:
@@ -150,7 +140,8 @@ class DictSQLite:
                 # Re-raise so callers/tests see an exception
                 raise
 
-        self._db.set(str(key), value)
+        # Let Rust handle all serialization
+        self._db.__setitem__(str(key), value)
 
     def __delitem__(self, key):
         """Delete key"""
@@ -166,27 +157,11 @@ class DictSQLite:
 
     def get(self, key, default=None):
         """Get value with default"""
-        # Convert default to bytes if needed
-        if default is not None:
-            if isinstance(default, str):
-                default = default.encode(self._encoding)
-            elif not isinstance(default, bytes):
-                import pickle
-                default = pickle.dumps(default)
-        result = self._db.get(str(key), default)
-        if result is None:
+        try:
+            # Use Rust's __getitem__ to properly deserialize
+            return self._db.__getitem__(str(key))
+        except KeyError:
             return default
-
-        # Same as __getitem__: when safe_pickle enabled, return raw bytes
-        # so caller can explicitly unpickle. Validation happens on write.
-        if isinstance(result, (bytes, bytearray)):
-            if self._enable_safe_pickle or result[:1] in (b'\x80', b'\x00'):
-                return result
-            try:
-                return result.decode(self._encoding)
-            except Exception:
-                return result
-        return result
 
     def keys(self):
         """Get all keys"""
@@ -194,41 +169,13 @@ class DictSQLite:
 
     def values(self):
         """Get all values"""
-        vals = [self._db.get(k, None) for k in self.keys()]
-        # When safe_pickle enabled, return raw bytes (no auto-unpickle)
-        if self._enable_safe_pickle:
-            return vals
-
-        # Otherwise try decode bytes to string where possible
-        out = []
-        for v in vals:
-            if isinstance(v, (bytes, bytearray)):
-                try:
-                    out.append(v.decode(self._encoding))
-                except Exception:
-                    out.append(v)
-            else:
-                out.append(v)
-        return out
+        # Use __getitem__ to properly deserialize each value
+        return [self[k] for k in self.keys()]
 
     def items(self):
         """Get all items as (key, value) tuples"""
-        items = [(k, self._db.get(k, None)) for k in self.keys()]
-        # When safe_pickle enabled, return raw bytes (no auto-unpickle)
-        if self._enable_safe_pickle:
-            return items
-
-        # Otherwise try decode bytes to string
-        out = []
-        for k, v in items:
-            if isinstance(v, (bytes, bytearray)):
-                try:
-                    out.append((k, v.decode(self._encoding)))
-                except Exception:
-                    out.append((k, v))
-            else:
-                out.append((k, v))
-        return out
+        # Use __getitem__ to properly deserialize each value
+        return [(k, self[k]) for k in self.keys()]
 
     def update(self, other=None, **kwargs):
         """Update from dict or kwargs"""
@@ -277,20 +224,12 @@ class DictSQLite:
         self._db.clear()
 
     def bulk_insert(self, items):
-        """Bulk insert items (optimized) - automatically converts strings and objects"""
+        """Bulk insert items - uses __setitem__ for proper serialization"""
         if isinstance(items, dict):
             items = items.items()
-
-        prepared = {}
+        
         for key, value in items:
-            if isinstance(value, str):
-                value = value.encode(self._encoding)
-            elif not isinstance(value, bytes):
-                import pickle
-                value = pickle.dumps(value)
-            prepared[str(key)] = value
-
-        self._db.bulk_insert(prepared)
+            self[key] = value
 
     def stats(self):
         """Get performance statistics"""
@@ -512,6 +451,10 @@ def is_native_available():
 
 __all__ = [
     'DictSQLite',
+    'DictSQLiteV4',  # Alias for backward compatibility
     'AsyncDictSQLite',
     'is_native_available',
 ]
+
+# Backward compatibility alias
+DictSQLiteV4 = DictSQLite
