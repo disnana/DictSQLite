@@ -12,11 +12,7 @@ DictSQLite は、ネイティブな高性能ストレージをバックエンド
 from dictsqlite import DictSQLite
 ```
 
-既存コードが `DictSQLiteV4` を使っている場合は下記のようにエイリアスして互換を保てます（任意）:
-
-```py
-from dictsqlite import DictSQLiteV4 as DictSQLite  # 任意のエイリアス
-```
+既存コードが `DictSQLiteV4` を使っている場合は下記のようにエイリアスして互換を保てます（任意）: `from dictsqlite import DictSQLiteV4 as DictSQLite`
 
 同期（基本）使用例
 ------------------

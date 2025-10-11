@@ -1,4 +1,4 @@
-DictSQLite v4 — Quick Start (English)
+DictSQLite — Quick Start (English)
 
 Overview
 --------
@@ -6,7 +6,7 @@ DictSQLite exposes a dict-like Python API backed by a high-performance native st
 
 Note about versioning
 ---------------------
-This package contains an internal implementation version labeled "v4". That is an internal versioning detail — when releasing this package it is published as version "v2". In documentation and examples you may see `DictSQLiteV4`; the "V4" suffix is an implementation name and is optional. The recommended public import is:
+This repository uses an internal implementation label "v4" in some places. That is an internal implementation label — the package may be published under a different release version. In documentation and examples you may see `DictSQLiteV4`; the "V4" suffix is an implementation name and is optional. The recommended public import is:
 
 ```python
 from dictsqlite import DictSQLite
@@ -96,7 +96,7 @@ Other useful methods
 
 Migration notes
 ---------------
-- v1.x used the parameter `password=` for encryption; v4 uses `encryption_password=`. See the migration guide for details.
+- v1.x used the parameter `password=` for encryption; the current wrapper uses `encryption_password=`. See the migration guide for details.
 - Default pickle-mode aims to be compatible with v1.8.8 so most objects should continue to work without manual `pickle.dumps`/`loads`.
 
 Troubleshooting: native extension not found

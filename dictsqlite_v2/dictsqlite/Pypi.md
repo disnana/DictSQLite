@@ -19,9 +19,17 @@ pip install dictsqlite
 
 ## Documentation
 
-* [Japanese Documentation](https://github.com/disnana/DictSQLite/blob/main/documents/japanese.md)
+* [Japanese Documentation](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/README_JP.md)
 
-* [English Documentation](https://github.com/disnana/DictSQLite/blob/main/documents/english.md)
+* [English Documentation](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/README_EN.md)
+
+### Additional Guides / 追加ガイド
+
+* [Index (目次)](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/INDEX.md)
+* [Examples — English (使用例 英語)](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/EXAMPLES_EN.md)
+* [Examples — 日本語 (使用例 日本語)](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/EXAMPLES_JP.md)
+* [Migration from 1.8.8 — English](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/MIGRATION_FROM_1.8.8_EN.md)
+* [Migration from 1.8.8 — 日本語](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/MIGRATION_FROM_1.8.8_JP.md)
 
 ## Author
 
@@ -59,9 +67,17 @@ pip install dictsqlite
 
 ## ドキュメント
 
-- [日本語のドキュメント](https://github.com/disnana/DictSQLite/blob/main/documents/japanese.md)
+- [日本語のドキュメント](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/README_JP.md)
 
-- [英語ドキュメント](https://github.com/disnana/DictSQLite/blob/main/documents/english.md)
+- [英語ドキュメント](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/README_EN.md)
+
+### ガイド / 追加リソース
+
+- [目次（INDEX）](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/INDEX.md)
+- [使用例（英語）](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/EXAMPLES_EN.md)
+- [使用例（日本語）](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/EXAMPLES_JP.md)
+- [1.8.8 からの移行（英語）](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/MIGRATION_FROM_1.8.8_EN.md)
+- [1.8.8 からの移行（日本語）](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/MIGRATION_FROM_1.8.8_JP.md)
 
 ## 著者
 

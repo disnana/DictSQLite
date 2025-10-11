@@ -1,22 +1,25 @@
-Migration guide: DictSQLite v1.8.8 -> v4.x (English)
+Migration guide: DictSQLite v1.8.8 -> current wrapper (internal 'v4' label) (English)
 
 Purpose
 -------
-This document helps you migrate code and data written against DictSQLite v1.8.8 to the new v4.x Python wrapper present in this tree. The goal is minimal friction: v4 defaults aim to be compatible with v1.8.8 when possible (default storage_mode is 'pickle').
+This document helps you migrate code and data written against DictSQLite v1.8.8 to the new current Python wrapper present in this tree. The goal is minimal friction: the current wrapper's defaults aim to be compatible with v1.8.8 when possible (default storage_mode is 'pickle').
 
 Summary of important changes
 ----------------------------
-- The canonical Python wrapper in this package exposes `DictSQLite` (notably examples may show `DictSQLiteV4`). The `V4` suffix is optional — your code may import `DictSQLite` directly. Example:
+- Python wrapper exposes `DictSQLite`. Examples that previously showed `DictSQLiteV4` should just `from dictsqlite import DictSQLite`.
 
-    # Preferred (recommended in docs)
+    # Recommended (examples used in docs)
     from dictsqlite import DictSQLite
 
-    # If your code (or examples) show DictSQLiteV4, treat it as the same implementation:
+    # If your code (or examples) show DictSQLiteV4, treat it as the same implementation (optional alias):
+
+    ```
     from dictsqlite import DictSQLiteV4 as DictSQLite
+    ```
 
 - Constructor parameter rename for encryption:
     - v1.8.8: `password='mypw'`
-    - v4.x: `encryption_password='mypw'`
+    - current wrapper: `encryption_password='mypw'`
 
 - Default serialization (storage_mode) is `pickle`. This preserves behavior of storing Python objects without explicit pickle.dumps/loads in many cases.
 
@@ -45,19 +48,19 @@ Detailed migration steps
        # v1.8.8
        db = DictSQLite('secrets.db', password='my_password')
 
-       # v4.x
+       # current wrapper
        db = DictSQLite('secrets.db', encryption_password='my_password')
 
    - Verify that `stats()['encryption_enabled']` returns True after opening.
 
 3) Serialization / storage_mode
    - Default `storage_mode='pickle'` preserves many existing workflows. If your old code stored pickled bytes manually, be aware that:
-     - When you used to store raw pickled bytes, the wrapper in v4 may still return bytes; you can use `pickle.loads()` to decode.
+     - When you used to store raw pickled bytes, the current wrapper may still return bytes; you can use `pickle.loads()` to decode.
      - If you rely on non-pickled JSONB formats, set `storage_mode='jsonb'` explicitly when opening.
 
 4) Safe Pickle
    - If you want to enable safer decoding for untrusted data, set `enable_safe_pickle=True` and optionally set `safe_pickle_allowed_modules=['myapp']`.
-   - When enabled, v4 will validate pickled payloads and raise on suspicious objects.
+   - When enabled, the current wrapper will validate pickled payloads and raise on suspicious objects.
 
 5) Bulk operations and performance
    - For loops of db[key] = value still work and are buffered by default. For best throughput, use `bulk_insert(dict_or_iter)` which is optimized for large batches.
@@ -69,14 +72,14 @@ Detailed migration steps
 6) Async migration
    - If you used older async helpers, move to the new awaitable API:
 
-       # v4.x
+       # current wrapper
        from dictsqlite import AsyncDictSQLite
        async def main():
            db = AsyncDictSQLite(':memory:')
            await db.aset('k', {'x': 1})
            v = await db.aget('k')
 
-   - If you have synchronous callsites that relied on the pre-v4 wrappers, the v4 async class still provides `get`/`set` sync wrappers, but migrating to awaitable methods is recommended.
+   - If you have synchronous callsites that relied on older wrappers, the async class provided by the current wrapper still provides `get`/`set` sync wrappers, but migrating to awaitable methods is recommended.
 
 7) Table / namespace usage
    - Use `db.table('other')` to access another table/namespace if your v1 code used multiple tables.
@@ -90,7 +93,7 @@ Detailed migration steps
 
 Edge cases and incompatibilities
 --------------------------------
-- If you have custom lower-level on-disk formats, or used direct SQL access into the underlying sqlite tables, verify table schema and storage_mode because v4 may format values differently (pickle vs raw bytes vs jsonb columns).
+- If you have custom lower-level on-disk formats, or used direct SQL access into the underlying sqlite tables, verify table schema and storage_mode because the current wrapper may format values differently (pickle vs raw bytes vs jsonb columns).
 - If you used `password` for encryption and opened existing encrypted DBs, the rename to `encryption_password` is only a parameter name change — the underlying crypto is compatible if the same password is used.
 - Safe Pickle: enabling it may reject objects that previously succeeded; update `safe_pickle_allowed_modules` or avoid enabling if you need full compatibility.
 
@@ -104,7 +107,7 @@ If you see a RuntimeError about the native extension not being available, build 
 
 Run tests and examples
 ----------------------
-- Examples: `dictsqlite_v2/dictsqlite/examples/` includes migration samples (e.g. `v4.2_migration_example.py`). Run them to verify behavior.
+- Examples: `dictsqlite_v2/dictsqlite/examples/` includes migration samples (e.g. `v4.2_migration_example.py`). Run them to verify behavior (note: some example filenames include the internal 'v4' label but the examples target the current wrapper API).
 - Tests: run pytest in the python wrapper directory to validate your environment. Example:
 
     cd dictsqlite_v2/dictsqlite/python
@@ -125,14 +128,14 @@ Appendix: quick code map (old -> new)
 ------------------------------------
 - Constructor
     v1.8.8: `DictSQLite(path, password='pw')`
-    v4.x:    `DictSQLite(path, encryption_password='pw')`
+    current wrapper:    `DictSQLite(path, encryption_password='pw')`
 
 - Bulk writes
     v1.8.8: loop assignments
-    v4.x:    prefer `bulk_insert()` or async batch APIs
+    current wrapper:    prefer `bulk_insert()` or async batch APIs
 
 - Async API
     v1.x: helper/wrapper functions
-    v4.x: `AsyncDictSQLite` with `aget`/`aset` awaitable methods
+    current wrapper: `AsyncDictSQLite` with `aget`/`aset` awaitable methods
 
 If you want, I can also generate a small migration script that detects common patterns and prints suggested replacements for your codebase. Just tell me whether you'd like a draft script or more examples.
