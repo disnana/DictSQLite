@@ -19,9 +19,9 @@ pip install dictsqlite
 
 ## Documentation
 
-* [Japanese Documentation](https://github.com/disnana/DictSQLite/blob/main/documents/japanese.md)
+* [Japanese Documentation](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/README_JP.md)
 
-* [English Documentation](https://github.com/disnana/DictSQLite/blob/main/documents/english.md)
+* [English Documentation](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/README_EN.md)
 
 ## Author
 
@@ -59,9 +59,9 @@ pip install dictsqlite
 
 ## ドキュメント
 
-- [日本語のドキュメント](https://github.com/disnana/DictSQLite/blob/main/documents/japanese.md)
+- [日本語のドキュメント](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/README_JP.md)
 
-- [英語ドキュメント](https://github.com/disnana/DictSQLite/blob/main/documents/english.md)
+- [英語ドキュメント](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/README_EN.md)
 
 ## 著者
 
