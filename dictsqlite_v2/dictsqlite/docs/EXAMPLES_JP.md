@@ -1,4 +1,4 @@
-DictSQLite v4 — 使い方例（日本語）
+DictSQLite — 使い方例（日本語）
 
 インポート（2通りの等価な書き方）
 --------------------------------
@@ -8,11 +8,9 @@ DictSQLite v4 — 使い方例（日本語）
 from dictsqlite import DictSQLite
 ```
 
-実装名を使った例（リポジトリ内の例に出てくることがある）:
+実装名を使った例はリポジトリ内に出てくることがありますが、サフィックスは任意です。例:
 
-```python
-from dictsqlite import DictSQLiteV4 as DictSQLite
-```
+`from dictsqlite import DictSQLiteV4 as DictSQLite`  # 実装名を明示したい場合のエイリアス（任意）
 
 基本的な同期使用例
 -----------------
@@ -75,9 +73,13 @@ db.clear()
 ---------
 ```python
 import asyncio
-from dictsqlite import AsyncDictSQLite
+# If your installation exposes AsyncDictSQLite, uncomment the import below
+# from dictsqlite import AsyncDictSQLite
 
 async def async_demo():
+    # If AsyncDictSQLite is available, create it like this:
+    # db = AsyncDictSQLite(':memory:')
+    # Otherwise, this example assumes an awaitable API is available on the async wrapper.
     db = AsyncDictSQLite(':memory:')
     await db.aset('k', {'a': 1})
     v = await db.aget('k')
@@ -120,4 +122,8 @@ db.close()
 備考
 ---
 - これらの例はネイティブ拡張がビルドされて利用可能であることを前提としています。RuntimeError でネイティブ拡張が無いと出る場合はビルド手順に従ってください。
-- リポジトリ内の例では `DictSQLiteV4` が登場することがありますが、公開 API としては `DictSQLite` を使うのが推奨です（V4 サフィックスは任意です）。
+- リポジトリ内の例では実装名 `DictSQLiteV4` が登場することがありますが、公開 API としては `DictSQLite` を使うのが推奨です。`DictSQLiteV4` を参照する既存コードがある場合は、下記のようにエイリアスして互換を保てます（任意）:
+
+```py
+from dictsqlite import DictSQLiteV4 as DictSQLite  # 任意のエイリアス
+```
