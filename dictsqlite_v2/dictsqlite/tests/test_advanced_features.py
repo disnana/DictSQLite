@@ -30,7 +30,7 @@ class TestEncryption:
     def test_encryption_basic(self):
         """基本的な暗号化"""
         with windows_safe_temp_db() as db_path:
-            password = "test_password_123"
+            password = "test_password_123"  # nosec B105 # Test password, not a real credential
             
             # 暗号化して保存
             db = DictSQLiteV4(db_path, encryption_password=password, storage_mode="bytes")
@@ -45,7 +45,7 @@ class TestEncryption:
     def test_encryption_wrong_password(self):
         """間違ったパスワードでエラー"""
         with windows_safe_temp_db() as db_path:
-            password = "correct_password"
+            password = "correct_password"  # nosec B105 # Test password, not a real credential
             
             # 正しいパスワードで保存
             db = DictSQLiteV4(db_path, encryption_password=password, storage_mode="bytes")
@@ -54,7 +54,7 @@ class TestEncryption:
             
             # 間違ったパスワードで開こうとする
             try:
-                db2 = DictSQLiteV4(db_path, encryption_password="wrong_password", storage_mode="bytes")
+                db2 = DictSQLiteV4(db_path, encryption_password="wrong_password", storage_mode="bytes")  # nosec B106 # Test password
                 # データ読み取りでエラーになる可能性
                 with pytest.raises((RuntimeError, ValueError, KeyError)):
                     _ = db2["secret"]
@@ -66,7 +66,7 @@ class TestEncryption:
     def test_encryption_without_password(self):
         """暗号化データをパスワードなしで読もうとするとエラー"""
         with windows_safe_temp_db() as db_path:
-            password = "secure_password"
+            password = "secure_password"  # nosec B105 # Test password, not a real credential
             
             # 暗号化して保存
             db = DictSQLiteV4(db_path, encryption_password=password, storage_mode="bytes")
@@ -87,7 +87,7 @@ class TestEncryption:
     def test_encryption_with_jsonb(self):
         """暗号化 + JSONBモード"""
         with windows_safe_temp_db() as db_path:
-            password = "jsonb_password"
+            password = "jsonb_password"  # nosec B105 # Test password, not a real credential
             
             db = DictSQLiteV4(db_path, encryption_password=password, storage_mode="jsonb")
             
@@ -108,7 +108,7 @@ class TestEncryption:
     def test_encryption_with_pickle(self):
         """暗号化 + Pickleモード"""
         with windows_safe_temp_db() as db_path:
-            password = "pickle_password"
+            password = "pickle_password"  # nosec B105 # Test password, not a real credential
             
             db = DictSQLiteV4(db_path, encryption_password=password, storage_mode="pickle")
             
@@ -132,7 +132,7 @@ class TestEncryption:
     def test_encryption_multiple_keys(self):
         """暗号化で複数のキー"""
         with windows_safe_temp_db() as db_path:
-            password = "multi_key_password"
+            password = "multi_key_password"  # nosec B105 # Test password, not a real credential
             
             db = DictSQLiteV4(db_path, encryption_password=password, storage_mode="bytes")
             
@@ -433,7 +433,7 @@ class TestStatistics:
         with windows_safe_temp_db() as db_path:
             db = DictSQLiteV4(
                 db_path,
-                encryption_password="test_password",
+                encryption_password="test_password",  # nosec B106 # Test password, not a real credential
                 storage_mode="bytes"
             )
             
@@ -455,7 +455,7 @@ class TestFeatureCombinations:
     def test_encryption_plus_multi_table(self):
         """暗号化 + マルチテーブル"""
         with windows_safe_temp_db() as db_path:
-            password = "combo_password"
+            password = "combo_password"  # nosec B105 # Test password, not a real credential
             
             # テーブル1
             db1 = DictSQLiteV4(
@@ -505,7 +505,7 @@ class TestFeatureCombinations:
                 persist_mode="lazy",
                 storage_mode="jsonb",
                 table_name="full_featured",
-                encryption_password="complex_password"
+                encryption_password="complex_password"  # nosec B106 # Test password, not a real credential
             )
             
             # データを追加
@@ -527,7 +527,7 @@ class TestFeatureCombinations:
                 db_path,
                 storage_mode="jsonb",
                 table_name="full_featured",
-                encryption_password="complex_password"
+                encryption_password="complex_password"  # nosec B106 # Test password, not a real credential
             )
             
             retrieved = db2["user_data"]
