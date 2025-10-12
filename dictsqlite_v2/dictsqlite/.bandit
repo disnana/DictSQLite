@@ -1,0 +1,14 @@
+# Bandit configuration for DictSQLite v2
+# Skip B101 (assert_used) in test files as asserts are the standard for pytest
+
+skips: ['B101']
+
+exclude_dirs:
+  - /benches
+  - /docs
+  - /examples
+  - /src
+  - /target
+  - /build
+  - /.git
+
