@@ -1,4 +1,4 @@
-name: DictSQLite v4.2 Performance Tests (Manual)
+name: DictSQLite v2 Performance Tests (Manual)
 permissions:
   contents: read
 
@@ -43,7 +43,7 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            dictsqlite_v2/target/
+            dictsqlite_v2/dictsqlite/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
@@ -54,7 +54,7 @@ jobs:
           pip install maturin pytest pytest-asyncio
       
       - name: Build DictSQLite v4.2
-        working-directory: dictsqlite_v2
+        working-directory: dictsqlite_v2/dictsqlite
         run: |
           chmod +x build.sh
           ./build.sh
@@ -62,14 +62,14 @@ jobs:
           CI: true
       
       - name: Run comprehensive performance tests
-        working-directory: dictsqlite_v2
+        working-directory: dictsqlite_v2/dictsqlite
         run: |
           python tests/test_v4.2_comprehensive_performance.py \
             --iterations ${{ github.event.inputs.iterations || '3' }} \
             --output performance_results_${{ matrix.os }}_py${{ matrix.python-version }}.json
       
       - name: Run pytest on entire tests folder
-        working-directory: dictsqlite_v2
+        working-directory: dictsqlite_v2/dictsqlite
         run: |
           pytest tests/ -v --tb=short
       
@@ -77,7 +77,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: performance-results-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: dictsqlite_v2/performance_results_*.json
+          path: dictsqlite_v2/dictsqlite/performance_results_*.json
           retention-days: 30
   
   benchmark-comparison:
@@ -105,24 +105,24 @@ jobs:
           pip install maturin
       
       - name: Build v4.1
-        working-directory: dictsqlite_v2
+        working-directory: dictsqlite_v2/dictsqlite
         run: |
           maturin build --release --strip
           pip install --force-reinstall target/wheels/*.whl
       
       - name: Run v4.1 baseline tests
-        working-directory: dictsqlite_v2
+        working-directory: dictsqlite_v2/dictsqlite
         run: |
           python tests/verify_optimization_opportunities.py > v4.1_results.txt || true
       
       - name: Build v4.2
-        working-directory: dictsqlite_v2
+        working-directory: dictsqlite_v2/dictsqlite
         run: |
           maturin build --release --strip
           pip install --force-reinstall target/wheels/*.whl
       
       - name: Run v4.2 optimized tests
-        working-directory: dictsqlite_v2
+        working-directory: dictsqlite_v2/dictsqlite
         run: |
           python tests/test_v4.2_comprehensive_performance.py \
             --iterations 5 \
@@ -139,7 +139,7 @@ jobs:
           print("="*80)
           
           # Try to load v4.2 results
-          v42_file = "dictsqlite_v2/v2_results.json"
+          v42_file = "dictsqlite_v2/dictsqlite/v2_results.json"
           if os.path.exists(v42_file):
               with open(v42_file) as f:
                   v42_data = json.load(f)
@@ -163,8 +163,8 @@ jobs:
         with:
           name: benchmark-comparison
           path: |
-            dictsqlite_v2/v2_results.txt
-            dictsqlite_v2/v2_results.json
+            dictsqlite_v2/dictsqlite/v2_results.txt
+            dictsqlite_v2/dictsqlite/v2_results.json
           retention-days: 30
 
   security-check:
@@ -182,15 +182,15 @@ jobs:
           components: clippy
       
       - name: Run Clippy
-        working-directory: dictsqlite_v2
+        working-directory: dictsqlite_v2/dictsqlite
         run: cargo clippy -- -D warnings || true
       
       - name: Run Cargo Audit
-        working-directory: dictsqlite_v2
+        working-directory: dictsqlite_v2/dictsqlite
         run: |
           cargo install cargo-audit || true
           cargo audit || true
       
       - name: Check formatting
-        working-directory: dictsqlite_v2
+        working-directory: dictsqlite_v2/dictsqlite
         run: cargo fmt --check || true
