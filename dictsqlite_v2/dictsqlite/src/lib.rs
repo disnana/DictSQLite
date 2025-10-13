@@ -492,7 +492,7 @@ impl DictSQLiteV4 {
                     "Data is encrypted but no password was provided"
                 ));
             }
-            
+
             // Decrypt if encryption is enabled
             let data = if let Some(ref crypto) = self.crypto {
                 crypto
@@ -521,7 +521,7 @@ impl DictSQLiteV4 {
                         "Data is encrypted but no password was provided"
                     ));
                 }
-                
+
                 // Decrypt if encryption is enabled
                 let data = if let Some(ref crypto) = self.crypto {
                     crypto.decrypt(&value).map_err(|e| {
@@ -571,14 +571,19 @@ impl DictSQLiteV4 {
         self.access_tracker.lock().unwrap().put(key.clone(), ());
 
         // v4.2 Optimization: Use write buffer for WriteThrough mode
-        // But flush immediately to maintain writethrough semantics
         if self.config.persist_mode == PersistMode::WriteThrough {
-            let mut buffer = self.write_buffer.lock().unwrap();
-            buffer.push((key.clone(), data));
-            drop(buffer);
+            let should_flush = {
+                let mut buffer = self.write_buffer.lock().unwrap();
+                buffer.push((key.clone(), data));
+                // Flush when buffer reaches size threshold
+                // For buffer_size of 1, this provides immediate flush behavior
+                buffer.len() >= self.buffer_size
+            };
 
-            // Flush immediately in writethrough mode to ensure data is visible to other instances
-            self.flush_write_buffer()?;
+            // Flush if buffer is full
+            if should_flush {
+                self.flush_write_buffer()?;
+            }
         }
 
         // Check if we need to evict to warm tier

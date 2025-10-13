@@ -85,6 +85,11 @@ class DictSQLite:
                 "Please build it using: cd dictsqlite && maturin build --release"
             )
 
+        # For writethrough mode, use buffer_size=1 by default for immediate persistence
+        # unless explicitly specified otherwise
+        if persist_mode == "writethrough" and buffer_size == 100:
+            buffer_size = 1
+
         self._encoding = encoding
         self._db = _NativeDictSQLiteV4(
             db_path,
@@ -338,6 +343,10 @@ class AsyncDictSQLite:
                 "DictSQLite v4.0 native extension not available. "
                 "Please build it using: cd dictsqlite_v4 && maturin build --release"
             )
+
+        # For writethrough mode, use buffer_size=1 by default for immediate persistence
+        if persist_mode == "writethrough" and buffer_size == 100:
+            buffer_size = 1
 
         self._db = _NativeAsyncDictSQLite(
             db_path, capacity, persist_mode, storage_mode, table_name, buffer_size

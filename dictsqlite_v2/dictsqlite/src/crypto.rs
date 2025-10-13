@@ -119,7 +119,7 @@ impl CryptoEngine {
 
         Ok(plaintext)
     }
-    
+
     /// 暗号化されたデータかどうかをチェック
     pub fn is_encrypted(data: &[u8]) -> bool {
         data.len() >= 4 && &data[0..4] == b"ENC\0"
