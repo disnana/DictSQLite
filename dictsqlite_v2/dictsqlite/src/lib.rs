@@ -489,7 +489,7 @@ impl DictSQLiteV4 {
             // Check if data is encrypted but we have no password
             if self.crypto.is_none() && crate::crypto::CryptoEngine::is_encrypted(&value) {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "Data is encrypted but no password was provided"
+                    "Data is encrypted but no password was provided",
                 ));
             }
 
@@ -518,7 +518,7 @@ impl DictSQLiteV4 {
                 // Check if data is encrypted but we have no password
                 if self.crypto.is_none() && crate::crypto::CryptoEngine::is_encrypted(&value) {
                     return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                        "Data is encrypted but no password was provided"
+                        "Data is encrypted but no password was provided",
                     ));
                 }
 
