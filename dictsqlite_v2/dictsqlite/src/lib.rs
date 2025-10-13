@@ -35,10 +35,8 @@ impl SafePicklePolicy {
     /// Create a new default policy
     pub fn new() -> PyResult<Self> {
         Python::with_gil(|py| {
-            let sys = py.import("sys")?;
-            let path = sys.getattr("path")?;
-            path.call_method1("append", ("modules",))?;
-            let safe_pickle = py.import("safe_pickle")?;
+            // Import safe_pickle from dictsqlite.modules
+            let safe_pickle = py.import("dictsqlite.modules.safe_pickle")?;
             let policy_class = safe_pickle.getattr("SafePolicy")?;
             // Call SafePolicy() without arguments - it now defaults denied_globals to DEFAULT_DENY
             let policy = policy_class.call0()?;
@@ -51,10 +49,8 @@ impl SafePicklePolicy {
     /// Create policy for a package
     pub fn for_package(pkg_prefix: &str) -> PyResult<Self> {
         Python::with_gil(|py| {
-            let sys = py.import("sys")?;
-            let path = sys.getattr("path")?;
-            path.call_method1("append", ("modules",))?;
-            let safe_pickle = py.import("safe_pickle")?;
+            // Import safe_pickle from dictsqlite.modules
+            let safe_pickle = py.import("dictsqlite.modules.safe_pickle")?;
             let policy_class = safe_pickle.getattr("SafePolicy")?;
             let policy = policy_class.call_method1("for_package", (pkg_prefix,))?;
             Ok(SafePicklePolicy {
@@ -101,10 +97,8 @@ impl SafePickleValidator {
     /// Validate and load pickle data using Python's safe_loads
     pub fn validate_and_load(&self, data: &[u8]) -> PyResult<PyObject> {
         Python::with_gil(|py| {
-            let sys = py.import("sys")?;
-            let path = sys.getattr("path")?;
-            path.call_method1("append", ("modules",))?;
-            let safe_pickle = py.import("safe_pickle")?;
+            // Import safe_pickle from dictsqlite.modules
+            let safe_pickle = py.import("dictsqlite.modules.safe_pickle")?;
             let safe_loads = safe_pickle.getattr("safe_loads")?;
             let kwargs = pyo3::types::PyDict::new(py);
             kwargs.set_item("policy", self.policy.policy.bind(py))?;

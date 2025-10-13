@@ -400,6 +400,29 @@ class AsyncDictSQLite:
             value = pickle.dumps(value)
         self._db.set_async(str(key), value)
 
+    def get_async(self, key):
+        """Get value asynchronously (non-blocking, synchronous method)
+        
+        Note: Despite the name, this is a synchronous method that calls
+        the underlying non-blocking implementation. For true async/await
+        support, use aget() instead.
+        """
+        return self._db.get_async(str(key))
+
+    def set_async(self, key, value):
+        """Set value asynchronously (non-blocking, synchronous method)
+        
+        Note: Despite the name, this is a synchronous method that calls
+        the underlying non-blocking implementation. For true async/await
+        support, use aset() instead.
+        """
+        if isinstance(value, str):
+            value = value.encode('utf-8')
+        elif not isinstance(value, bytes):
+            import pickle
+            value = pickle.dumps(value)
+        self._db.set_async(str(key), value)
+
     def batch_get(self, keys):
         """Batch get (synchronous wrapper for backward compatibility)"""
         return self._db.batch_get([str(k) for k in keys])
