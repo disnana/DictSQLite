@@ -35,10 +35,8 @@ impl SafePicklePolicy {
     /// Create a new default policy
     pub fn new() -> PyResult<Self> {
         Python::with_gil(|py| {
-            let sys = py.import("sys")?;
-            let path = sys.getattr("path")?;
-            path.call_method1("append", ("modules",))?;
-            let safe_pickle = py.import("safe_pickle")?;
+            // Import safe_pickle from dictsqlite.modules
+            let safe_pickle = py.import("dictsqlite.modules.safe_pickle")?;
             let policy_class = safe_pickle.getattr("SafePolicy")?;
             // Call SafePolicy() without arguments - it now defaults denied_globals to DEFAULT_DENY
             let policy = policy_class.call0()?;
@@ -51,10 +49,8 @@ impl SafePicklePolicy {
     /// Create policy for a package
     pub fn for_package(pkg_prefix: &str) -> PyResult<Self> {
         Python::with_gil(|py| {
-            let sys = py.import("sys")?;
-            let path = sys.getattr("path")?;
-            path.call_method1("append", ("modules",))?;
-            let safe_pickle = py.import("safe_pickle")?;
+            // Import safe_pickle from dictsqlite.modules
+            let safe_pickle = py.import("dictsqlite.modules.safe_pickle")?;
             let policy_class = safe_pickle.getattr("SafePolicy")?;
             let policy = policy_class.call_method1("for_package", (pkg_prefix,))?;
             Ok(SafePicklePolicy {
@@ -67,9 +63,38 @@ impl SafePicklePolicy {
     pub fn with_module_prefix(self, prefix: String) -> PyResult<Self> {
         Python::with_gil(|py| {
             let policy_bound = self.policy.bind(py);
-            let allowed_module_prefixes = policy_bound.getattr("allowed_module_prefixes")?;
-            allowed_module_prefixes.call_method1("append", (prefix,))?;
-            Ok(self)
+            let current_prefixes = policy_bound.getattr("allowed_module_prefixes")?;
+            
+            // Convert tuple to list of strings
+            let prefixes_list: Vec<String> = current_prefixes.extract()?;
+            
+            let mut new_prefixes = prefixes_list;
+            new_prefixes.push(prefix);
+            
+            // Create a new policy with the updated prefixes
+            let safe_pickle = py.import("dictsqlite.modules.safe_pickle")?;
+            let policy_class = safe_pickle.getattr("SafePolicy")?;
+            let kwargs = pyo3::types::PyDict::new(py);
+            kwargs.set_item("allowed_module_prefixes", new_prefixes)?;
+            
+            // Copy other attributes from original policy
+            let allowed_builtins = policy_bound.getattr("allowed_builtins")?;
+            let allowed_globals = policy_bound.getattr("allowed_globals")?;
+            let denied_globals = policy_bound.getattr("denied_globals")?;
+            let allow_functions = policy_bound.getattr("allow_functions_from_prefixes")?;
+            let allow_classes = policy_bound.getattr("allow_classes_from_prefixes")?;
+            
+            kwargs.set_item("allowed_builtins", allowed_builtins)?;
+            kwargs.set_item("allowed_globals", allowed_globals)?;
+            kwargs.set_item("denied_globals", denied_globals)?;
+            kwargs.set_item("allow_functions_from_prefixes", allow_functions)?;
+            kwargs.set_item("allow_classes_from_prefixes", allow_classes)?;
+            
+            let new_policy = policy_class.call((), Some(&kwargs))?;
+            
+            Ok(SafePicklePolicy {
+                policy: new_policy.unbind(),
+            })
         })
     }
 }
@@ -101,10 +126,8 @@ impl SafePickleValidator {
     /// Validate and load pickle data using Python's safe_loads
     pub fn validate_and_load(&self, data: &[u8]) -> PyResult<PyObject> {
         Python::with_gil(|py| {
-            let sys = py.import("sys")?;
-            let path = sys.getattr("path")?;
-            path.call_method1("append", ("modules",))?;
-            let safe_pickle = py.import("safe_pickle")?;
+            // Import safe_pickle from dictsqlite.modules
+            let safe_pickle = py.import("dictsqlite.modules.safe_pickle")?;
             let safe_loads = safe_pickle.getattr("safe_loads")?;
             let kwargs = pyo3::types::PyDict::new(py);
             kwargs.set_item("policy", self.policy.policy.bind(py))?;
