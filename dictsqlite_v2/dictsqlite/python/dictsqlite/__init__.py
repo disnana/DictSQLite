@@ -135,6 +135,10 @@ class DictSQLite:
                     pickled,
                     allowed_module_prefixes=self._safe_pickle_allowed_modules,
                 )
+            except pickle.UnpicklingError as e:
+                logger.warning("Safe pickle rejected value for key=%s", key)
+                # Wrap UnpicklingError as ValueError for consistent API
+                raise ValueError(f"Safe pickle validation failed: {e}")
             except Exception:
                 logger.warning("Safe pickle rejected value for key=%s", key)
                 # Re-raise so callers/tests see an exception
@@ -290,7 +294,7 @@ class DictSQLite:
 
     def __del__(self):
         """Destructor - ensure data is flushed"""
-        if not self._closed:
+        if not getattr(self, '_closed', True):
             try:
                 self.close()
             except:

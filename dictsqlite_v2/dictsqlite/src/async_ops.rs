@@ -151,7 +151,7 @@ impl AsyncDictSQLite {
                 let mut buffer = self.write_buffer.lock().unwrap();
                 buffer.insert(key, value);
             }
-            
+
             // In writethrough mode, always flush immediately to maintain semantics
             // This ensures data is immediately visible to other instances
             self.flush_write_buffer()?;
@@ -374,9 +374,9 @@ impl AsyncDictSQLite {
                     let mut storage_guard = storage.lock().unwrap();
                     if let Some(ref mut storage_engine) = *storage_guard {
                         for (k, v) in buffer.drain() {
-                            storage_engine.set(&k, &v).map_err(|e| {
-                                pyo3::exceptions::PyIOError::new_err(e.to_string())
-                            })?;
+                            storage_engine
+                                .set(&k, &v)
+                                .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
                         }
                     }
                     Ok::<(), PyErr>(())
@@ -476,9 +476,9 @@ impl AsyncDictSQLite {
                     let mut storage_guard = storage.lock().unwrap();
                     if let Some(ref mut storage_engine) = *storage_guard {
                         for (k, v) in buffer.drain() {
-                            storage_engine.set(&k, &v).map_err(|e| {
-                                pyo3::exceptions::PyIOError::new_err(e.to_string())
-                            })?;
+                            storage_engine
+                                .set(&k, &v)
+                                .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
                         }
                     }
                     Ok::<(), PyErr>(())
@@ -536,9 +536,9 @@ impl AsyncDictSQLite {
                 .spawn_blocking(move || {
                     let mut storage_guard = storage.lock().unwrap();
                     if let Some(ref mut storage_engine) = *storage_guard {
-                        storage_engine.delete(&key).map_err(|e| {
-                            pyo3::exceptions::PyIOError::new_err(e.to_string())
-                        })?;
+                        storage_engine
+                            .delete(&key)
+                            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
                     }
                     Ok::<(), PyErr>(())
                 })
@@ -570,9 +570,9 @@ impl AsyncDictSQLite {
                     let mut storage_guard = storage.lock().unwrap();
                     if let Some(ref mut storage_engine) = *storage_guard {
                         for (k, v) in buffer.drain() {
-                            storage_engine.set(&k, &v).map_err(|e| {
-                                pyo3::exceptions::PyIOError::new_err(e.to_string())
-                            })?;
+                            storage_engine
+                                .set(&k, &v)
+                                .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
                         }
                     }
                 }
@@ -759,9 +759,9 @@ impl AsyncDictSQLite {
         if self.config.persist_mode != PersistMode::Memory {
             let mut storage_guard = self.storage.lock().unwrap();
             if let Some(ref mut storage_engine) = *storage_guard {
-                storage_engine.delete(&full_key).map_err(|e| {
-                    pyo3::exceptions::PyIOError::new_err(e.to_string())
-                })?;
+                storage_engine
+                    .delete(&full_key)
+                    .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
             }
         }
 
