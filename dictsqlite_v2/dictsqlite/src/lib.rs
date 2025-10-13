@@ -486,13 +486,6 @@ impl DictSQLiteV4 {
 
         // Try hot tier first (lock-free read)
         if let Some(value) = self.hot_tier.get(&key) {
-            // Check if data is encrypted but we have no password
-            if self.crypto.is_none() && crate::crypto::CryptoEngine::is_encrypted(&value) {
-                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "Data is encrypted but no password was provided"
-                ));
-            }
-
             // Decrypt if encryption is enabled
             let data = if let Some(ref crypto) = self.crypto {
                 crypto
@@ -515,13 +508,6 @@ impl DictSQLiteV4 {
         let storage_guard = self.storage.lock().unwrap();
         if let Some(ref storage) = *storage_guard {
             if let Ok(Some(value)) = storage.get(&key) {
-                // Check if data is encrypted but we have no password
-                if self.crypto.is_none() && crate::crypto::CryptoEngine::is_encrypted(&value) {
-                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                        "Data is encrypted but no password was provided"
-                    ));
-                }
-
                 // Decrypt if encryption is enabled
                 let data = if let Some(ref crypto) = self.crypto {
                     crypto.decrypt(&value).map_err(|e| {
@@ -571,19 +557,14 @@ impl DictSQLiteV4 {
         self.access_tracker.lock().unwrap().put(key.clone(), ());
 
         // v4.2 Optimization: Use write buffer for WriteThrough mode
+        // But flush immediately to maintain writethrough semantics
         if self.config.persist_mode == PersistMode::WriteThrough {
-            let should_flush = {
-                let mut buffer = self.write_buffer.lock().unwrap();
-                buffer.push((key.clone(), data));
-                // Flush when buffer reaches size threshold
-                // For buffer_size of 1, this provides immediate flush behavior
-                buffer.len() >= self.buffer_size
-            };
+            let mut buffer = self.write_buffer.lock().unwrap();
+            buffer.push((key.clone(), data));
+            drop(buffer);
 
-            // Flush if buffer is full
-            if should_flush {
-                self.flush_write_buffer()?;
-            }
+            // Flush immediately in writethrough mode to ensure data is visible to other instances
+            self.flush_write_buffer()?;
         }
 
         // Check if we need to evict to warm tier

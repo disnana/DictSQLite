@@ -36,7 +36,8 @@ pub struct AsyncDictSQLite {
     /// Write buffer for batching SQL writes (v4.2 optimization)
     write_buffer: Arc<Mutex<HashMap<String, Vec<u8>>>>,
 
-    /// Buffer size threshold for auto-flush
+    /// Buffer size threshold for auto-flush (currently unused in writethrough mode)
+    #[allow(dead_code)]
     buffer_size: usize,
 
     /// Tokio runtime for async operations
@@ -348,7 +349,6 @@ impl AsyncDictSQLite {
         let write_buffer = self.write_buffer.clone();
         let storage = self.storage.clone();
         let config = self.config.clone();
-        let buffer_size = self.buffer_size;
         let runtime = self.runtime.clone();
 
         // Always update cache immediately for fast reads
@@ -357,37 +357,32 @@ impl AsyncDictSQLite {
         // Handle persistence based on mode
         if config.persist_mode == PersistMode::WriteThrough {
             // Add to write buffer
-            let should_flush = {
+            {
                 let mut buffer = write_buffer.lock().unwrap();
                 buffer.insert(key, value);
-                // Flush when buffer reaches size threshold
-                // For buffer_size of 1, this provides immediate flush behavior
-                buffer.len() >= buffer_size
-            };
-
-            // Flush if buffer is full
-            if should_flush {
-                runtime
-                    .spawn_blocking(move || {
-                        let mut buffer = write_buffer.lock().unwrap();
-                        if buffer.is_empty() {
-                            return Ok(());
-                        }
-
-                        // Get storage handle and write
-                        let mut storage_guard = storage.lock().unwrap();
-                        if let Some(ref mut storage_engine) = *storage_guard {
-                            for (k, v) in buffer.drain() {
-                                storage_engine.set(&k, &v).map_err(|e| {
-                                    pyo3::exceptions::PyIOError::new_err(e.to_string())
-                                })?;
-                            }
-                        }
-                        Ok::<(), PyErr>(())
-                    })
-                    .await
-                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
             }
+
+            // In writethrough mode, always flush immediately to maintain semantics
+            runtime
+                .spawn_blocking(move || {
+                    let mut buffer = write_buffer.lock().unwrap();
+                    if buffer.is_empty() {
+                        return Ok(());
+                    }
+
+                    // Get storage handle and write
+                    let mut storage_guard = storage.lock().unwrap();
+                    if let Some(ref mut storage_engine) = *storage_guard {
+                        for (k, v) in buffer.drain() {
+                            storage_engine
+                                .set(&k, &v)
+                                .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+                        }
+                    }
+                    Ok::<(), PyErr>(())
+                })
+                .await
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
         }
 
         Ok(())
@@ -452,7 +447,6 @@ impl AsyncDictSQLite {
         let write_buffer = self.write_buffer.clone();
         let storage = self.storage.clone();
         let config = self.config.clone();
-        let buffer_size = self.buffer_size;
         let runtime = self.runtime.clone();
 
         // Update cache immediately for all items
@@ -463,38 +457,34 @@ impl AsyncDictSQLite {
         // Handle persistence based on mode
         if config.persist_mode == PersistMode::WriteThrough {
             // Add to write buffer
-            let should_flush = {
+            {
                 let mut buffer = write_buffer.lock().unwrap();
                 for (key, value) in items {
                     buffer.insert(key, value);
                 }
-                // Flush when buffer reaches size threshold
-                buffer.len() >= buffer_size
-            };
-
-            // Flush if buffer is full
-            if should_flush {
-                runtime
-                    .spawn_blocking(move || {
-                        let mut buffer = write_buffer.lock().unwrap();
-                        if buffer.is_empty() {
-                            return Ok(());
-                        }
-
-                        // Get storage handle and write
-                        let mut storage_guard = storage.lock().unwrap();
-                        if let Some(ref mut storage_engine) = *storage_guard {
-                            for (k, v) in buffer.drain() {
-                                storage_engine.set(&k, &v).map_err(|e| {
-                                    pyo3::exceptions::PyIOError::new_err(e.to_string())
-                                })?;
-                            }
-                        }
-                        Ok::<(), PyErr>(())
-                    })
-                    .await
-                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
             }
+
+            // In writethrough mode, always flush immediately to maintain semantics
+            runtime
+                .spawn_blocking(move || {
+                    let mut buffer = write_buffer.lock().unwrap();
+                    if buffer.is_empty() {
+                        return Ok(());
+                    }
+
+                    // Get storage handle and write
+                    let mut storage_guard = storage.lock().unwrap();
+                    if let Some(ref mut storage_engine) = *storage_guard {
+                        for (k, v) in buffer.drain() {
+                            storage_engine
+                                .set(&k, &v)
+                                .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+                        }
+                    }
+                    Ok::<(), PyErr>(())
+                })
+                .await
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
         }
 
         Ok(())
