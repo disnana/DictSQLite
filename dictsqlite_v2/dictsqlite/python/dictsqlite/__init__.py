@@ -419,7 +419,7 @@ class AsyncDictSQLite:
         if isinstance(value, str):
             value = value.encode('utf-8')
         elif not isinstance(value, bytes):
-            import pickle
+            import pickle  # nosec B403 - pickle used for data serialization, safe_pickle available
             value = pickle.dumps(value)
         self._db.set_async(str(key), value)
 

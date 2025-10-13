@@ -64,6 +64,7 @@ impl CryptoEngine {
     ///
     /// # Returns
     /// `Vec<u8>` - ソルト(16) + nonce(12) + 暗号文 + タグ(16)
+    #[allow(deprecated)]
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
         // ランダムなnonceを生成（12バイト）
         let mut nonce_bytes = [0u8; 12];
@@ -91,6 +92,7 @@ impl CryptoEngine {
     ///
     /// # Returns
     /// `Vec<u8>` - 平文データ
+    #[allow(deprecated)]
     pub fn decrypt(&self, encrypted: &[u8]) -> Result<Vec<u8>, CryptoError> {
         if encrypted.len() < 12 {
             return Err(CryptoError::InvalidFormat);
