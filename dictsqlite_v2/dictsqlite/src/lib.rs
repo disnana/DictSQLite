@@ -327,7 +327,8 @@ pub struct DictSQLiteV4 {
     /// Write buffer for batching SQL writes (v4.2 optimization)
     write_buffer: WriteBuffer,
 
-    /// Buffer size threshold for auto-flush
+    /// Buffer size threshold for auto-flush (currently unused in writethrough mode)
+    #[allow(dead_code)]
     buffer_size: usize,
 }
 

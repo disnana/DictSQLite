@@ -36,7 +36,8 @@ pub struct AsyncDictSQLite {
     /// Write buffer for batching SQL writes (v4.2 optimization)
     write_buffer: Arc<Mutex<HashMap<String, Vec<u8>>>>,
 
-    /// Buffer size threshold for auto-flush
+    /// Buffer size threshold for auto-flush (currently unused in writethrough mode)
+    #[allow(dead_code)]
     buffer_size: usize,
 
     /// Tokio runtime for async operations
@@ -348,7 +349,6 @@ impl AsyncDictSQLite {
         let write_buffer = self.write_buffer.clone();
         let storage = self.storage.clone();
         let config = self.config.clone();
-        let buffer_size = self.buffer_size;
         let runtime = self.runtime.clone();
 
         // Always update cache immediately for fast reads
@@ -447,7 +447,6 @@ impl AsyncDictSQLite {
         let write_buffer = self.write_buffer.clone();
         let storage = self.storage.clone();
         let config = self.config.clone();
-        let buffer_size = self.buffer_size;
         let runtime = self.runtime.clone();
 
         // Update cache immediately for all items
@@ -702,7 +701,7 @@ impl AsyncDictSQLite {
     }
 
     /// Dict-like contains: key in db
-    fn __contains__(&self, key: String, py: Python) -> PyResult<bool> {
+    fn __contains__(&self, key: String, _py: Python) -> PyResult<bool> {
         // Add table prefix if default table is not "main" or empty
         let full_key = if !self.config.table_name.is_empty() && self.config.table_name != "main" {
             format!("{}:{}", self.config.table_name, key)
