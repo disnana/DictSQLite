@@ -63,7 +63,7 @@ impl CryptoEngine {
     /// * `plaintext` - 平文データ
     ///
     /// # Returns
-    /// `Vec<u8>` - ソルト(16) + nonce(12) + 暗号文 + タグ(16)
+    /// `Vec<u8>` - マーカー(4) + nonce(12) + 暗号文 + タグ(16)
     #[allow(deprecated)]
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
         // ランダムなnonceを生成（12バイト）
@@ -77,8 +77,10 @@ impl CryptoEngine {
             .encrypt(nonce, plaintext)
             .map_err(|e| CryptoError::EncryptionFailed(e.to_string()))?;
 
-        // nonce + 暗号文を結合
-        let mut result = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
+        // マーカー(4バイト) + nonce + 暗号文を結合
+        // マーカー: "ENC\0" - 暗号化データであることを示す
+        let mut result = Vec::with_capacity(4 + nonce_bytes.len() + ciphertext.len());
+        result.extend_from_slice(b"ENC\0");
         result.extend_from_slice(&nonce_bytes);
         result.extend_from_slice(&ciphertext);
 
@@ -88,18 +90,25 @@ impl CryptoEngine {
     /// データを復号化
     ///
     /// # Arguments
-    /// * `encrypted` - 暗号化データ (nonce + 暗号文 + タグ)
+    /// * `encrypted` - 暗号化データ (マーカー + nonce + 暗号文 + タグ)
     ///
     /// # Returns
     /// `Vec<u8>` - 平文データ
     #[allow(deprecated)]
     pub fn decrypt(&self, encrypted: &[u8]) -> Result<Vec<u8>, CryptoError> {
-        if encrypted.len() < 12 {
+        // 最小サイズチェック: マーカー(4) + nonce(12) + 最小暗号文(16 for GCM tag)
+        if encrypted.len() < 32 {
             return Err(CryptoError::InvalidFormat);
         }
 
-        // nonce と暗号文を分離
-        let (nonce_bytes, ciphertext) = encrypted.split_at(12);
+        // マーカーをチェック
+        if &encrypted[0..4] != b"ENC\0" {
+            return Err(CryptoError::InvalidFormat);
+        }
+
+        // マーカーをスキップして nonce と暗号文を分離
+        let data = &encrypted[4..];
+        let (nonce_bytes, ciphertext) = data.split_at(12);
         let nonce = Nonce::from_slice(nonce_bytes);
 
         // 復号化
@@ -109,6 +118,11 @@ impl CryptoEngine {
             .map_err(|e| CryptoError::DecryptionFailed(e.to_string()))?;
 
         Ok(plaintext)
+    }
+
+    /// 暗号化されたデータかどうかをチェック
+    pub fn is_encrypted(data: &[u8]) -> bool {
+        data.len() >= 4 && &data[0..4] == b"ENC\0"
     }
 }
 

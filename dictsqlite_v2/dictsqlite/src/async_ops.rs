@@ -145,15 +145,15 @@ impl AsyncDictSQLite {
 
         // Handle persistence based on mode
         if self.config.persist_mode == PersistMode::WriteThrough {
-            // v4.2 Optimization: Use write buffer instead of immediate write
-            let mut buffer = self.write_buffer.lock().unwrap();
-            buffer.insert(key, value);
-
-            // Auto-flush when buffer is full (reduces Mutex locks from 1000 to ~10)
-            if buffer.len() >= self.buffer_size {
-                drop(buffer);
-                self.flush_write_buffer()?;
+            // Add to write buffer
+            {
+                let mut buffer = self.write_buffer.lock().unwrap();
+                buffer.insert(key, value);
             }
+
+            // In writethrough mode, always flush immediately to maintain semantics
+            // This ensures data is immediately visible to other instances
+            self.flush_write_buffer()?;
         }
 
         Ok(())
@@ -360,10 +360,12 @@ impl AsyncDictSQLite {
             let should_flush = {
                 let mut buffer = write_buffer.lock().unwrap();
                 buffer.insert(key, value);
+                // Flush when buffer reaches size threshold
+                // For buffer_size of 1, this provides immediate flush behavior
                 buffer.len() >= buffer_size
             };
 
-            // Auto-flush when buffer is full
+            // Flush if buffer is full
             if should_flush {
                 runtime
                     .spawn_blocking(move || {
@@ -460,15 +462,17 @@ impl AsyncDictSQLite {
 
         // Handle persistence based on mode
         if config.persist_mode == PersistMode::WriteThrough {
+            // Add to write buffer
             let should_flush = {
                 let mut buffer = write_buffer.lock().unwrap();
                 for (key, value) in items {
                     buffer.insert(key, value);
                 }
+                // Flush when buffer reaches size threshold
                 buffer.len() >= buffer_size
             };
 
-            // Auto-flush when buffer is full
+            // Flush if buffer is full
             if should_flush {
                 runtime
                     .spawn_blocking(move || {
@@ -493,6 +497,125 @@ impl AsyncDictSQLite {
             }
         }
 
+        Ok(())
+    }
+
+    /// Truly async contains operation (awaitable in Python)
+    /// Check if a key exists in the database
+    #[pyo3(signature = (key))]
+    async fn acontains(&self, key: String) -> PyResult<bool> {
+        let cache = self.cache.clone();
+        let storage = self.storage.clone();
+        let config = self.config.clone();
+
+        // Check cache first
+        if cache.contains_key(&key) {
+            return Ok(true);
+        }
+
+        // If not in cache and we have storage, check storage
+        if config.persist_mode != PersistMode::Memory {
+            let storage_guard = storage.lock().unwrap();
+            if let Some(ref storage_engine) = *storage_guard {
+                match storage_engine.get(&key) {
+                    Ok(Some(_)) => return Ok(true),
+                    Ok(None) => return Ok(false),
+                    Err(_) => return Ok(false),
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
+    /// Truly async delete operation (awaitable in Python)
+    /// Delete a key from the database
+    #[pyo3(signature = (key))]
+    async fn adelete(&self, key: String) -> PyResult<()> {
+        let cache = self.cache.clone();
+        let storage = self.storage.clone();
+        let config = self.config.clone();
+        let runtime = self.runtime.clone();
+
+        // Remove from cache
+        cache.remove(&key);
+
+        // Remove from storage if persistence is enabled
+        if config.persist_mode != PersistMode::Memory {
+            runtime
+                .spawn_blocking(move || {
+                    let mut storage_guard = storage.lock().unwrap();
+                    if let Some(ref mut storage_engine) = *storage_guard {
+                        storage_engine
+                            .delete(&key)
+                            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+                    }
+                    Ok::<(), PyErr>(())
+                })
+                .await
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
+        }
+
+        Ok(())
+    }
+
+    /// Truly async flush operation (awaitable in Python)
+    /// Flush cached data to storage
+    async fn aflush(&self) -> PyResult<()> {
+        let cache = self.cache.clone();
+        let write_buffer = self.write_buffer.clone();
+        let storage = self.storage.clone();
+        let config = self.config.clone();
+        let runtime = self.runtime.clone();
+
+        if config.persist_mode == PersistMode::Memory {
+            return Ok(());
+        }
+
+        runtime
+            .spawn_blocking(move || {
+                // First, flush any pending writes in the buffer
+                let mut buffer = write_buffer.lock().unwrap();
+                if !buffer.is_empty() {
+                    let mut storage_guard = storage.lock().unwrap();
+                    if let Some(ref mut storage_engine) = *storage_guard {
+                        for (k, v) in buffer.drain() {
+                            storage_engine
+                                .set(&k, &v)
+                                .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+                        }
+                    }
+                }
+                drop(buffer);
+
+                // Then flush the cache (for Lazy mode)
+                if config.persist_mode == PersistMode::Lazy {
+                    let mut storage_guard = storage.lock().unwrap();
+                    if let Some(ref mut storage_engine) = *storage_guard {
+                        for entry in cache.iter() {
+                            storage_engine
+                                .set(entry.key(), entry.value())
+                                .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+                        }
+                    }
+                }
+
+                Ok::<(), PyErr>(())
+            })
+            .await
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
+
+        Ok(())
+    }
+
+    /// Truly async close operation (awaitable in Python)
+    /// Close and flush if needed
+    async fn aclose(&self) -> PyResult<()> {
+        // Flush write buffer for WriteThrough mode
+        // Flush both buffer and cache for Lazy mode
+        if self.config.persist_mode != PersistMode::Memory {
+            self.aflush().await?;
+        }
         Ok(())
     }
 
@@ -585,6 +708,74 @@ impl AsyncDictSQLite {
         };
 
         self.set_async(full_key, data)
+    }
+
+    /// Dict-like contains: key in db
+    fn __contains__(&self, key: String, _py: Python) -> PyResult<bool> {
+        // Add table prefix if default table is not "main" or empty
+        let full_key = if !self.config.table_name.is_empty() && self.config.table_name != "main" {
+            format!("{}:{}", self.config.table_name, key)
+        } else {
+            key
+        };
+
+        // Check cache first
+        if self.cache.contains_key(&full_key) {
+            return Ok(true);
+        }
+
+        // Check storage if persistence is enabled
+        if self.config.persist_mode != PersistMode::Memory {
+            let storage_guard = self.storage.lock().unwrap();
+            if let Some(ref storage_engine) = *storage_guard {
+                match storage_engine.get(&full_key) {
+                    Ok(Some(_)) => return Ok(true),
+                    Ok(None) => return Ok(false),
+                    Err(_) => return Ok(false),
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
+    /// Dict-like deletion: del db[key]
+    fn __delitem__(&self, key: String, py: Python) -> PyResult<()> {
+        // Add table prefix if default table is not "main" or empty
+        let full_key = if !self.config.table_name.is_empty() && self.config.table_name != "main" {
+            format!("{}:{}", self.config.table_name, key)
+        } else {
+            key.clone()
+        };
+
+        // Check if key exists first
+        if !self.__contains__(full_key.clone(), py)? {
+            return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                "Key not found: {}",
+                key
+            )));
+        }
+
+        // Remove from cache
+        self.cache.remove(&full_key);
+
+        // Remove from write buffer
+        if self.config.persist_mode == PersistMode::WriteThrough {
+            let mut buffer = self.write_buffer.lock().unwrap();
+            buffer.remove(&full_key);
+        }
+
+        // Remove from storage if persistence is enabled
+        if self.config.persist_mode != PersistMode::Memory {
+            let mut storage_guard = self.storage.lock().unwrap();
+            if let Some(ref mut storage_engine) = *storage_guard {
+                storage_engine
+                    .delete(&full_key)
+                    .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+            }
+        }
+
+        Ok(())
     }
 
     /// Get a table proxy for accessing a specific table

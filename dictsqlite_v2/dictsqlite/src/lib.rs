@@ -64,34 +64,34 @@ impl SafePicklePolicy {
         Python::with_gil(|py| {
             let policy_bound = self.policy.bind(py);
             let current_prefixes = policy_bound.getattr("allowed_module_prefixes")?;
-            
+
             // Convert tuple to list of strings
             let prefixes_list: Vec<String> = current_prefixes.extract()?;
-            
+
             let mut new_prefixes = prefixes_list;
             new_prefixes.push(prefix);
-            
+
             // Create a new policy with the updated prefixes
             let safe_pickle = py.import("dictsqlite.modules.safe_pickle")?;
             let policy_class = safe_pickle.getattr("SafePolicy")?;
             let kwargs = pyo3::types::PyDict::new(py);
             kwargs.set_item("allowed_module_prefixes", new_prefixes)?;
-            
+
             // Copy other attributes from original policy
             let allowed_builtins = policy_bound.getattr("allowed_builtins")?;
             let allowed_globals = policy_bound.getattr("allowed_globals")?;
             let denied_globals = policy_bound.getattr("denied_globals")?;
             let allow_functions = policy_bound.getattr("allow_functions_from_prefixes")?;
             let allow_classes = policy_bound.getattr("allow_classes_from_prefixes")?;
-            
+
             kwargs.set_item("allowed_builtins", allowed_builtins)?;
             kwargs.set_item("allowed_globals", allowed_globals)?;
             kwargs.set_item("denied_globals", denied_globals)?;
             kwargs.set_item("allow_functions_from_prefixes", allow_functions)?;
             kwargs.set_item("allow_classes_from_prefixes", allow_classes)?;
-            
+
             let new_policy = policy_class.call((), Some(&kwargs))?;
-            
+
             Ok(SafePicklePolicy {
                 policy: new_policy.unbind(),
             })
@@ -327,7 +327,8 @@ pub struct DictSQLiteV4 {
     /// Write buffer for batching SQL writes (v4.2 optimization)
     write_buffer: WriteBuffer,
 
-    /// Buffer size threshold for auto-flush
+    /// Buffer size threshold for auto-flush (currently unused in writethrough mode)
+    #[allow(dead_code)]
     buffer_size: usize,
 }
 
@@ -485,6 +486,13 @@ impl DictSQLiteV4 {
 
         // Try hot tier first (lock-free read)
         if let Some(value) = self.hot_tier.get(&key) {
+            // Check if data is encrypted but we have no password
+            if self.crypto.is_none() && crate::crypto::CryptoEngine::is_encrypted(&value) {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "Data is encrypted but no password was provided"
+                ));
+            }
+
             // Decrypt if encryption is enabled
             let data = if let Some(ref crypto) = self.crypto {
                 crypto
@@ -507,6 +515,13 @@ impl DictSQLiteV4 {
         let storage_guard = self.storage.lock().unwrap();
         if let Some(ref storage) = *storage_guard {
             if let Ok(Some(value)) = storage.get(&key) {
+                // Check if data is encrypted but we have no password
+                if self.crypto.is_none() && crate::crypto::CryptoEngine::is_encrypted(&value) {
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                        "Data is encrypted but no password was provided"
+                    ));
+                }
+
                 // Decrypt if encryption is enabled
                 let data = if let Some(ref crypto) = self.crypto {
                     crypto.decrypt(&value).map_err(|e| {
@@ -557,12 +572,16 @@ impl DictSQLiteV4 {
 
         // v4.2 Optimization: Use write buffer for WriteThrough mode
         if self.config.persist_mode == PersistMode::WriteThrough {
-            let mut buffer = self.write_buffer.lock().unwrap();
-            buffer.push((key.clone(), data));
+            let should_flush = {
+                let mut buffer = self.write_buffer.lock().unwrap();
+                buffer.push((key.clone(), data));
+                // Flush when buffer reaches size threshold
+                // For buffer_size of 1, this provides immediate flush behavior
+                buffer.len() >= self.buffer_size
+            };
 
-            // Auto-flush when buffer is full
-            if buffer.len() >= self.buffer_size {
-                drop(buffer);
+            // Flush if buffer is full
+            if should_flush {
                 self.flush_write_buffer()?;
             }
         }
@@ -648,6 +667,14 @@ impl DictSQLiteV4 {
 
     /// Delete key
     fn delete(&self, key: String) -> PyResult<()> {
+        // Check if key exists first
+        if !self.contains(key.clone())? {
+            return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                "Key not found: {}",
+                key
+            )));
+        }
+
         // Track that we're removing this
         self.access_tracker.lock().unwrap().pop(&key);
 
@@ -874,11 +901,35 @@ impl DictSQLiteV4 {
     fn len(&self) -> PyResult<usize> {
         use std::collections::HashSet;
 
-        // Collect all unique keys
+        // Determine the key prefix for this table
+        let prefix = if !self.config.table_name.is_empty() && self.config.table_name != "main" {
+            format!("{}:", self.config.table_name)
+        } else {
+            String::new()
+        };
+
+        // Collect all unique keys for this table
         let mut all_keys: HashSet<String> = self
             .hot_tier
             .iter()
-            .map(|entry| entry.key().clone())
+            .filter_map(|entry| {
+                let key = entry.key().clone();
+                // If we have a prefix, only include keys with that prefix
+                if !prefix.is_empty() {
+                    if key.starts_with(&prefix) {
+                        Some(key)
+                    } else {
+                        None
+                    }
+                } else {
+                    // For main table, exclude keys with any table prefix (containing ':')
+                    if !key.contains(':') {
+                        Some(key)
+                    } else {
+                        None
+                    }
+                }
+            })
             .collect();
 
         // Also get keys from storage if not in memory-only mode
@@ -886,7 +937,19 @@ impl DictSQLiteV4 {
             let storage_guard = self.storage.lock().unwrap();
             if let Some(ref storage) = *storage_guard {
                 if let Ok(storage_keys) = storage.keys() {
-                    all_keys.extend(storage_keys);
+                    for key in storage_keys {
+                        // Apply same filtering logic
+                        if !prefix.is_empty() {
+                            if key.starts_with(&prefix) {
+                                all_keys.insert(key);
+                            }
+                        } else {
+                            // For main table, exclude keys with any table prefix
+                            if !key.contains(':') {
+                                all_keys.insert(key);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -896,8 +959,15 @@ impl DictSQLiteV4 {
 
     /// Check if key exists
     fn contains(&self, key: String) -> PyResult<bool> {
+        // Add table prefix if needed
+        let full_key = if !self.config.table_name.is_empty() && self.config.table_name != "main" {
+            format!("{}:{}", self.config.table_name, key)
+        } else {
+            key
+        };
+
         // First check hot tier
-        if self.hot_tier.contains_key(&key) {
+        if self.hot_tier.contains_key(&full_key) {
             return Ok(true);
         }
 
@@ -905,7 +975,7 @@ impl DictSQLiteV4 {
         if self.config.persist_mode != PersistMode::Memory {
             let storage_guard = self.storage.lock().unwrap();
             if let Some(ref storage) = *storage_guard {
-                if let Ok(Some(_)) = storage.get(&key) {
+                if let Ok(Some(_)) = storage.get(&full_key) {
                     return Ok(true);
                 }
             }
