@@ -214,7 +214,10 @@ class DictSQLite:
             *default: Optional default value if key doesn't exist
         
         Returns:
-            Value for the key, or default if key doesn't exist, or None if no default
+            Value for the key, or default if key doesn't exist
+        
+        Raises:
+            KeyError: If key doesn't exist and no default is provided
         """
         try:
             value = self[key]
@@ -223,7 +226,7 @@ class DictSQLite:
         except KeyError:
             if default:
                 return default[0]
-            return None  # Return None instead of raising KeyError
+            raise  # Raise KeyError if no default is provided
 
     def __iter__(self):
         """Iterate over keys"""

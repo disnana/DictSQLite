@@ -135,9 +135,11 @@ def test_dict_pop_method():
         print("✓ pop() returns default for non-existent key")
         
         print("\nStep 4: Testing pop() with non-existent key and no default...")
-        none_value = db.pop("another_nonexistent_key")
-        assert none_value is None, "pop() should return None when key doesn't exist and no default"
-        print("✓ pop() returns None when no default specified")
+        try:
+            db.pop("another_nonexistent_key")
+            assert False, "pop() should raise KeyError when key doesn't exist and no default"
+        except KeyError:
+            print("✓ pop() raises KeyError when no default specified")
         
         db.close()
         
