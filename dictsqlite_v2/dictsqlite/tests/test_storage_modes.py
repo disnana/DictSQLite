@@ -24,6 +24,15 @@ except ImportError:
     DictSQLiteV4 = None
 
 
+# Module-level class for pickle testing (local classes can't be pickled)
+class SimpleData:
+    def __init__(self, value):
+        self.value = value
+    
+    def __eq__(self, other):
+        return isinstance(other, SimpleData) and self.value == other.value
+
+
 @pytest.mark.skipif(not DICTSQLITE_V4_AVAILABLE, reason="DictSQLiteV4 module not built")
 class TestBytesMode:
     """Bytesモードのテスト"""
@@ -452,14 +461,7 @@ class TestStorageModeEdgeCases:
         with windows_safe_temp_db() as db_path:
             db = DictSQLiteV4(db_path, storage_mode="pickle")
             
-            # シンプルなデータクラス
-            class SimpleData:
-                def __init__(self, value):
-                    self.value = value
-                
-                def __eq__(self, other):
-                    return isinstance(other, SimpleData) and self.value == other.value
-            
+            # Use module-level class (local classes can't be pickled by standard pickle)
             data = SimpleData(42)
             db["custom"] = data
             
