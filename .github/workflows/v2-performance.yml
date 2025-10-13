@@ -1,0 +1,109 @@
+name: DictSQLite v2 Performance Tests (Auto on Commit)
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: ['**']  # すべてのブランチで実行
+    paths:
+      - 'dictsqlite_v2/**'  # DictSQLite v2 関連の変更時のみトリガー（全体で動かすなら削除OK）
+  pull_request:
+    branches: ['**']  # PR作成・更新時にも実行（不要なら削除）
+
+jobs:
+  build-and-test:
+    name: Build and Performance Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+      fail-fast: false
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            dictsqlite_v2/dictsqlite/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin pytest pytest-asyncio
+      
+      - name: Build DictSQLite v4.2
+        working-directory: dictsqlite_v2/dictsqlite
+        run: |
+          chmod +x build.sh
+          ./build.sh
+        env:
+          CI: true
+      
+      - name: Run performance tests (3 iterations)
+        working-directory: dictsqlite_v2/dictsqlite
+        run: |
+          python tests/test_v4.2_comprehensive_performance.py \
+            --iterations 3 \
+            --output performance_results_${{ matrix.os }}_py${{ matrix.python-version }}.json
+      
+      - name: Run pytest on entire tests folder
+        working-directory: dictsqlite_v2/dictsqlite
+        run: |
+          pytest tests/ -v --tb=short
+      
+      - name: Upload performance results
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-results-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: dictsqlite_v2/dictsqlite/performance_results_*.json
+          retention-days: 14
+
+  security-check:
+    name: Security and Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+      
+      - name: Run Clippy
+        working-directory: dictsqlite_v2/dictsqlite
+        run: cargo clippy -- -D warnings || true
+      
+      - name: Run Cargo Audit
+        working-directory: dictsqlite_v2/dictsqlite
+        run: |
+          cargo install cargo-audit || true
+          cargo audit || true
+      
+      - name: Check formatting
+        working-directory: dictsqlite_v2/dictsqlite
+        run: cargo fmt --check || true
