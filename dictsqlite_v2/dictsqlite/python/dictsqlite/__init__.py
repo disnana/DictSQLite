@@ -327,6 +327,8 @@ class AsyncDictSQLite:
         self._db = _NativeAsyncDictSQLite(
             db_path, capacity, persist_mode, storage_mode, table_name, buffer_size
         )
+        self._storage_mode = storage_mode
+        self._closed = False
 
     # New awaitable async methods
     async def aget(self, key):
@@ -336,23 +338,65 @@ class AsyncDictSQLite:
             key: Key to retrieve
 
         Returns:
-            Value as bytes, or None if not found
+            Deserialized value
+
+        Raises:
+            KeyError: If key not found
+            RuntimeError: If database is closed
         """
+        if self._closed:
+            raise RuntimeError("Database is closed")
+        
         result = await self._db.aget(str(key))
-        return result
+        if result is None:
+            raise KeyError(f"Key not found: {key}")
+        
+        # Deserialize based on storage mode
+        if self._storage_mode == "bytes":
+            return result
+        elif self._storage_mode == "pickle":
+            import pickle
+            return pickle.loads(result)
+        elif self._storage_mode in ("json", "jsonb"):
+            if self._storage_mode == "jsonb":
+                import msgpack
+                return msgpack.unpackb(result, raw=False)
+            else:
+                import json
+                return json.loads(result.decode('utf-8'))
+        else:
+            return result
 
     async def aset(self, key, value):
         """Set value asynchronously (awaitable)
 
         Args:
             key: Key to set
-            value: Value to store (will be converted to bytes if needed)
+            value: Value to store (will be serialized based on storage_mode)
+        
+        Raises:
+            RuntimeError: If database is closed
         """
-        if isinstance(value, str):
-            value = value.encode('utf-8')
-        elif not isinstance(value, bytes):
+        if self._closed:
+            raise RuntimeError("Database is closed")
+        
+        # Serialize based on storage mode
+        if self._storage_mode == "bytes":
+            if isinstance(value, str):
+                value = value.encode('utf-8')
+            elif not isinstance(value, bytes):
+                raise ValueError("bytes mode requires bytes or str values")
+        elif self._storage_mode == "pickle":
             import pickle
             value = pickle.dumps(value)
+        elif self._storage_mode in ("json", "jsonb"):
+            import json
+            if self._storage_mode == "jsonb":
+                import msgpack
+                value = msgpack.packb(value, use_bin_type=True)
+            else:
+                value = json.dumps(value).encode('utf-8')
+        
         await self._db.aset(str(key), value)
 
     async def abatch_get(self, keys):
@@ -385,6 +429,42 @@ class AsyncDictSQLite:
             prepared.append((str(key), value))
 
         await self._db.abatch_set(prepared)
+
+    async def acontains(self, key):
+        """Check if key exists asynchronously (awaitable)
+
+        Args:
+            key: Key to check
+
+        Returns:
+            True if key exists, False otherwise
+        """
+        return await self._db.acontains(str(key))
+
+    async def adelete(self, key):
+        """Delete key asynchronously (awaitable)
+
+        Args:
+            key: Key to delete
+        
+        Raises:
+            KeyError: If key not found
+        """
+        # Check if key exists first
+        if not await self.acontains(key):
+            raise KeyError(f"Key not found: {key}")
+        
+        await self._db.adelete(str(key))
+
+    async def aflush(self):
+        """Flush cached data to storage asynchronously (awaitable)"""
+        await self._db.aflush()
+
+    async def aclose(self):
+        """Close database and flush data asynchronously (awaitable)"""
+        if not self._closed:
+            await self._db.aclose()
+            self._closed = True
 
     # Backward-compatible synchronous methods
     def get(self, key):
@@ -451,7 +531,9 @@ class AsyncDictSQLite:
 
     def close(self):
         """Close database and flush data"""
-        self._db.close()
+        if not self._closed:
+            self._db.close()
+            self._closed = True
 
     def clear(self):
         """Clear all data"""

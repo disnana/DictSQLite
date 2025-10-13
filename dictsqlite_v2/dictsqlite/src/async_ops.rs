@@ -496,6 +496,125 @@ impl AsyncDictSQLite {
         Ok(())
     }
 
+    /// Truly async contains operation (awaitable in Python)
+    /// Check if a key exists in the database
+    #[pyo3(signature = (key))]
+    async fn acontains(&self, key: String) -> PyResult<bool> {
+        let cache = self.cache.clone();
+        let storage = self.storage.clone();
+        let config = self.config.clone();
+
+        // Check cache first
+        if cache.contains_key(&key) {
+            return Ok(true);
+        }
+
+        // If not in cache and we have storage, check storage
+        if config.persist_mode != PersistMode::Memory {
+            let storage_guard = storage.lock().unwrap();
+            if let Some(ref storage_engine) = *storage_guard {
+                match storage_engine.get(&key) {
+                    Ok(Some(_)) => return Ok(true),
+                    Ok(None) => return Ok(false),
+                    Err(_) => return Ok(false),
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
+    /// Truly async delete operation (awaitable in Python)
+    /// Delete a key from the database
+    #[pyo3(signature = (key))]
+    async fn adelete(&self, key: String) -> PyResult<()> {
+        let cache = self.cache.clone();
+        let storage = self.storage.clone();
+        let config = self.config.clone();
+        let runtime = self.runtime.clone();
+
+        // Remove from cache
+        cache.remove(&key);
+
+        // Remove from storage if persistence is enabled
+        if config.persist_mode != PersistMode::Memory {
+            runtime
+                .spawn_blocking(move || {
+                    let mut storage_guard = storage.lock().unwrap();
+                    if let Some(ref mut storage_engine) = *storage_guard {
+                        storage_engine.delete(&key).map_err(|e| {
+                            pyo3::exceptions::PyIOError::new_err(e.to_string())
+                        })?;
+                    }
+                    Ok::<(), PyErr>(())
+                })
+                .await
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
+        }
+
+        Ok(())
+    }
+
+    /// Truly async flush operation (awaitable in Python)
+    /// Flush cached data to storage
+    async fn aflush(&self) -> PyResult<()> {
+        let cache = self.cache.clone();
+        let write_buffer = self.write_buffer.clone();
+        let storage = self.storage.clone();
+        let config = self.config.clone();
+        let runtime = self.runtime.clone();
+
+        if config.persist_mode == PersistMode::Memory {
+            return Ok(());
+        }
+
+        runtime
+            .spawn_blocking(move || {
+                // First, flush any pending writes in the buffer
+                let mut buffer = write_buffer.lock().unwrap();
+                if !buffer.is_empty() {
+                    let mut storage_guard = storage.lock().unwrap();
+                    if let Some(ref mut storage_engine) = *storage_guard {
+                        for (k, v) in buffer.drain() {
+                            storage_engine.set(&k, &v).map_err(|e| {
+                                pyo3::exceptions::PyIOError::new_err(e.to_string())
+                            })?;
+                        }
+                    }
+                }
+                drop(buffer);
+
+                // Then flush the cache (for Lazy mode)
+                if config.persist_mode == PersistMode::Lazy {
+                    let mut storage_guard = storage.lock().unwrap();
+                    if let Some(ref mut storage_engine) = *storage_guard {
+                        for entry in cache.iter() {
+                            storage_engine
+                                .set(entry.key(), entry.value())
+                                .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+                        }
+                    }
+                }
+
+                Ok::<(), PyErr>(())
+            })
+            .await
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
+
+        Ok(())
+    }
+
+    /// Truly async close operation (awaitable in Python)
+    /// Close and flush if needed
+    async fn aclose(&self) -> PyResult<()> {
+        // Flush write buffer for WriteThrough mode
+        // Flush both buffer and cache for Lazy mode
+        if self.config.persist_mode != PersistMode::Memory {
+            self.aflush().await?;
+        }
+        Ok(())
+    }
+
     /// Dict-like access: db[key]
     fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
         // Add table prefix if default table is not "main" or empty
