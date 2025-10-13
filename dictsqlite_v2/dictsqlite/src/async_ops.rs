@@ -145,15 +145,15 @@ impl AsyncDictSQLite {
 
         // Handle persistence based on mode
         if self.config.persist_mode == PersistMode::WriteThrough {
-            // v4.2 Optimization: Use write buffer instead of immediate write
-            let mut buffer = self.write_buffer.lock().unwrap();
-            buffer.insert(key, value);
-
-            // Auto-flush when buffer is full (reduces Mutex locks from 1000 to ~10)
-            if buffer.len() >= self.buffer_size {
-                drop(buffer);
-                self.flush_write_buffer()?;
+            // Add to write buffer
+            {
+                let mut buffer = self.write_buffer.lock().unwrap();
+                buffer.insert(key, value);
             }
+            
+            // In writethrough mode, always flush immediately to maintain semantics
+            // This ensures data is immediately visible to other instances
+            self.flush_write_buffer()?;
         }
 
         Ok(())
@@ -357,35 +357,32 @@ impl AsyncDictSQLite {
         // Handle persistence based on mode
         if config.persist_mode == PersistMode::WriteThrough {
             // Add to write buffer
-            let should_flush = {
+            {
                 let mut buffer = write_buffer.lock().unwrap();
                 buffer.insert(key, value);
-                buffer.len() >= buffer_size
-            };
-
-            // Auto-flush when buffer is full
-            if should_flush {
-                runtime
-                    .spawn_blocking(move || {
-                        let mut buffer = write_buffer.lock().unwrap();
-                        if buffer.is_empty() {
-                            return Ok(());
-                        }
-
-                        // Get storage handle and write
-                        let mut storage_guard = storage.lock().unwrap();
-                        if let Some(ref mut storage_engine) = *storage_guard {
-                            for (k, v) in buffer.drain() {
-                                storage_engine.set(&k, &v).map_err(|e| {
-                                    pyo3::exceptions::PyIOError::new_err(e.to_string())
-                                })?;
-                            }
-                        }
-                        Ok::<(), PyErr>(())
-                    })
-                    .await
-                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
             }
+
+            // In writethrough mode, always flush immediately to maintain semantics
+            runtime
+                .spawn_blocking(move || {
+                    let mut buffer = write_buffer.lock().unwrap();
+                    if buffer.is_empty() {
+                        return Ok(());
+                    }
+
+                    // Get storage handle and write
+                    let mut storage_guard = storage.lock().unwrap();
+                    if let Some(ref mut storage_engine) = *storage_guard {
+                        for (k, v) in buffer.drain() {
+                            storage_engine.set(&k, &v).map_err(|e| {
+                                pyo3::exceptions::PyIOError::new_err(e.to_string())
+                            })?;
+                        }
+                    }
+                    Ok::<(), PyErr>(())
+                })
+                .await
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
         }
 
         Ok(())
@@ -460,37 +457,35 @@ impl AsyncDictSQLite {
 
         // Handle persistence based on mode
         if config.persist_mode == PersistMode::WriteThrough {
-            let should_flush = {
+            // Add to write buffer
+            {
                 let mut buffer = write_buffer.lock().unwrap();
                 for (key, value) in items {
                     buffer.insert(key, value);
                 }
-                buffer.len() >= buffer_size
-            };
-
-            // Auto-flush when buffer is full
-            if should_flush {
-                runtime
-                    .spawn_blocking(move || {
-                        let mut buffer = write_buffer.lock().unwrap();
-                        if buffer.is_empty() {
-                            return Ok(());
-                        }
-
-                        // Get storage handle and write
-                        let mut storage_guard = storage.lock().unwrap();
-                        if let Some(ref mut storage_engine) = *storage_guard {
-                            for (k, v) in buffer.drain() {
-                                storage_engine.set(&k, &v).map_err(|e| {
-                                    pyo3::exceptions::PyIOError::new_err(e.to_string())
-                                })?;
-                            }
-                        }
-                        Ok::<(), PyErr>(())
-                    })
-                    .await
-                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
             }
+
+            // In writethrough mode, always flush immediately to maintain semantics
+            runtime
+                .spawn_blocking(move || {
+                    let mut buffer = write_buffer.lock().unwrap();
+                    if buffer.is_empty() {
+                        return Ok(());
+                    }
+
+                    // Get storage handle and write
+                    let mut storage_guard = storage.lock().unwrap();
+                    if let Some(ref mut storage_engine) = *storage_guard {
+                        for (k, v) in buffer.drain() {
+                            storage_engine.set(&k, &v).map_err(|e| {
+                                pyo3::exceptions::PyIOError::new_err(e.to_string())
+                            })?;
+                        }
+                    }
+                    Ok::<(), PyErr>(())
+                })
+                .await
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
         }
 
         Ok(())
