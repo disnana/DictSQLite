@@ -12,6 +12,9 @@ description = "High-performance DictSQLite v2 with I/O optimizations"
 readme = "Pypi.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
+dependencies = [
+	"msgpack>=1.0.0",
+]
 
 authors = [
 	{ name = "Disnana", email = "support@disnana.com" }
