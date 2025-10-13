@@ -207,7 +207,15 @@ class DictSQLite:
         return self[key]
 
     def pop(self, key, *default):
-        """Remove and return value"""
+        """Remove and return value
+        
+        Args:
+            key: Key to remove
+            *default: Optional default value if key doesn't exist
+        
+        Returns:
+            Value for the key, or default if key doesn't exist, or None if no default
+        """
         try:
             value = self[key]
             del self[key]
@@ -215,7 +223,7 @@ class DictSQLite:
         except KeyError:
             if default:
                 return default[0]
-            raise
+            return None  # Return None instead of raising KeyError
 
     def __iter__(self):
         """Iterate over keys"""

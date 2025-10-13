@@ -648,6 +648,14 @@ impl DictSQLiteV4 {
 
     /// Delete key
     fn delete(&self, key: String) -> PyResult<()> {
+        // Check if key exists first
+        if !self.contains(key.clone())? {
+            return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                "Key not found: {}",
+                key
+            )));
+        }
+
         // Track that we're removing this
         self.access_tracker.lock().unwrap().pop(&key);
 

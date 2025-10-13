@@ -706,6 +706,74 @@ impl AsyncDictSQLite {
         self.set_async(full_key, data)
     }
 
+    /// Dict-like contains: key in db
+    fn __contains__(&self, key: String, py: Python) -> PyResult<bool> {
+        // Add table prefix if default table is not "main" or empty
+        let full_key = if !self.config.table_name.is_empty() && self.config.table_name != "main" {
+            format!("{}:{}", self.config.table_name, key)
+        } else {
+            key
+        };
+
+        // Check cache first
+        if self.cache.contains_key(&full_key) {
+            return Ok(true);
+        }
+
+        // Check storage if persistence is enabled
+        if self.config.persist_mode != PersistMode::Memory {
+            let storage_guard = self.storage.lock().unwrap();
+            if let Some(ref storage_engine) = *storage_guard {
+                match storage_engine.get(&full_key) {
+                    Ok(Some(_)) => return Ok(true),
+                    Ok(None) => return Ok(false),
+                    Err(_) => return Ok(false),
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
+    /// Dict-like deletion: del db[key]
+    fn __delitem__(&self, key: String, py: Python) -> PyResult<()> {
+        // Add table prefix if default table is not "main" or empty
+        let full_key = if !self.config.table_name.is_empty() && self.config.table_name != "main" {
+            format!("{}:{}", self.config.table_name, key)
+        } else {
+            key.clone()
+        };
+
+        // Check if key exists first
+        if !self.__contains__(full_key.clone(), py)? {
+            return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                "Key not found: {}",
+                key
+            )));
+        }
+
+        // Remove from cache
+        self.cache.remove(&full_key);
+
+        // Remove from write buffer
+        if self.config.persist_mode == PersistMode::WriteThrough {
+            let mut buffer = self.write_buffer.lock().unwrap();
+            buffer.remove(&full_key);
+        }
+
+        // Remove from storage if persistence is enabled
+        if self.config.persist_mode != PersistMode::Memory {
+            let mut storage_guard = self.storage.lock().unwrap();
+            if let Some(ref mut storage_engine) = *storage_guard {
+                storage_engine.delete(&full_key).map_err(|e| {
+                    pyo3::exceptions::PyIOError::new_err(e.to_string())
+                })?;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Get a table proxy for accessing a specific table
     fn table(slf: PyRef<Self>, table_name: String) -> PyResult<AsyncTableProxy> {
         Ok(AsyncTableProxy {
