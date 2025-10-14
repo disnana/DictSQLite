@@ -18,6 +18,25 @@
 
 **推奨読者**: すべてのv4.2ユーザー
 
+#### 📋 [DICTSQLITE_V2_SPECIFICATION_JP.md](./DICTSQLITE_V2_SPECIFICATION_JP.md)
+**v2 (v4.2) の詳細な技術仕様を知りたい方向け**
+
+- アーキテクチャ詳細（3層ストレージシステム）
+- データ構造の完全な定義
+- すべてのAPIメソッドの仕様
+- 永続化モード・ストレージモードの詳細
+- セキュリティ機能（暗号化・Safe Pickle）
+- パフォーマンス特性とベンチマーク
+- SQLite最適化設定
+- データフロー図
+- 依存関係とビルド設定
+- 制限事項
+
+**推奨読者**: 
+- 完全な技術仕様が必要な方
+- アーキテクチャの詳細を理解したい方
+- リファレンスドキュメントとして使用したい方
+
 ---
 
 ### 2. 移行ユーザー向け
@@ -253,6 +272,7 @@ print(stats)
 | ドキュメント | 対象読者 | 読了時間 | 必須度 |
 |------------|---------|---------|--------|
 | [README_V4.2_JP.md](./README_V4.2_JP.md) | すべて | 15分 | ★★★ |
+| [DICTSQLITE_V2_SPECIFICATION_JP.md](./DICTSQLITE_V2_SPECIFICATION_JP.md) | 技術仕様参照者 | 60分 | ★★☆ |
 | [MIGRATION_GUIDE_V4.2_JP.md](./MIGRATION_GUIDE_V4.2_JP.md) | 移行者 | 30分 | ★★★ |
 | [PERFORMANCE_OPTIMIZATION_GUIDE_JP.md](./PERFORMANCE_OPTIMIZATION_GUIDE_JP.md) | 最適化 | 30分 | ★★☆ |
 | [examples/README.md](./examples/README.md) | 実践者 | 10分 | ★★★ |
