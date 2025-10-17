@@ -15,7 +15,7 @@ async def benchmark_v3alpha():
     """Benchmark v3-alpha performance."""
     from dictsqlite_fastest_beta_v3_alpha import AsyncDictSQLiteFastestBetaV3
     
-    db_path = tempfile.mktemp(suffix='_v3.db')
+    db_path = tempfile.mkdtemp(suffix='_v3.db')
     try:
         async with AsyncDictSQLiteFastestBetaV3(db_path) as db:
             # Prepare test data
