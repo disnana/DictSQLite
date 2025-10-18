@@ -621,6 +621,7 @@ __all__ = [
     'DictSQLiteV4',  # Alias for backward compatibility
     'AsyncDictSQLite',
     'is_native_available',
+    'Modes',
 ]
 
 # Backward compatibility alias
