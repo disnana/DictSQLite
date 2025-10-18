@@ -31,6 +31,21 @@ except Exception:
 logger = logging.getLogger(__name__)
 
 
+class Modes:
+    """Persistence and Storage Modes"""
+
+    # Persistence Modes
+    MEMORY = "memory"          # All data in memory, no persistence
+    LAZY = "lazy"              # Data persisted on flush or close
+    WRITETHROUGH = "writethrough"  # Data persisted immediately on write
+
+    # Storage Modes
+    PICKLE = "pickle"          # Use Python pickle for serialization
+    JSONB = "jsonb"            # Use JSONB for serialization (PostgreSQL compatible)
+    BYTES = "bytes"
+    JSON = "json"              # Use JSON for serialization
+
+
 class DictSQLite:
     """
     High-performance DictSQLite v4.0 with security features
