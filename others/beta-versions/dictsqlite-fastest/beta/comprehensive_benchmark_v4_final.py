@@ -17,7 +17,7 @@ async def benchmark_v4_final():
     sys.path.insert(0, '/home/runner/work/DictSQLite/DictSQLite/dictsqlite-fastest/beta')
     from dictsqlite_fastest_beta_v4_final import AsyncDictSQLiteFastestBetaV4Final
     
-    db_path = tempfile.mktemp(suffix='_v4final.db')
+    db_path = tempfile.mkdtemp(suffix='_v4final.db')
     try:
         # Prepare data
         async with AsyncDictSQLiteFastestBetaV4Final(db_path, cache_max_size=2000, pool_size=10) as db:

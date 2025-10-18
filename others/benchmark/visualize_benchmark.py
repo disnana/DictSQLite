@@ -127,8 +127,45 @@ class BenchmarkGraphGenerator:
         Args:
             csv_path: ベンチマークCSVファイルのパス
         """
-        self.csv_path = Path(csv_path)
+        # ベースディレクトリ（現在の作業ディレクトリ）
+        base_dir = Path.cwd().resolve()
+        
+        # 入力パスの処理
+        input_path = Path(csv_path)
+        
+        # 絶対パスが指定された場合はエラー
+        if input_path.is_absolute():
+            raise ValueError(f"絶対パスは許可されていません: {csv_path}")
+        
+        # パスを結合して正規化
+        resolved_path = (base_dir / input_path).resolve()
+        
+        # パストラバーサル攻撃の検出
+        # resolved_pathがbase_dir内にあることを確認
+        try:
+            resolved_path.relative_to(base_dir)
+        except ValueError:
+            raise ValueError(
+                f"不正なパスが検出されました: '{csv_path}' は許可されたディレクトリ外へのアクセスです"
+            )
+        
+        # ファイルの存在と種類を確認
+        if not resolved_path.exists():
+            raise FileNotFoundError(f"CSVファイルが見つかりません: {resolved_path}")
+        
+        if not resolved_path.is_file():
+            raise ValueError(f"指定されたパスはファイルではありません: {resolved_path}")
+        
+        self.csv_path = resolved_path
         self.output_dir = self.csv_path.parent / "graphs"
+        
+        # 出力ディレクトリの検証
+        output_resolved = self.output_dir.resolve()
+        try:
+            output_resolved.relative_to(base_dir)
+        except ValueError:
+            raise ValueError("出力ディレクトリが許可された範囲外です")
+        
         self.output_dir.mkdir(exist_ok=True)
         
         # データ読み込み
