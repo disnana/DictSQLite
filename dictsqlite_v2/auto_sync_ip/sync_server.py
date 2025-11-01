@@ -182,7 +182,18 @@ class SyncServer:
             await self.send_changes(websocket, changes)
     
     async def handle_changes(self, websocket: WebSocketServerProtocol, data: Dict[str, Any]):
-        """Apply changes from remote node"""
+        """
+        Apply changes from remote node.
+        
+        Uses timestamp-based conflict resolution (last-write-wins):
+        - Each operation (set/delete) has its own timestamp
+        - Only operations with newer timestamps are applied
+        - This correctly handles delete-then-add scenarios:
+          * T1: key exists
+          * T2: key deleted (newer timestamp)
+          * T3: key re-added (newest timestamp) 
+          * Result: key exists with T3 value
+        """
         changes = data.get('changes', {})
         source_node = data.get('node_id')
         
@@ -195,7 +206,7 @@ class SyncServer:
                 timestamp = change.get('timestamp')
                 operation = change.get('operation', 'set')
                 
-                # Check for conflicts
+                # Check for conflicts using timestamp-based resolution
                 if key in self.change_log:
                     local_ts = self.change_log[key].get('timestamp', 0)
                     if timestamp <= local_ts:
@@ -209,7 +220,8 @@ class SyncServer:
                 else:
                     self.db[key] = value
                 
-                # Track change
+                # Track change with timestamp
+                # This allows proper ordering even for delete->add sequences
                 self.change_log[key] = {
                     'value': value,
                     'timestamp': timestamp,
