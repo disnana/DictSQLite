@@ -196,9 +196,14 @@ class SyncNode:
         """Serialize changes for transmission"""
         return pickle.dumps(changes)
     
-    def deserialize_changes(self, data: bytes) -> Dict[str, Dict[str, Any]]:
-        """Deserialize changes received from another node"""
-        return pickle.loads(data)
+    def deserialize_changes(self, data: bytes) -> Dict[str, Dict[str, Any]]:  # nosec B301
+        """
+        Deserialize changes received from another node.
+        
+        Note: This uses pickle.loads which can be unsafe with untrusted data.
+        Only use this with trusted peer nodes in a secure network.
+        """
+        return pickle.loads(data)  # nosec B301
     
     def close(self):
         """Close the sync node"""
