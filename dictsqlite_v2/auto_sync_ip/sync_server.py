@@ -233,31 +233,45 @@ class SyncServer:
         logger.debug(f"Applied {applied_count} changes, {conflict_count} conflicts")
     
     async def handle_get_missing(self, websocket: WebSocketServerProtocol, data: Dict[str, Any]):
-        """Send all data to help peer recover"""
-        # Get all current data
-        all_data = {}
+        """
+        Send all data and change history to help peer recover.
+        
+        This includes both existing data AND deletion operations to ensure
+        the peer has the complete state, including knowing what was deleted.
+        """
+        changes = {}
+        
+        # First, send the complete change log which includes deletions
+        # This ensures deletions are properly propagated
+        for key, change in self.change_log.items():
+            changes[key] = change
+        
+        # Then, add any current data that might not be in the change log
+        # (e.g., data that existed before tracking started)
         try:
+            current_data = {}
             if hasattr(self.db, 'items'):
-                all_data = dict(self.db.items())
+                current_data = dict(self.db.items())
             elif hasattr(self.db, 'keys'):
-                all_data = {key: self.db[key] for key in self.db.keys()}
+                current_data = {key: self.db[key] for key in self.db.keys()}
+            
+            # Only add to changes if not already tracked
+            current_time = time.time()
+            for key, value in current_data.items():
+                if key not in changes:
+                    changes[key] = {
+                        'value': value,
+                        'timestamp': current_time,
+                        'operation': 'set',
+                        'source_node': self.node_id
+                    }
         except Exception as e:
             logger.error(f"Error getting all data: {e}")
-        
-        # Convert to changes format
-        changes = {}
-        current_time = time.time()
-        for key, value in all_data.items():
-            changes[key] = {
-                'value': value,
-                'timestamp': current_time,
-                'operation': 'set',
-                'source_node': self.node_id
-            }
         
         # Send in batches
         if changes:
             await self.send_changes(websocket, changes)
+            logger.info(f"Sent {len(changes)} changes for recovery (including deletions)")
     
     async def send_changes(self, websocket: WebSocketServerProtocol, changes: Dict[str, Any]):
         """Send changes to peer in batches"""
