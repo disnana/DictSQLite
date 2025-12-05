@@ -17,7 +17,7 @@ use rusqlite::{params, Connection};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::{Config, TableMode};
+use crate::Config;
 
 /// メモリtierの種類
 ///
@@ -396,8 +396,9 @@ impl StorageEngine {
             .collect();
         
         // 空の場合はデフォルトテーブル名を使用
+        // kv_main を使用して他のテーブル名との一貫性を保つ
         if sanitized.is_empty() {
-            "main".to_string()
+            "kv_main".to_string()
         } else {
             format!("kv_{}", sanitized)
         }
@@ -615,8 +616,13 @@ impl StorageEngine {
             .query_map([], |row| {
                 let name: String = row.get(0)?;
                 // kv_プレフィックスを除去して元のテーブル名を返す
-                Ok(name.strip_prefix("kv_").unwrap_or(&name).to_string())
+                // プレフィックスがない場合はスキップ（セキュリティ対策）
+                match name.strip_prefix("kv_") {
+                    Some(table_name) => Ok(Some(table_name.to_string())),
+                    None => Ok(None),
+                }
             })?
+            .filter_map(|r| r.transpose())
             .collect();
         
         tables.map_err(|e| e.into())
