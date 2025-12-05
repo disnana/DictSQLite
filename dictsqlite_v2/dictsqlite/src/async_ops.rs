@@ -888,4 +888,91 @@ impl AsyncTableProxy {
         let result = db.get_async(full_key, py)?;
         Ok(result.is_some())
     }
+
+    /// Get all keys in this table
+    fn keys(&self, py: Python) -> PyResult<Vec<String>> {
+        let db = self.db.borrow(py);
+        let prefix = format!("{}:", self.table_name);
+
+        // Get all keys from cache
+        let mut all_keys: Vec<String> = db
+            .cache
+            .iter()
+            .filter(|entry| entry.key().starts_with(&prefix))
+            .map(|entry| entry.key()[prefix.len()..].to_string())
+            .collect();
+
+        // Also get keys from storage if not in memory mode
+        if db.config.persist_mode != PersistMode::Memory {
+            let storage_guard = db.storage.lock().unwrap();
+            if let Some(ref storage) = *storage_guard {
+                if let Ok(storage_keys) = storage.keys() {
+                    for key in storage_keys {
+                        if key.starts_with(&prefix) {
+                            let short_key = key[prefix.len()..].to_string();
+                            if !all_keys.contains(&short_key) {
+                                all_keys.push(short_key);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(all_keys)
+    }
+
+    /// Get all items as (key, value) tuples
+    fn items(&self, py: Python) -> PyResult<Vec<(String, PyObject)>> {
+        let keys = self.keys(py)?;
+        let mut items = Vec::new();
+        for key in keys {
+            items.push((key.clone(), self.__getitem__(key, py)?));
+        }
+        Ok(items)
+    }
+
+    /// Get number of items in this table
+    fn __len__(&self, py: Python) -> PyResult<usize> {
+        Ok(self.keys(py)?.len())
+    }
+
+    /// String representation: show table name and contents as dict
+    fn __repr__(&self, py: Python) -> PyResult<String> {
+        let items = self.items(py)?;
+        if items.is_empty() {
+            return Ok(format!("TableProxy('{}', {{}})", self.table_name));
+        }
+
+        // Format items as dict-like string
+        let mut item_strs = Vec::new();
+        for (key, value) in items {
+            // Try to get a string representation of the value
+            let value_repr = if let Ok(repr_method) = value.getattr(py, "__repr__") {
+                if let Ok(repr_result) = repr_method.call0(py) {
+                    if let Ok(s) = repr_result.extract::<String>(py) {
+                        s
+                    } else {
+                        "...".to_string()
+                    }
+                } else {
+                    "...".to_string()
+                }
+            } else {
+                "...".to_string()
+            };
+            item_strs.push(format!("{:?}: {}", key, value_repr));
+        }
+
+        Ok(format!(
+            "TableProxy('{}', {{{}}})",
+            self.table_name,
+            item_strs.join(", ")
+        ))
+    }
+
+    /// String representation for str()
+    fn __str__(&self, py: Python) -> PyResult<String> {
+        self.__repr__(py)
+    }
 }

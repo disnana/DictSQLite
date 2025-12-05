@@ -1808,6 +1808,45 @@ impl TableProxy {
     fn __len__(&self, py: Python) -> PyResult<usize> {
         Ok(self.keys(py)?.len())
     }
+
+    /// String representation: show table name and contents as dict
+    fn __repr__(&self, py: Python) -> PyResult<String> {
+        let items = self.items(py)?;
+        if items.is_empty() {
+            return Ok(format!("TableProxy('{}', {{}})", self.table_name));
+        }
+
+        // Format items as dict-like string
+        let mut item_strs = Vec::new();
+        for (key, value) in items {
+            // Try to get a string representation of the value
+            let value_repr = if let Ok(repr_method) = value.getattr(py, "__repr__") {
+                if let Ok(repr_result) = repr_method.call0(py) {
+                    if let Ok(s) = repr_result.extract::<String>(py) {
+                        s
+                    } else {
+                        "...".to_string()
+                    }
+                } else {
+                    "...".to_string()
+                }
+            } else {
+                "...".to_string()
+            };
+            item_strs.push(format!("{:?}: {}", key, value_repr));
+        }
+
+        Ok(format!(
+            "TableProxy('{}', {{{}}})",
+            self.table_name,
+            item_strs.join(", ")
+        ))
+    }
+
+    /// String representation for str()
+    fn __str__(&self, py: Python) -> PyResult<String> {
+        self.__repr__(py)
+    }
 }
 
 /// Python module definition
