@@ -1819,20 +1819,12 @@ impl TableProxy {
         // Format items as dict-like string
         let mut item_strs = Vec::new();
         for (key, value) in items {
-            // Try to get a string representation of the value
-            let value_repr = if let Ok(repr_method) = value.getattr(py, "__repr__") {
-                if let Ok(repr_result) = repr_method.call0(py) {
-                    if let Ok(s) = repr_result.extract::<String>(py) {
-                        s
-                    } else {
-                        "...".to_string()
-                    }
-                } else {
-                    "...".to_string()
-                }
-            } else {
-                "...".to_string()
-            };
+            // Try to get a string representation of the value using method chaining
+            let value_repr = value
+                .getattr(py, "__repr__")
+                .and_then(|repr_method| repr_method.call0(py))
+                .and_then(|repr_result| repr_result.extract::<String>(py))
+                .unwrap_or_else(|_| "...".to_string());
             item_strs.push(format!("{:?}: {}", key, value_repr));
         }
 
