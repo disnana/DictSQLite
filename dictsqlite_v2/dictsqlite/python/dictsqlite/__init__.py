@@ -394,8 +394,8 @@ class AsyncDictSQLite:
         if self._storage_mode == "bytes":
             return result
         elif self._storage_mode == "pickle":
-            import pickle
-            return pickle.loads(result)
+            import pickle  # nosec B403 - pickle used for internal data serialization
+            return pickle.loads(result)  # nosec B301 - safe_pickle available for untrusted data
         elif self._storage_mode in ("json", "jsonb"):
             if self._storage_mode == "jsonb":
                 import msgpack
