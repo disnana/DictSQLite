@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 class Modes:
-    """Persistence and Storage Modes"""
+    """Persistence, Storage, and Table Modes"""
 
     # Persistence Modes
     MEMORY = "memory"          # All data in memory, no persistence
@@ -44,6 +44,10 @@ class Modes:
     JSONB = "jsonb"            # Use JSONB for serialization (PostgreSQL compatible)
     BYTES = "bytes"
     JSON = "json"              # Use JSON for serialization
+
+    # Table Modes
+    TABLE_PREFIX = "prefix"    # Use key prefixes for table isolation (default)
+    TABLE_SEPARATE = "separate"  # Use separate SQLite tables for complete isolation
 
 
 class DictSQLite:
@@ -74,7 +78,8 @@ class DictSQLite:
         enable_safe_pickle=False,
         safe_pickle_allowed_modules=None,
         buffer_size=100,
-        encoding='utf-8'
+        encoding='utf-8',
+        table_mode="prefix"
     ):
         """
         Initialize DictSQLite v4.0
@@ -93,6 +98,9 @@ class DictSQLite:
             buffer_size: Buffer size for async operations (default: 100)
             encoding: Character encoding for string conversion (default: 'utf-8')
                      Strings are automatically encoded using this encoding
+            table_mode: Table isolation mode (default: "prefix")
+                       - "prefix": Use key prefixes for table isolation (current behavior)
+                       - "separate": Use separate SQLite tables for complete isolation
         """
         if not _NATIVE_AVAILABLE:
             raise RuntimeError(
@@ -116,7 +124,8 @@ class DictSQLite:
             encryption_password,
             enable_safe_pickle,
             safe_pickle_allowed_modules,
-            buffer_size
+            buffer_size,
+            table_mode
         )
         # Python-side safe_pickle control: when native extension isn't performing
         # safe unpickle checks (or when we prefer Python-side checking), honor
@@ -341,7 +350,8 @@ class AsyncDictSQLite:
     """
 
     def __init__(self, db_path, capacity=1_000_000, persist_mode="lazy",
-                 storage_mode="pickle", table_name="main", buffer_size=100):
+                 storage_mode="pickle", table_name="main", buffer_size=100,
+                 table_mode="prefix"):
         """
         Initialize Async DictSQLite
 
@@ -352,6 +362,9 @@ class AsyncDictSQLite:
             storage_mode: "pickle", "json", "jsonb", or "bytes"
             table_name: Default table name for operations
             buffer_size: Write buffer size for batching (default: 100)
+            table_mode: Table isolation mode (default: "prefix")
+                       - "prefix": Use key prefixes for table isolation (current behavior)
+                       - "separate": Use separate SQLite tables for complete isolation
         """
         if not _NATIVE_AVAILABLE:
             raise RuntimeError(
@@ -364,7 +377,8 @@ class AsyncDictSQLite:
             buffer_size = 1
 
         self._db = _NativeAsyncDictSQLite(
-            db_path, capacity, persist_mode, storage_mode, table_name, buffer_size
+            db_path, capacity, persist_mode, storage_mode, table_name, buffer_size,
+            table_mode
         )
         self._storage_mode = storage_mode
         self._closed = False

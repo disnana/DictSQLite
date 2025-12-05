@@ -8,6 +8,7 @@ use tokio::runtime::Runtime;
 
 use crate::{
     json_value_to_pyobject, pyobject_to_json_value, Config, PersistMode, StorageEngine, StorageMode,
+    TableMode,
 };
 
 /// Async version of DictSQLite v4.2 for high-concurrency scenarios
@@ -46,7 +47,7 @@ pub struct AsyncDictSQLite {
 #[pymethods]
 impl AsyncDictSQLite {
     #[new]
-    #[pyo3(signature = (db_path, capacity=1_000_000, persist_mode="lazy", storage_mode="pickle", table_name="main", buffer_size=100))]
+    #[pyo3(signature = (db_path, capacity=1_000_000, persist_mode="lazy", storage_mode="pickle", table_name="main", buffer_size=100, table_mode="prefix"))]
     fn new(
         db_path: String,
         capacity: usize,
@@ -54,6 +55,7 @@ impl AsyncDictSQLite {
         storage_mode: &str,
         table_name: &str,
         buffer_size: usize,
+        table_mode: &str,
     ) -> PyResult<Self> {
         use std::str::FromStr;
 
@@ -70,11 +72,15 @@ impl AsyncDictSQLite {
         let storage_mode_parsed = StorageMode::from_str(storage_mode)
             .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
 
+        let table_mode_parsed = TableMode::from_str(table_mode)
+            .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+
         let config = Config {
             hot_tier_capacity: capacity,
             persist_mode: persist_mode_parsed,
             storage_mode: storage_mode_parsed,
             table_name: table_name.to_string(),
+            table_mode: table_mode_parsed,
             ..Default::default()
         };
 
@@ -798,21 +804,61 @@ pub struct AsyncTableProxy {
 impl AsyncTableProxy {
     /// Dict-like access: table[key]
     fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
-        let full_key = format!("{}:{}", self.table_name, key);
         let db = self.db.borrow(py);
+        
+        // Get raw data based on table mode
+        let data: Vec<u8> = match db.config.table_mode {
+            TableMode::Prefix => {
+                // Prefix mode: use table:key format
+                let full_key = format!("{}:{}", self.table_name, key);
+                let result = db.get_async(full_key.clone(), py)?;
+                if result.is_none() {
+                    return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                        "Key not found: {}",
+                        key
+                    )));
+                }
+                result.unwrap().extract(py)?
+            }
+            TableMode::Separate => {
+                // Separate mode: use separate SQLite table
+                let cache_key = format!("{}:{}", self.table_name, key);
+                
+                // Check cache first
+                if let Some(value) = db.cache.get(&cache_key) {
+                    value.clone()
+                } else {
+                    // Check storage
+                    let storage_guard = db.storage.lock().unwrap();
+                    if let Some(ref storage) = *storage_guard {
+                        match storage.get_with_table(&self.table_name, &key) {
+                            Ok(Some(value)) => {
+                                // Promote to cache
+                                drop(storage_guard);
+                                db.cache.insert(cache_key, value.clone());
+                                value
+                            }
+                            Ok(None) => {
+                                return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                                    "Key not found: {}",
+                                    key
+                                )));
+                            }
+                            Err(e) => {
+                                return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()));
+                            }
+                        }
+                    } else {
+                        return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                            "Key not found: {}",
+                            key
+                        )));
+                    }
+                }
+            }
+        };
 
-        // Get the raw data
-        let result = db.get_async(full_key.clone(), py)?;
-        if result.is_none() {
-            return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
-                "Key not found: {}",
-                key
-            )));
-        }
-
-        // Extract and deserialize based on storage mode
-        let data: Vec<u8> = result.unwrap().extract(py)?;
-
+        // Deserialize based on storage mode
         match db.config.storage_mode {
             StorageMode::Pickle => {
                 let pickle = py.import("pickle")?;
@@ -844,7 +890,6 @@ impl AsyncTableProxy {
 
     /// Dict-like access: table[key] = value
     fn __setitem__(&self, key: String, value: PyObject, py: Python) -> PyResult<()> {
-        let full_key = format!("{}:{}", self.table_name, key);
         let db = self.db.borrow(py);
 
         // Serialize based on storage mode
@@ -876,17 +921,62 @@ impl AsyncTableProxy {
             StorageMode::Bytes => value.extract::<Vec<u8>>(py)?,
         };
 
-        db.set_async(full_key, data)
+        match db.config.table_mode {
+            TableMode::Prefix => {
+                let full_key = format!("{}:{}", self.table_name, key);
+                db.set_async(full_key, data)
+            }
+            TableMode::Separate => {
+                let cache_key = format!("{}:{}", self.table_name, key);
+                
+                // Update cache
+                db.cache.insert(cache_key, data.clone());
+
+                // Write to storage in WriteThrough mode
+                if db.config.persist_mode == PersistMode::WriteThrough {
+                    let mut storage_guard = db.storage.lock().unwrap();
+                    if let Some(ref mut storage) = *storage_guard {
+                        storage.set_with_table(&self.table_name, &key, &data)
+                            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+                    }
+                }
+
+                Ok(())
+            }
+        }
     }
 
     /// Dict-like access: key in table
     fn __contains__(&self, key: String, py: Python) -> PyResult<bool> {
-        let full_key = format!("{}:{}", self.table_name, key);
         let db = self.db.borrow(py);
+        
+        match db.config.table_mode {
+            TableMode::Prefix => {
+                let full_key = format!("{}:{}", self.table_name, key);
+                let result = db.get_async(full_key, py)?;
+                Ok(result.is_some())
+            }
+            TableMode::Separate => {
+                let cache_key = format!("{}:{}", self.table_name, key);
+                
+                // Check cache first
+                if db.cache.contains_key(&cache_key) {
+                    return Ok(true);
+                }
 
-        // Check if key exists by trying to get it
-        let result = db.get_async(full_key, py)?;
-        Ok(result.is_some())
+                // Check storage
+                if db.config.persist_mode != PersistMode::Memory {
+                    let storage_guard = db.storage.lock().unwrap();
+                    if let Some(ref storage) = *storage_guard {
+                        if let Ok(Some(_)) = storage.get_with_table(&self.table_name, &key) {
+                            return Ok(true);
+                        }
+                    }
+                }
+
+                Ok(false)
+            }
+        }
     }
 
     /// Get all keys in this table
@@ -894,32 +984,65 @@ impl AsyncTableProxy {
         let db = self.db.borrow(py);
         let prefix = format!("{}:", self.table_name);
 
-        // Get all keys from cache
-        let mut all_keys: Vec<String> = db
-            .cache
-            .iter()
-            .filter(|entry| entry.key().starts_with(&prefix))
-            .map(|entry| entry.key()[prefix.len()..].to_string())
-            .collect();
+        match db.config.table_mode {
+            TableMode::Prefix => {
+                // Get all keys from cache
+                let mut all_keys: Vec<String> = db
+                    .cache
+                    .iter()
+                    .filter(|entry| entry.key().starts_with(&prefix))
+                    .map(|entry| entry.key()[prefix.len()..].to_string())
+                    .collect();
 
-        // Also get keys from storage if not in memory mode
-        if db.config.persist_mode != PersistMode::Memory {
-            let storage_guard = db.storage.lock().unwrap();
-            if let Some(ref storage) = *storage_guard {
-                if let Ok(storage_keys) = storage.keys() {
-                    for key in storage_keys {
-                        if key.starts_with(&prefix) {
-                            let short_key = key[prefix.len()..].to_string();
-                            if !all_keys.contains(&short_key) {
-                                all_keys.push(short_key);
+                // Also get keys from storage if not in memory mode
+                if db.config.persist_mode != PersistMode::Memory {
+                    let storage_guard = db.storage.lock().unwrap();
+                    if let Some(ref storage) = *storage_guard {
+                        if let Ok(storage_keys) = storage.keys() {
+                            for key in storage_keys {
+                                if key.starts_with(&prefix) {
+                                    let short_key = key[prefix.len()..].to_string();
+                                    if !all_keys.contains(&short_key) {
+                                        all_keys.push(short_key);
+                                    }
+                                }
                             }
                         }
                     }
                 }
+
+                Ok(all_keys)
+            }
+            TableMode::Separate => {
+                use std::collections::HashSet;
+                
+                // Get keys from cache
+                let mut all_keys: HashSet<String> = db
+                    .cache
+                    .iter()
+                    .filter_map(|entry| {
+                        let k = entry.key().clone();
+                        if k.starts_with(&prefix) {
+                            Some(k[prefix.len()..].to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                // Get keys from storage
+                if db.config.persist_mode != PersistMode::Memory {
+                    let storage_guard = db.storage.lock().unwrap();
+                    if let Some(ref storage) = *storage_guard {
+                        if let Ok(storage_keys) = storage.keys_with_table(&self.table_name) {
+                            all_keys.extend(storage_keys);
+                        }
+                    }
+                }
+
+                Ok(all_keys.into_iter().collect())
             }
         }
-
-        Ok(all_keys)
     }
 
     /// Get all items as (key, value) tuples
@@ -941,7 +1064,7 @@ impl AsyncTableProxy {
     fn __repr__(&self, py: Python) -> PyResult<String> {
         let items = self.items(py)?;
         if items.is_empty() {
-            return Ok(format!("TableProxy('{}', {{}})", self.table_name));
+            return Ok(format!("AsyncTableProxy('{}', {{}})", self.table_name));
         }
 
         // Format items as dict-like string
@@ -957,7 +1080,7 @@ impl AsyncTableProxy {
         }
 
         Ok(format!(
-            "TableProxy('{}', {{{}}})",
+            "AsyncTableProxy('{}', {{{}}})",
             self.table_name,
             item_strs.join(", ")
         ))

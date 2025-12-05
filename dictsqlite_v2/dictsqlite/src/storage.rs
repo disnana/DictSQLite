@@ -17,7 +17,7 @@ use rusqlite::{params, Connection};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::Config;
+use crate::{Config, TableMode};
 
 /// メモリtierの種類
 ///
@@ -377,6 +377,249 @@ impl StorageEngine {
             warm_tier_bytes: warm_size,
             cold_tier_entries,
         }
+    }
+
+    // ========== 分離テーブルモード用のメソッド ==========
+
+    /// テーブル名をサニタイズして安全なSQL識別子にする
+    ///
+    /// # 引数
+    /// * `table_name` - テーブル名
+    ///
+    /// # 戻り値
+    /// サニタイズされたテーブル名（アルファベット、数字、アンダースコアのみ）
+    fn sanitize_table_name(table_name: &str) -> String {
+        // 安全なテーブル名に変換（アルファベット、数字、アンダースコアのみ許可）
+        let sanitized: String = table_name
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        
+        // 空の場合はデフォルトテーブル名を使用
+        if sanitized.is_empty() {
+            "main".to_string()
+        } else {
+            format!("kv_{}", sanitized)
+        }
+    }
+
+    /// 指定されたテーブルが存在することを確認し、存在しなければ作成
+    ///
+    /// # 引数
+    /// * `table_name` - テーブル名
+    ///
+    /// # 戻り値
+    /// - `Ok(())`: 成功
+    /// - `Err(...)`: SQLiteエラー
+    pub fn ensure_table_exists(&self, table_name: &str) -> Result<()> {
+        let safe_table_name = Self::sanitize_table_name(table_name);
+        let conn = self.cold_conn.lock().unwrap();
+        
+        // テーブルを作成（存在しない場合のみ）
+        conn.execute(
+            &format!(
+                "CREATE TABLE IF NOT EXISTS {} (
+                    key TEXT PRIMARY KEY,
+                    value BLOB NOT NULL,
+                    tier INTEGER DEFAULT 2,
+                    access_count INTEGER DEFAULT 0,
+                    last_access INTEGER DEFAULT 0
+                )",
+                safe_table_name
+            ),
+            [],
+        )?;
+
+        // インデックスを作成
+        conn.execute(
+            &format!(
+                "CREATE INDEX IF NOT EXISTS idx_{}_access 
+                 ON {}(access_count DESC, last_access DESC)",
+                safe_table_name, safe_table_name
+            ),
+            [],
+        )?;
+
+        Ok(())
+    }
+
+    /// 指定されたテーブルから値を取得（分離モード用）
+    ///
+    /// # 引数
+    /// * `table_name` - テーブル名
+    /// * `key` - キー
+    ///
+    /// # 戻り値
+    /// - `Ok(Some(Vec<u8>))`: 値が見つかった場合
+    /// - `Ok(None)`: キーが存在しない場合
+    /// - `Err(...)`: データベースエラー
+    pub fn get_with_table(&self, table_name: &str, key: &str) -> Result<Option<Vec<u8>>> {
+        // まずWarm tierをチェック（テーブル名:キー形式でキャッシュ）
+        let cache_key = format!("{}:{}", table_name, key);
+        {
+            let warm = self.warm_cache.lock().unwrap();
+            if let Some(value) = warm.get(&cache_key) {
+                return Ok(Some(value.clone()));
+            }
+        }
+
+        let safe_table_name = Self::sanitize_table_name(table_name);
+        
+        // テーブルが存在することを確認
+        self.ensure_table_exists(table_name)?;
+
+        // Cold tier（SQLite）をチェック
+        let value_opt = {
+            let conn = self.cold_conn.lock().unwrap();
+            let query = format!("SELECT value FROM {} WHERE key = ?1", safe_table_name);
+            let mut stmt = conn.prepare_cached(&query)?;
+
+            let result = stmt.query_row(params![key], |row| row.get::<_, Vec<u8>>(0));
+
+            match result {
+                Ok(value) => Some(value),
+                Err(rusqlite::Error::QueryReturnedNoRows) => None,
+                Err(e) => return Err(e.into()),
+            }
+        };
+
+        if let Some(value) = value_opt {
+            // アクセスカウントを更新
+            {
+                let conn = self.cold_conn.lock().unwrap();
+                let update_query = format!(
+                    "UPDATE {} SET access_count = access_count + 1, 
+                     last_access = strftime('%s', 'now') WHERE key = ?1",
+                    safe_table_name
+                );
+                conn.execute(&update_query, params![key])?;
+            }
+
+            // Warm tierにプロモート（テーブル名:キー形式でキャッシュ）
+            self.promote_to_warm(&cache_key, &value)?;
+
+            Ok(Some(value))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 指定されたテーブルに値を設定（分離モード用）
+    ///
+    /// # 引数
+    /// * `table_name` - テーブル名
+    /// * `key` - キー
+    /// * `value` - 値
+    ///
+    /// # 戻り値
+    /// - `Ok(())`: 成功
+    /// - `Err(...)`: SQLiteエラー
+    pub fn set_with_table(&mut self, table_name: &str, key: &str, value: &[u8]) -> Result<()> {
+        let safe_table_name = Self::sanitize_table_name(table_name);
+        
+        // テーブルが存在することを確認
+        self.ensure_table_exists(table_name)?;
+
+        let conn = self.cold_conn.lock().unwrap();
+        let insert_query = format!(
+            "INSERT OR REPLACE INTO {} (key, value, tier, last_access) 
+             VALUES (?1, ?2, 2, strftime('%s', 'now'))",
+            safe_table_name
+        );
+        conn.execute(&insert_query, params![key, value])?;
+        Ok(())
+    }
+
+    /// 指定されたテーブルからキーを削除（分離モード用）
+    ///
+    /// # 引数
+    /// * `table_name` - テーブル名
+    /// * `key` - キー
+    ///
+    /// # 戻り値
+    /// - `Ok(())`: 成功
+    /// - `Err(...)`: SQLiteエラー
+    pub fn delete_with_table(&mut self, table_name: &str, key: &str) -> Result<()> {
+        // Warm tierから削除
+        let cache_key = format!("{}:{}", table_name, key);
+        self.warm_cache.lock().unwrap().remove(&cache_key);
+
+        let safe_table_name = Self::sanitize_table_name(table_name);
+
+        // Cold tierから削除
+        let conn = self.cold_conn.lock().unwrap();
+        let delete_query = format!("DELETE FROM {} WHERE key = ?1", safe_table_name);
+        conn.execute(&delete_query, params![key])?;
+
+        Ok(())
+    }
+
+    /// 指定されたテーブルの全キーを取得（分離モード用）
+    ///
+    /// # 引数
+    /// * `table_name` - テーブル名
+    ///
+    /// # 戻り値
+    /// - `Ok(Vec<String>)`: キーのリスト
+    /// - `Err(...)`: SQLiteエラー
+    pub fn keys_with_table(&self, table_name: &str) -> Result<Vec<String>> {
+        let safe_table_name = Self::sanitize_table_name(table_name);
+        
+        // テーブルが存在することを確認
+        self.ensure_table_exists(table_name)?;
+
+        let conn = self.cold_conn.lock().unwrap();
+        let query = format!("SELECT key FROM {}", safe_table_name);
+        let mut stmt = conn.prepare(&query)?;
+        let keys: Result<Vec<String>, _> = stmt.query_map([], |row| row.get(0))?.collect();
+        keys.map_err(|e| e.into())
+    }
+
+    /// 指定されたテーブルをクリア（分離モード用）
+    ///
+    /// # 引数
+    /// * `table_name` - テーブル名
+    ///
+    /// # 戻り値
+    /// - `Ok(())`: 成功
+    /// - `Err(...)`: SQLiteエラー
+    pub fn clear_table(&mut self, table_name: &str) -> Result<()> {
+        // Warm tierから該当テーブルのエントリを削除
+        let prefix = format!("{}:", table_name);
+        {
+            let mut warm = self.warm_cache.lock().unwrap();
+            warm.retain(|k, _| !k.starts_with(&prefix));
+        }
+
+        let safe_table_name = Self::sanitize_table_name(table_name);
+
+        // Cold tierからテーブルの全データを削除
+        let conn = self.cold_conn.lock().unwrap();
+        let delete_query = format!("DELETE FROM {}", safe_table_name);
+        conn.execute(&delete_query, [])?;
+        Ok(())
+    }
+
+    /// 存在する全テーブル名を取得（分離モード用）
+    ///
+    /// # 戻り値
+    /// - `Ok(Vec<String>)`: テーブル名のリスト
+    /// - `Err(...)`: SQLiteエラー
+    pub fn list_tables(&self) -> Result<Vec<String>> {
+        let conn = self.cold_conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'kv_%'"
+        )?;
+        
+        let tables: Result<Vec<String>, _> = stmt
+            .query_map([], |row| {
+                let name: String = row.get(0)?;
+                // kv_プレフィックスを除去して元のテーブル名を返す
+                Ok(name.strip_prefix("kv_").unwrap_or(&name).to_string())
+            })?
+            .collect();
+        
+        tables.map_err(|e| e.into())
     }
 }
 
