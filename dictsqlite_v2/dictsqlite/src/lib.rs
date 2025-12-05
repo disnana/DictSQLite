@@ -1,3 +1,49 @@
+//! # DictSQLite v4.2 - 高性能辞書型SQLiteライブラリ
+//!
+//! このモジュールは、Pythonの辞書のようなインターフェースでSQLiteデータベースを
+//! 操作するための高性能Rust拡張を提供します。
+//!
+//! ## 主な機能
+//! - **ロックフリー並行アクセス**: DashMapを使用した100M+ ops/secの高速読み書き
+//! - **階層型ストレージ**: Hot/Warm/Cold tierによる効率的なデータ管理
+//! - **LRUエビクション**: 自動的なメモリ管理と古いデータの追い出し
+//! - **AES-256-GCM暗号化**: オプショナルなデータ暗号化
+//! - **Safe Pickle検証**: 安全なPythonオブジェクトのシリアライズ
+//! - **複数のストレージモード**: Pickle, JSON, JSONB, Bytes
+//!
+//! ## アーキテクチャ
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────┐
+//! │                    Python Interface                         │
+//! │  (DictSQLiteV4, AsyncDictSQLite, TableProxy)               │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │                    Hot Tier (DashMap)                       │
+//! │  - ロックフリー並行ハッシュマップ                            │
+//! │  - 最も高速なアクセス（メモリ内）                            │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │                    Warm Tier (Memory Cache)                 │
+//! │  - 頻繁にアクセスされるデータのキャッシュ                    │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │                    Cold Tier (SQLite)                       │
+//! │  - 永続化ストレージ                                         │
+//! │  - WALモードによる高速書き込み                              │
+//! └─────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## 使用例
+//! ```python
+//! from dictsqlite import DictSQLiteV4
+//!
+//! # 基本的な使用法
+//! db = DictSQLiteV4("test.db", storage_mode="jsonb")
+//! db["key"] = {"name": "Alice", "age": 30}
+//! print(db["key"])  # {'name': 'Alice', 'age': 30}
+//!
+//! # テーブル機能
+//! users = db.table("users")
+//! users["user1"] = {"name": "Bob"}
+//! ```
+
 use dashmap::DashMap;
 use lru::LruCache;
 use pyo3::prelude::*;
@@ -8,11 +54,17 @@ use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
+// サブモジュールのインポート
+// async_ops: 非同期操作を提供するモジュール
 mod async_ops;
+// cache: ハイブリッドキャッシュの実装
 mod cache;
+// crypto: AES-256-GCM暗号化機能
 mod crypto;
+// storage: SQLiteストレージエンジン
 mod storage;
 
+// テスト用モジュール（テストビルド時のみコンパイル）
 #[cfg(test)]
 mod tests_jsonb;
 #[cfg(test)]
@@ -20,25 +72,52 @@ mod tests_lru;
 #[cfg(test)]
 mod tests_storage;
 
+// 公開APIのエクスポート
+// AsyncDictSQLite: 非同期版のDictSQLite（高並行シナリオ向け）
+// AsyncTableProxy: 非同期テーブルプロキシ
 pub use async_ops::{AsyncDictSQLite, AsyncTableProxy};
+// HybridCache: LRUエビクション付きの高性能キャッシュ
 pub use cache::HybridCache;
+// CryptoEngine: AES-256-GCM暗号化エンジン
 pub use crypto::CryptoEngine;
+// StorageEngine: SQLiteバックエンドのストレージエンジン
+// MemoryTier: Hot/Warm/Cold tierの列挙型
 pub use storage::{MemoryTier, StorageEngine};
 
-/// Safe Pickle Policy using Python's safe_pickle module
+/// Safe Pickle Policy - Pythonのsafe_pickleモジュールを使用したポリシー
+///
+/// このポリシーは、Pickleデシリアライズ時に許可されるモジュールとクラスを制御します。
+/// デフォルトでは、安全でないグローバル（os.system, subprocessなど）を拒否します。
+///
+/// # 例
+/// ```rust,ignore
+/// let policy = SafePicklePolicy::new()?;
+/// // カスタムモジュールを許可
+/// let policy = policy.with_module_prefix("myapp".to_string())?;
+/// ```
 #[derive(Debug)]
 pub struct SafePicklePolicy {
+    /// Python側のポリシーオブジェクトへの参照
     policy: PyObject,
 }
 
 impl SafePicklePolicy {
-    /// Create a new default policy
+    /// 新しいデフォルトポリシーを作成
+    ///
+    /// デフォルトポリシーは以下の特徴を持ちます：
+    /// - 安全でないグローバル（os.system, subprocess等）をブロック
+    /// - 基本的なビルトイン型は許可
+    /// - dictsqliteパッケージのモジュールは許可
+    ///
+    /// # 戻り値
+    /// - `Ok(SafePicklePolicy)`: 新しいポリシーインスタンス
+    /// - `Err(PyErr)`: Python側でのエラー（モジュールインポート失敗など）
     pub fn new() -> PyResult<Self> {
         Python::with_gil(|py| {
-            // Import safe_pickle from dictsqlite.modules
+            // dictsqlite.modules からsafe_pickleをインポート
             let safe_pickle = py.import("dictsqlite.modules.safe_pickle")?;
             let policy_class = safe_pickle.getattr("SafePolicy")?;
-            // Call SafePolicy() without arguments - it now defaults denied_globals to DEFAULT_DENY
+            // SafePolicy()を引数なしで呼び出し - デフォルトでDEFAULT_DENYを使用
             let policy = policy_class.call0()?;
             Ok(SafePicklePolicy {
                 policy: policy.unbind(),
@@ -46,10 +125,16 @@ impl SafePicklePolicy {
         })
     }
 
-    /// Create policy for a package
+    /// 特定のパッケージ用のポリシーを作成
+    ///
+    /// # 引数
+    /// * `pkg_prefix` - 許可するパッケージのプレフィックス（例: "myapp"）
+    ///
+    /// # 戻り値
+    /// - `Ok(SafePicklePolicy)`: パッケージ用に設定されたポリシー
+    /// - `Err(PyErr)`: エラー
     pub fn for_package(pkg_prefix: &str) -> PyResult<Self> {
         Python::with_gil(|py| {
-            // Import safe_pickle from dictsqlite.modules
             let safe_pickle = py.import("dictsqlite.modules.safe_pickle")?;
             let policy_class = safe_pickle.getattr("SafePolicy")?;
             let policy = policy_class.call_method1("for_package", (pkg_prefix,))?;
@@ -59,25 +144,35 @@ impl SafePicklePolicy {
         })
     }
 
-    /// Add allowed module prefix
+    /// 許可するモジュールプレフィックスを追加
+    ///
+    /// この関数は既存のポリシーに新しいモジュールプレフィックスを追加した
+    /// 新しいポリシーを返します（イミュータブルな設計）。
+    ///
+    /// # 引数
+    /// * `prefix` - 追加するモジュールプレフィックス（例: "numpy"）
+    ///
+    /// # 戻り値
+    /// - `Ok(SafePicklePolicy)`: 更新されたポリシー
+    /// - `Err(PyErr)`: エラー
     pub fn with_module_prefix(self, prefix: String) -> PyResult<Self> {
         Python::with_gil(|py| {
             let policy_bound = self.policy.bind(py);
             let current_prefixes = policy_bound.getattr("allowed_module_prefixes")?;
 
-            // Convert tuple to list of strings
+            // タプルを文字列リストに変換
             let prefixes_list: Vec<String> = current_prefixes.extract()?;
 
             let mut new_prefixes = prefixes_list;
             new_prefixes.push(prefix);
 
-            // Create a new policy with the updated prefixes
+            // 更新されたプレフィックスで新しいポリシーを作成
             let safe_pickle = py.import("dictsqlite.modules.safe_pickle")?;
             let policy_class = safe_pickle.getattr("SafePolicy")?;
             let kwargs = pyo3::types::PyDict::new(py);
             kwargs.set_item("allowed_module_prefixes", new_prefixes)?;
 
-            // Copy other attributes from original policy
+            // 元のポリシーから他の属性をコピー
             let allowed_builtins = policy_bound.getattr("allowed_builtins")?;
             let allowed_globals = policy_bound.getattr("allowed_globals")?;
             let denied_globals = policy_bound.getattr("denied_globals")?;
@@ -100,33 +195,68 @@ impl SafePicklePolicy {
 }
 
 impl Default for SafePicklePolicy {
+    /// デフォルトポリシーの取得
+    ///
+    /// # パニック
+    /// Pythonモジュールのインポートに失敗した場合にパニックします。
+    /// 本番環境では`new()`を使用してエラーハンドリングを行うことを推奨。
     fn default() -> Self {
         Self::new().unwrap()
     }
 }
 
-/// Safe Pickle Validator using Python's safe_pickle module
+/// Safe Pickle Validator - Pickleデータの安全性を検証
+///
+/// このバリデーターは、Pickleデータをロードする前に安全性を検証します。
+/// 指定されたポリシーに基づき、危険なオブジェクトの読み込みを防ぎます。
+///
+/// # 使用例
+/// ```rust,ignore
+/// let policy = SafePicklePolicy::new()?;
+/// let validator = SafePickleValidator::new(policy);
+/// validator.validate(&pickle_data)?;
+/// ```
 pub struct SafePickleValidator {
+    /// 検証に使用するポリシー
     policy: SafePicklePolicy,
 }
 
 impl SafePickleValidator {
-    /// Create a new validator with the given policy
+    /// 指定されたポリシーで新しいバリデーターを作成
+    ///
+    /// # 引数
+    /// * `policy` - 検証に使用するSafePicklePolicy
     pub fn new(policy: SafePicklePolicy) -> Self {
         SafePickleValidator { policy }
     }
 
-    /// Validate pickle data using Python's safe_loads
+    /// Pickleデータの検証（ロードは行わない）
+    ///
+    /// 内部的にはsafe_loadsを呼び出して検証を行います。
+    ///
+    /// # 引数
+    /// * `data` - 検証するPickleデータ
+    ///
+    /// # 戻り値
+    /// - `Ok(())`: データが安全
+    /// - `Err(PyErr)`: 検証失敗（危険なオブジェクトが含まれている）
     pub fn validate(&self, data: &[u8]) -> PyResult<()> {
-        // Try to load, if successful, it's valid
+        // ロードして検証、結果は破棄
         let _ = self.validate_and_load(data)?;
         Ok(())
     }
 
-    /// Validate and load pickle data using Python's safe_loads
+    /// Pickleデータを検証し、安全であればロード
+    ///
+    /// # 引数
+    /// * `data` - 検証およびロードするPickleデータ
+    ///
+    /// # 戻り値
+    /// - `Ok(PyObject)`: 検証済みでロードされたPythonオブジェクト
+    /// - `Err(PyErr)`: 検証失敗またはロードエラー
     pub fn validate_and_load(&self, data: &[u8]) -> PyResult<PyObject> {
         Python::with_gil(|py| {
-            // Import safe_pickle from dictsqlite.modules
+            // safe_pickleモジュールからsafe_loads関数を取得
             let safe_pickle = py.import("dictsqlite.modules.safe_pickle")?;
             let safe_loads = safe_pickle.getattr("safe_loads")?;
             let kwargs = pyo3::types::PyDict::new(py);
@@ -138,44 +268,74 @@ impl SafePickleValidator {
 }
 
 impl Default for SafePickleValidator {
+    /// デフォルトポリシーを使用したバリデーターを作成
     fn default() -> Self {
         SafePickleValidator::new(SafePicklePolicy::default())
     }
 }
 
-/// Helper function to convert Python object to serde_json::Value
+/// PythonオブジェクトをJSON値に変換するヘルパー関数
+///
+/// この関数は、PythonオブジェクトをRustのserde_json::Valueに変換します。
+/// JSONでサポートされている型（null, bool, 数値, 文字列, 配列, オブジェクト）
+/// のみを処理できます。
+///
+/// # 引数
+/// * `obj` - 変換するPythonオブジェクト
+/// * `py` - Python GILトークン
+///
+/// # 戻り値
+/// - `Ok(serde_json::Value)`: 変換されたJSON値
+/// - `Err(PyErr)`: サポートされていない型の場合はTypeError
+///
+/// # サポートされる型
+/// - None -> null
+/// - bool -> boolean
+/// - int -> number (i64 or u64)
+/// - float -> number (f64)
+/// - str -> string
+/// - list -> array
+/// - dict -> object
 fn pyobject_to_json_value(obj: PyObject, py: Python) -> PyResult<serde_json::Value> {
     use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 
     let obj_ref = obj.bind(py);
 
+    // 型に応じて変換を行う
     if obj_ref.is_none() {
+        // Python None -> JSON null
         Ok(serde_json::Value::Null)
     } else if let Ok(val) = obj_ref.downcast::<PyBool>() {
+        // Python bool -> JSON boolean
         Ok(serde_json::Value::Bool(val.is_true()))
     } else if let Ok(val) = obj_ref.downcast::<PyInt>() {
+        // Python int -> JSON number
         if let Ok(i) = val.extract::<i64>() {
             Ok(serde_json::Value::Number(i.into()))
         } else {
-            // Try as u64 for large numbers
+            // 大きな数値はu64として試行
             let u: u64 = val.extract()?;
             Ok(serde_json::Value::Number(u.into()))
         }
     } else if let Ok(val) = obj_ref.downcast::<PyFloat>() {
+        // Python float -> JSON number
         let f: f64 = val.extract()?;
         Ok(serde_json::Value::Number(
             serde_json::Number::from_f64(f)
                 .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid float"))?,
         ))
     } else if let Ok(val) = obj_ref.downcast::<PyString>() {
+        // Python str -> JSON string
         Ok(serde_json::Value::String(val.to_string()))
     } else if let Ok(val) = obj_ref.downcast::<PyList>() {
+        // Python list -> JSON array（再帰的に変換）
         let mut arr = Vec::new();
         for item in val.iter() {
             arr.push(pyobject_to_json_value(item.into(), py)?);
         }
         Ok(serde_json::Value::Array(arr))
     } else if let Ok(val) = obj_ref.downcast::<PyDict>() {
+        // Python dict -> JSON object（再帰的に変換）
         let mut map = serde_json::Map::new();
         for (key, value) in val.iter() {
             let key_str: String = key.extract()?;
@@ -183,13 +343,33 @@ fn pyobject_to_json_value(obj: PyObject, py: Python) -> PyResult<serde_json::Val
         }
         Ok(serde_json::Value::Object(map))
     } else {
+        // サポートされていない型
         Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
             "Unsupported type for JSON serialization. Use pickle mode for arbitrary objects.",
         ))
     }
 }
 
-/// Helper function to convert serde_json::Value to Python object
+/// JSON値をPythonオブジェクトに変換するヘルパー関数
+///
+/// この関数は、serde_json::ValueをPythonオブジェクトに変換します。
+/// `pyobject_to_json_value`の逆変換を行います。
+///
+/// # 引数
+/// * `value` - 変換するJSON値
+/// * `py` - Python GILトークン
+///
+/// # 戻り値
+/// - `Ok(PyObject)`: 変換されたPythonオブジェクト
+/// - `Err(PyErr)`: 変換エラー（無効な数値など）
+///
+/// # 変換ルール
+/// - null -> None
+/// - boolean -> bool
+/// - number -> int または float
+/// - string -> str
+/// - array -> list
+/// - object -> dict
 fn json_value_to_pyobject(value: serde_json::Value, py: Python) -> PyResult<PyObject> {
     use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 
@@ -197,6 +377,7 @@ fn json_value_to_pyobject(value: serde_json::Value, py: Python) -> PyResult<PyOb
         serde_json::Value::Null => Ok(py.None()),
         serde_json::Value::Bool(b) => Ok(PyBool::new(py, b).to_owned().unbind().into()),
         serde_json::Value::Number(n) => {
+            // 整数として扱えるか試行
             if let Some(i) = n.as_i64() {
                 Ok(PyInt::new(py, i).to_owned().unbind().into())
             } else if let Some(u) = n.as_u64() {
@@ -211,6 +392,7 @@ fn json_value_to_pyobject(value: serde_json::Value, py: Python) -> PyResult<PyOb
         }
         serde_json::Value::String(s) => Ok(PyString::new(py, &s).to_owned().unbind().into()),
         serde_json::Value::Array(arr) => {
+            // 配列の各要素を再帰的に変換
             let list = PyList::empty(py);
             for item in arr {
                 list.append(json_value_to_pyobject(item, py)?)?;
@@ -218,6 +400,7 @@ fn json_value_to_pyobject(value: serde_json::Value, py: Python) -> PyResult<PyOb
             Ok(list.into())
         }
         serde_json::Value::Object(map) => {
+            // オブジェクトの各キー・値ペアを再帰的に変換
             let dict = PyDict::new(py);
             for (key, value) in map {
                 dict.set_item(key, json_value_to_pyobject(value, py)?)?;
@@ -227,25 +410,62 @@ fn json_value_to_pyobject(value: serde_json::Value, py: Python) -> PyResult<PyOb
     }
 }
 
-/// Type alias for write buffer to reduce complexity
+/// 書き込みバッファの型エイリアス（複雑さ軽減のため）
+///
+/// WriteBufferは、バッチ書き込み操作のために保留中の書き込みを保持します。
+/// Vec<(key, value)>の形式で、キーと暗号化済みの値のペアを格納します。
 type WriteBuffer = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
 
-/// Persistence mode for performance vs durability trade-off
+/// 永続化モード - パフォーマンスと耐久性のトレードオフを制御
+///
+/// このモードは、データの書き込み時にいつディスクに永続化するかを決定します。
+/// 用途に応じて適切なモードを選択してください。
+///
+/// # パフォーマンス比較
+/// - Memory: 100M+ ops/sec（最速、永続化なし）
+/// - Lazy: 40-80M ops/sec（高速、flush時に永続化）
+/// - WriteThrough: 1-3M ops/sec（安全、即時永続化）
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum PersistMode {
-    /// Pure in-memory (fastest: 100M+ ops/sec, no durability)
+    /// 純粋なインメモリモード
+    ///
+    /// - 最高速（100M+ ops/sec）
+    /// - データは永続化されない（プロセス終了時に消失）
+    /// - キャッシュやセッションデータに最適
     Memory,
 
-    /// Lazy persistence (fast: 40-80M ops/sec, persist on flush)
+    /// 遅延永続化モード
+    ///
+    /// - 高速（40-80M ops/sec）
+    /// - flush()またはclose()時にのみディスクに書き込み
+    /// - バッチ処理やデータ処理パイプラインに最適
     Lazy,
 
-    /// Write-through (safe: 1-3M ops/sec, immediate durability)
+    /// 書き込み即時永続化モード
+    ///
+    /// - 安全（1-3M ops/sec）
+    /// - 各書き込み操作後すぐにディスクに書き込み
+    /// - 重要なデータや即時の耐久性が必要な場合に最適
+    /// - v4.2: バッファリング最適化により43倍の高速化
     WriteThrough,
 }
 
 impl FromStr for PersistMode {
     type Err = String;
 
+    /// 文字列からPersistModeを解析
+    ///
+    /// # 引数
+    /// * `s` - 解析する文字列（大文字小文字を区別しない）
+    ///
+    /// # 有効な値
+    /// - "memory" -> PersistMode::Memory
+    /// - "lazy" -> PersistMode::Lazy
+    /// - "writethrough" または "write_through" -> PersistMode::WriteThrough
+    ///
+    /// # 戻り値
+    /// - `Ok(PersistMode)`: 解析成功
+    /// - `Err(String)`: 無効な値の場合のエラーメッセージ
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "memory" => Ok(PersistMode::Memory),
@@ -256,26 +476,67 @@ impl FromStr for PersistMode {
     }
 }
 
-/// Storage mode for data serialization
+/// ストレージモード - データのシリアライズ形式を制御
+///
+/// データをどのような形式でSQLiteに保存するかを決定します。
+/// 用途に応じて適切なモードを選択してください。
+///
+/// # モード比較
+/// | モード  | サイズ | 速度  | 任意の型 | 可読性 |
+/// |---------|--------|-------|----------|--------|
+/// | Pickle  | 中     | 高速  | ◯        | ✕      |
+/// | Json    | 大     | 中    | ✕        | ◯      |
+/// | JsonB   | 小     | 高速  | ✕        | ✕      |
+/// | Bytes   | 最小   | 最高速| バイト   | ✕      |
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 pub enum StorageMode {
-    /// Pickle format (default, supports any Python object)
+    /// Pickle形式（デフォルト）
+    ///
+    /// - 任意のPythonオブジェクトを保存可能
+    /// - Pythonエコシステムとの互換性が高い
+    /// - Safe Pickle検証と組み合わせて使用推奨
     #[default]
     Pickle,
 
-    /// JSON text format (human-readable, limited types)
+    /// JSON テキスト形式
+    ///
+    /// - 人間が読めるテキスト形式
+    /// - 基本的なJSON型のみサポート（dict, list, str, int, float, bool, null）
+    /// - 他システムとの相互運用性に優れる
     Json,
 
-    /// JSONB binary format using MessagePack (fast, compact, limited types)
+    /// JSONB バイナリ形式（MessagePack使用）
+    ///
+    /// - コンパクトなバイナリ形式
+    /// - JSONより小さく高速
+    /// - 基本的なJSON型のみサポート
     JsonB,
 
-    /// Raw bytes (no conversion)
+    /// 生バイト形式
+    ///
+    /// - 変換なしでバイト列を直接保存
+    /// - 最高速・最小サイズ
+    /// - アプリケーション側でのシリアライズが必要
     Bytes,
 }
 
 impl FromStr for StorageMode {
     type Err = String;
 
+    /// 文字列からStorageModeを解析
+    ///
+    /// # 引数
+    /// * `s` - 解析する文字列（大文字小文字を区別しない）
+    ///
+    /// # 有効な値
+    /// - "pickle" -> StorageMode::Pickle
+    /// - "json" -> StorageMode::Json
+    /// - "jsonb" -> StorageMode::JsonB
+    /// - "bytes" -> StorageMode::Bytes
+    ///
+    /// # 戻り値
+    /// - `Ok(StorageMode)`: 解析成功
+    /// - `Err(String)`: 無効な値の場合のエラーメッセージ
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "pickle" => Ok(StorageMode::Pickle),
@@ -290,100 +551,213 @@ impl FromStr for StorageMode {
     }
 }
 
-/// High-performance DictSQLite v4.2 implementation with I/O optimizations
+/// 高性能 DictSQLite v4.2 実装（I/O最適化版）
 ///
-/// Architecture:
-/// - Lock-free concurrent hashmap for hot tier (100M+ ops/sec)
-/// - LRU eviction for memory management
-/// - Memory-mapped warm tier for frequently accessed data
-/// - SQLite cold tier for persistence
-/// - Async support for I/O operations
-/// - Optional AES-256-GCM encryption (v4 feature)
-/// - Safe Pickle validation (v4 feature)
+/// このクラスは、Pythonの辞書のようなインターフェースで
+/// SQLiteデータベースを操作するための高性能実装を提供します。
 ///
-/// v4.2 Optimizations:
-/// - Write buffering for 43x speedup in WriteThrough mode
-/// - Batch SQL operations to reduce I/O overhead
+/// # アーキテクチャ
+/// - **Hot Tier**: ロックフリー並行ハッシュマップ（100M+ ops/sec）
+/// - **LRUエビクション**: メモリ管理のための自動削除
+/// - **Warm Tier**: 頻繁にアクセスされるデータのメモリマッピング
+/// - **Cold Tier**: SQLiteでの永続化
+/// - **非同期サポート**: I/O操作の非同期実行
+/// - **AES-256-GCM暗号化**: オプショナルな暗号化（v4機能）
+/// - **Safe Pickle検証**: 安全なPickle操作（v4機能）
+///
+/// # v4.2 最適化
+/// - 書き込みバッファリングによるWriteThroughモードの43倍高速化
+/// - バッチSQL操作によるI/Oオーバーヘッド削減
+///
+/// # 使用例
+/// ```python
+/// from dictsqlite import DictSQLiteV4
+///
+/// # 基本的な使用法
+/// db = DictSQLiteV4("mydb.db")
+/// db["key"] = "value"
+/// print(db["key"])
+///
+/// # 暗号化付き
+/// db = DictSQLiteV4("secure.db", encryption_password="secret123")
+///
+/// # 高速モード
+/// db = DictSQLiteV4(":memory:", persist_mode="memory")
+/// ```
 #[pyclass]
 pub struct DictSQLiteV4 {
-    /// Hot tier: Lock-free concurrent hashmap (in-memory)
+    /// Hot Tier: ロックフリー並行ハッシュマップ（インメモリ）
+    ///
+    /// DashMapを使用して、複数スレッドから安全に高速アクセス可能。
+    /// キーは文字列、値は暗号化済み（または生の）バイト列。
     hot_tier: Arc<DashMap<String, Vec<u8>>>,
 
-    /// LRU tracker for eviction (protects insertion order)
+    /// LRUトラッカー: エビクション用（挿入順序を保護）
+    ///
+    /// hot_tierがキャパシティを超えた場合、最も長く使われていない
+    /// エントリを特定してwarm tierに退避するために使用。
     access_tracker: Arc<Mutex<LruCache<String, ()>>>,
 
-    /// Storage engine managing warm and cold tiers
+    /// ストレージエンジン: warm/cold tierの管理
+    ///
+    /// Memory以外の永続化モードで使用。
+    /// SQLiteへの読み書きを担当。
     storage: Arc<Mutex<Option<StorageEngine>>>,
 
-    /// Configuration
+    /// 設定
     config: Config,
 
-    /// Encryption engine (optional)
+    /// 暗号化エンジン（オプショナル）
+    ///
+    /// encryption_passwordが指定された場合のみ有効。
+    /// AES-256-GCMによる暗号化・復号化を行う。
     crypto: Option<Arc<CryptoEngine>>,
 
-    /// Safe pickle validator (optional)
+    /// Safe Pickleバリデーター（オプショナル）
+    ///
+    /// enable_safe_pickle=Trueの場合のみ有効。
+    /// Pickleデータの安全性を検証する。
     safe_pickle: Option<Arc<SafePickleValidator>>,
 
-    /// Write buffer for batching SQL writes (v4.2 optimization)
+    /// 書き込みバッファ: SQLバッチ書き込み用（v4.2最適化）
+    ///
+    /// WriteThroughモードでの書き込みを一時的にバッファリングし、
+    /// バッチでSQLiteに書き込むことでパフォーマンスを向上。
     write_buffer: WriteBuffer,
 
-    /// Buffer size threshold for auto-flush (currently unused in writethrough mode)
+    /// バッファサイズ閾値: 自動フラッシュ用
+    ///
+    /// バッファがこのサイズに達すると自動的にフラッシュ。
+    /// 現在WriteThroughモードでは未使用（即時フラッシュのため）。
     #[allow(dead_code)]
     buffer_size: usize,
 }
 
+/// DictSQLiteの設定構造体
+///
+/// データベースの動作を制御するための各種設定を保持します。
+/// デフォルト値は一般的なユースケースに最適化されています。
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
-    /// Maximum hot tier size (entries)
+    /// Hot tierの最大エントリ数
+    ///
+    /// この数を超えると、LRUエビクションが発動し、
+    /// 最も使われていないエントリがwarm tierに移動します。
+    /// デフォルト: 1,000,000エントリ
     pub hot_tier_capacity: usize,
 
-    /// Warm tier size (bytes)
+    /// Warm tierのサイズ（バイト）
+    ///
+    /// メモリ内キャッシュの最大サイズ。
+    /// デフォルト: 100MB
     pub warm_tier_size: usize,
 
-    /// Enable async background flush
+    /// 非同期バックグラウンドフラッシュの有効化
+    ///
+    /// trueの場合、バックグラウンドでデータを永続化。
+    /// デフォルト: true
     pub enable_async_flush: bool,
 
-    /// Flush interval (milliseconds)
+    /// フラッシュ間隔（ミリ秒）
+    ///
+    /// 非同期フラッシュが有効な場合の間隔。
+    /// デフォルト: 1000ms
     pub flush_interval_ms: u64,
 
-    /// Number of shards for concurrent access
+    /// シャード数（並行アクセス用）
+    ///
+    /// DashMapの内部シャード数。CPUコア数に基づいて設定。
+    /// 2のべき乗に切り上げられます。
+    /// デフォルト: CPUコア数の2のべき乗
     pub num_shards: usize,
 
-    /// Persistence mode
+    /// 永続化モード
+    ///
+    /// データの永続化タイミングを制御。
+    /// デフォルト: WriteThrough（即時永続化）
     pub persist_mode: PersistMode,
 
-    /// Enable encryption
+    /// 暗号化の有効化
+    ///
+    /// encryption_passwordが設定されている場合にtrue。
+    /// デフォルト: false
     pub enable_encryption: bool,
 
-    /// Enable safe pickle validation
+    /// Safe Pickle検証の有効化
+    ///
+    /// Pickleデータの安全性検証を有効にする。
+    /// デフォルト: false
     pub enable_safe_pickle: bool,
 
-    /// Storage mode for serialization
+    /// ストレージモード
+    ///
+    /// データのシリアライズ形式。
+    /// デフォルト: Pickle
     pub storage_mode: StorageMode,
 
-    /// Default table name
+    /// デフォルトテーブル名
+    ///
+    /// テーブルを指定しない操作で使用されるテーブル。
+    /// デフォルト: "main"
     pub table_name: String,
 }
 
 impl Default for Config {
+    /// デフォルト設定の取得
+    ///
+    /// 一般的なユースケースに最適化されたデフォルト値を返します。
+    /// 必要に応じてこれらの値を上書きしてカスタマイズできます。
     fn default() -> Self {
         Config {
-            hot_tier_capacity: 1_000_000,
-            warm_tier_size: 100 * 1024 * 1024, // 100MB
-            enable_async_flush: true,
-            flush_interval_ms: 1000,
-            num_shards: num_cpus::get().next_power_of_two(),
-            persist_mode: PersistMode::WriteThrough,
-            enable_encryption: false,
-            enable_safe_pickle: false,
-            storage_mode: StorageMode::Pickle,
-            table_name: "main".to_string(),
+            hot_tier_capacity: 1_000_000,       // 100万エントリ
+            warm_tier_size: 100 * 1024 * 1024,  // 100MB
+            enable_async_flush: true,           // 非同期フラッシュ有効
+            flush_interval_ms: 1000,            // 1秒間隔
+            num_shards: num_cpus::get().next_power_of_two(), // CPUコア数ベース
+            persist_mode: PersistMode::WriteThrough, // 即時永続化
+            enable_encryption: false,           // 暗号化なし
+            enable_safe_pickle: false,          // Safe Pickle検証なし
+            storage_mode: StorageMode::Pickle,  // Pickle形式
+            table_name: "main".to_string(),     // メインテーブル
         }
     }
 }
 
 #[pymethods]
 impl DictSQLiteV4 {
+    /// DictSQLiteV4の新しいインスタンスを作成
+    ///
+    /// # 引数
+    /// * `db_path` - データベースファイルのパス（":memory:"でインメモリDB）
+    /// * `hot_capacity` - Hot tierの最大エントリ数（デフォルト: 1,000,000）
+    /// * `enable_async` - 非同期フラッシュを有効にするか（デフォルト: true）
+    /// * `persist_mode` - 永続化モード: "memory", "lazy", "writethrough"
+    /// * `storage_mode` - ストレージモード: "pickle", "json", "jsonb", "bytes"
+    /// * `table_name` - デフォルトテーブル名（デフォルト: "main"）
+    /// * `encryption_password` - 暗号化パスワード（Noneで暗号化なし）
+    /// * `enable_safe_pickle` - Safe Pickle検証を有効にするか
+    /// * `safe_pickle_allowed_modules` - Safe Pickleで許可するモジュールプレフィックス
+    /// * `buffer_size` - 書き込みバッファサイズ（デフォルト: 100）
+    ///
+    /// # 戻り値
+    /// 新しいDictSQLiteV4インスタンス
+    ///
+    /// # エラー
+    /// - 無効なpersist_modeまたはstorage_modeの場合: ValueError
+    /// - データベースファイルを開けない場合: IOError
+    /// - 暗号化エンジンの初期化に失敗した場合: ValueError
+    ///
+    /// # 使用例
+    /// ```python
+    /// # 基本的な使用法
+    /// db = DictSQLiteV4("mydb.db")
+    ///
+    /// # 暗号化付き
+    /// db = DictSQLiteV4("secure.db", encryption_password="secret")
+    ///
+    /// # JSONB形式で高速永続化
+    /// db = DictSQLiteV4("fast.db", storage_mode="jsonb", persist_mode="lazy")
+    /// ```
     #[new]
     #[pyo3(signature = (db_path, hot_capacity=1_000_000, enable_async=true, persist_mode="writethrough", storage_mode="pickle", table_name="main", encryption_password=None, enable_safe_pickle=false, safe_pickle_allowed_modules=None, buffer_size=100))]
     #[allow(clippy::too_many_arguments)]
@@ -399,12 +773,15 @@ impl DictSQLiteV4 {
         safe_pickle_allowed_modules: Option<Vec<String>>,
         buffer_size: usize,
     ) -> PyResult<Self> {
+        // 永続化モードを文字列からenumに変換
         let persist_mode_parsed = PersistMode::from_str(persist_mode)
             .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
 
+        // ストレージモードを文字列からenumに変換
         let storage_mode_parsed = StorageMode::from_str(storage_mode)
             .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
 
+        // 設定を構築
         let config = Config {
             hot_tier_capacity: hot_capacity,
             enable_async_flush: enable_async,
@@ -416,17 +793,19 @@ impl DictSQLiteV4 {
             ..Default::default()
         };
 
+        // DashMapをシャード数とキャパシティで初期化
+        // シャード数はCPUコア数に基づいて最適化
         let hot_tier = Arc::new(DashMap::with_capacity_and_shard_amount(
             config.hot_tier_capacity,
             config.num_shards,
         ));
 
-        // Initialize LRU tracker for eviction
+        // LRUキャッシュをエビクション追跡用に初期化
         let access_tracker = Arc::new(Mutex::new(LruCache::new(
             NonZeroUsize::new(config.hot_tier_capacity).unwrap(),
         )));
 
-        // Only create storage if not in pure memory mode
+        // 純粋なメモリモードでない場合のみストレージを作成
         let storage = if config.persist_mode == PersistMode::Memory {
             Arc::new(Mutex::new(None))
         } else {
@@ -436,7 +815,7 @@ impl DictSQLiteV4 {
             )))
         };
 
-        // Initialize encryption if password provided
+        // パスワードが提供された場合、暗号化エンジンを初期化
         let crypto = if let Some(password) = encryption_password {
             Some(Arc::new(CryptoEngine::new(&password, None).map_err(
                 |e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()),
@@ -445,9 +824,9 @@ impl DictSQLiteV4 {
             None
         };
 
-        // Initialize safe pickle validator if enabled
+        // Safe Pickle検証が有効な場合、バリデーターを初期化
         let safe_pickle = if enable_safe_pickle {
-            // Create policy with custom allowed modules if provided
+            // カスタム許可モジュールが提供された場合はポリシーを構築
             let policy = if let Some(modules) = safe_pickle_allowed_modules {
                 let mut policy = SafePicklePolicy::new()?;
                 for module in modules {
@@ -463,7 +842,7 @@ impl DictSQLiteV4 {
             None
         };
 
-        // Initialize write buffer (v4.2 optimization)
+        // 書き込みバッファを初期化（v4.2最適化）
         let write_buffer = Arc::new(Mutex::new(Vec::with_capacity(buffer_size)));
 
         Ok(DictSQLiteV4 {
@@ -478,22 +857,39 @@ impl DictSQLiteV4 {
         })
     }
 
-    /// Get value by key (lock-free read from hot tier)
+    /// キーで値を取得（Hot tierからのロックフリー読み取り）
+    ///
+    /// # 引数
+    /// * `key` - 取得するキー
+    /// * `default` - キーが存在しない場合のデフォルト値（オプション）
+    ///
+    /// # 戻り値
+    /// 値のバイト列、または存在しない場合はdefaultまたはNone
+    ///
+    /// # 処理の流れ
+    /// 1. Hot tierで検索（最速）
+    /// 2. 見つからない場合はストレージ（Cold tier）で検索
+    /// 3. ストレージで見つかった場合はHot tierにプロモート
+    /// 4. 暗号化されている場合は復号化
+    ///
+    /// # エラー
+    /// - 暗号化されたデータでパスワードなしの場合: ValueError
+    /// - 復号化に失敗した場合: ValueError
     #[pyo3(signature = (key, default=None))]
     fn get(&self, key: String, default: Option<Vec<u8>>, py: Python) -> PyResult<PyObject> {
-        // Track access for LRU
+        // LRU追跡のためにアクセスを記録
         self.access_tracker.lock().unwrap().put(key.clone(), ());
 
-        // Try hot tier first (lock-free read)
+        // Hot tierを最初に試行（ロックフリー読み取り）
         if let Some(value) = self.hot_tier.get(&key) {
-            // Check if data is encrypted but we have no password
+            // 暗号化されているがパスワードがない場合のチェック
             if self.crypto.is_none() && crate::crypto::CryptoEngine::is_encrypted(&value) {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                     "Data is encrypted but no password was provided",
                 ));
             }
 
-            // Decrypt if encryption is enabled
+            // 暗号化が有効な場合は復号化
             let data = if let Some(ref crypto) = self.crypto {
                 crypto
                     .decrypt(&value)
@@ -504,25 +900,25 @@ impl DictSQLiteV4 {
             return Ok(PyBytes::new(py, &data).into());
         }
 
-        // For Memory mode, hot tier is the only tier
+        // Memoryモードの場合、Hot tierが唯一のtier
         if self.config.persist_mode == PersistMode::Memory {
             return Ok(default
                 .map(|v| PyBytes::new(py, &v).into())
                 .unwrap_or_else(|| py.None()));
         }
 
-        // Check storage tiers for other modes
+        // 他のモードではストレージ（Cold tier）も検索
         let storage_guard = self.storage.lock().unwrap();
         if let Some(ref storage) = *storage_guard {
             if let Ok(Some(value)) = storage.get(&key) {
-                // Check if data is encrypted but we have no password
+                // 暗号化されているがパスワードがない場合のチェック
                 if self.crypto.is_none() && crate::crypto::CryptoEngine::is_encrypted(&value) {
                     return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                         "Data is encrypted but no password was provided",
                     ));
                 }
 
-                // Decrypt if encryption is enabled
+                // 暗号化が有効な場合は復号化
                 let data = if let Some(ref crypto) = self.crypto {
                     crypto.decrypt(&value).map_err(|e| {
                         PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
@@ -531,23 +927,44 @@ impl DictSQLiteV4 {
                     value.clone()
                 };
 
-                // Promote to hot tier (store encrypted)
+                // Hot tierにプロモート（暗号化状態で保存）
+                // これにより次回アクセス時の速度が向上
                 drop(storage_guard);
                 self.hot_tier.insert(key, value);
                 return Ok(PyBytes::new(py, &data).into());
             }
         }
 
+        // キーが見つからない場合はデフォルト値またはNoneを返す
         Ok(default
             .map(|v| PyBytes::new(py, &v).into())
             .unwrap_or_else(|| py.None()))
     }
 
-    /// Set value for key (lock-free write to hot tier)
-    /// v4.2: Uses write buffering for 43x speedup in WriteThrough mode
+    /// キーに値を設定（Hot tierへのロックフリー書き込み）
+    ///
+    /// # 引数
+    /// * `key` - 設定するキー
+    /// * `value` - 設定する値（バイト列）
+    ///
+    /// # 処理の流れ
+    /// 1. Safe Pickle検証（有効な場合、Pickleモードのみ）
+    /// 2. 暗号化（有効な場合）
+    /// 3. Hot tierに書き込み
+    /// 4. LRUアクセス追跡を更新
+    /// 5. WriteThroughモードの場合、バッファ経由でストレージに書き込み
+    /// 6. 必要に応じてLRUエビクションを実行
+    ///
+    /// # v4.2最適化
+    /// 書き込みバッファリングにより、WriteThroughモードで43倍の高速化を実現。
+    ///
+    /// # エラー
+    /// - Safe Pickle検証に失敗した場合: ValueError
+    /// - 暗号化に失敗した場合: ValueError
+    /// - ストレージ書き込みに失敗した場合: IOError
     fn set(&self, key: String, value: Vec<u8>) -> PyResult<()> {
-        // Validate with safe pickle if enabled AND storage mode is Pickle
-        // Safe pickle validation only makes sense for pickled data, not for JSON/JSONB/Bytes
+        // Safe Pickle検証（有効かつPickleモードの場合のみ）
+        // JSON/JSONB/Bytesモードでは意味がないのでスキップ
         if let Some(ref validator) = self.safe_pickle {
             if self.config.storage_mode == StorageMode::Pickle {
                 validator
@@ -556,7 +973,7 @@ impl DictSQLiteV4 {
             }
         }
 
-        // Encrypt if encryption is enabled
+        // 暗号化が有効な場合は暗号化
         let data = if let Some(ref crypto) = self.crypto {
             crypto
                 .encrypt(&value)
@@ -565,28 +982,29 @@ impl DictSQLiteV4 {
             value
         };
 
+        // Hot tierに挿入（ロックフリー書き込み）
         self.hot_tier.insert(key.clone(), data.clone());
 
-        // Track access for LRU
+        // LRUアクセス追跡を更新
         self.access_tracker.lock().unwrap().put(key.clone(), ());
 
-        // v4.2 Optimization: Use write buffer for WriteThrough mode
+        // v4.2最適化: WriteThroughモードでは書き込みバッファを使用
         if self.config.persist_mode == PersistMode::WriteThrough {
             let should_flush = {
                 let mut buffer = self.write_buffer.lock().unwrap();
                 buffer.push((key.clone(), data));
-                // Flush when buffer reaches size threshold
-                // For buffer_size of 1, this provides immediate flush behavior
+                // バッファサイズに達したらフラッシュ
+                // buffer_size=1の場合は即時フラッシュ
                 buffer.len() >= self.buffer_size
             };
 
-            // Flush if buffer is full
+            // バッファが満杯ならフラッシュ
             if should_flush {
                 self.flush_write_buffer()?;
             }
         }
 
-        // Check if we need to evict to warm tier
+        // Hot tierがキャパシティを超えた場合、エビクションを実行
         if self.hot_tier.len() > self.config.hot_tier_capacity {
             self.evict_to_warm_tier()?;
         }
@@ -594,15 +1012,22 @@ impl DictSQLiteV4 {
         Ok(())
     }
 
-    /// Evict least recently used item to warm tier (storage)
+    /// 最も長く使われていないアイテムをWarm tier（ストレージ）に退避
+    ///
+    /// Hot tierがキャパシティを超えた場合に呼び出されます。
+    /// LRUトラッカーを使用して最も古いエントリを特定し、
+    /// ストレージに書き込んでからHot tierから削除します。
+    ///
+    /// # エラー
+    /// - ストレージ書き込みに失敗した場合: IOError
     fn evict_to_warm_tier(&self) -> PyResult<()> {
         let mut tracker = self.access_tracker.lock().unwrap();
 
-        // Find LRU entry
+        // LRU（最も長く使われていない）エントリを見つける
         if let Some((evict_key, _)) = tracker.pop_lru() {
-            // Remove from hot tier
+            // Hot tierから削除
             if let Some((_, value)) = self.hot_tier.remove(&evict_key) {
-                // Write to storage if not in memory mode
+                // Memoryモードでない場合はストレージに書き込み
                 if self.config.persist_mode != PersistMode::Memory {
                     let mut storage_guard = self.storage.lock().unwrap();
                     if let Some(ref mut storage) = *storage_guard {
@@ -617,19 +1042,26 @@ impl DictSQLiteV4 {
         Ok(())
     }
 
-    /// Flush write buffer to storage (v4.2 optimization)
-    /// Batches multiple writes into a single transaction for better performance
+    /// 書き込みバッファをストレージにフラッシュ（v4.2最適化）
+    ///
+    /// バッファ内の複数の書き込みをバッチでSQLiteに書き込むことで、
+    /// I/Oオーバーヘッドを削減しパフォーマンスを向上させます。
+    ///
+    /// # 戻り値
+    /// - `Ok(())`: フラッシュ成功
+    /// - `Err(PyErr)`: ストレージ書き込みエラー
     fn flush_write_buffer(&self) -> PyResult<()> {
         let mut buffer = self.write_buffer.lock().unwrap();
 
+        // バッファが空の場合は何もしない
         if buffer.is_empty() {
             return Ok(());
         }
 
-        // Get storage handle
+        // ストレージハンドルを取得
         let mut storage_guard = self.storage.lock().unwrap();
         if let Some(ref mut storage) = *storage_guard {
-            // Batch write all buffered items
+            // バッファ内の全アイテムを書き込み
             for (key, value) in buffer.drain(..) {
                 storage
                     .set(&key, &value)
@@ -640,14 +1072,28 @@ impl DictSQLiteV4 {
         Ok(())
     }
 
-    /// Flush pending writes to storage (for Lazy mode)
-    /// v4.2: Also flushes write buffer
+    /// 保留中の書き込みをストレージにフラッシュ
+    ///
+    /// Lazyモードでは、このメソッドを呼び出すまでデータは永続化されません。
+    /// WriteThroughモードでは書き込みバッファのフラッシュのみ行います。
+    /// Memoryモードでは何もしません。
+    ///
+    /// # v4.2
+    /// 書き込みバッファも同時にフラッシュします。
+    ///
+    /// # 使用例
+    /// ```python
+    /// db = DictSQLiteV4("test.db", persist_mode="lazy")
+    /// db["key"] = "value"
+    /// db.flush()  # ここで永続化される
+    /// ```
     fn flush(&self) -> PyResult<()> {
+        // Memoryモードでは何もしない
         if self.config.persist_mode == PersistMode::Memory {
-            return Ok(()); // No-op for pure memory mode
+            return Ok(());
         }
 
-        // First, flush write buffer (v4.2)
+        // まず書き込みバッファをフラッシュ（v4.2）
         self.flush_write_buffer()?;
 
         // Then flush hot tier for Lazy mode
