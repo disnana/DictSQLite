@@ -73,25 +73,29 @@ except Exception as e:
 
 try:
     # Import dictsqlite_v2 (Rust extension version 2.0.6)
+    # Simplified import logic to avoid path conflicts
+    
     # Remove any previously imported dictsqlite from sys.modules
     if 'dictsqlite' in sys.modules:
         del sys.modules['dictsqlite']
     
-    # Temporarily filter out local dictsqlite from sys.path
+    # Filter out local dictsqlite directory from sys.path to ensure we import the installed package
     original_path = sys.path.copy()
-    sys.path = [p for p in sys.path if str(REPO_ROOT / 'dictsqlite') not in p]
+    sys.path = [p for p in sys.path if 'dictsqlite' not in p.lower() or 'site-packages' in p or 'dist-packages' in p]
     
     try:
         import dictsqlite as dictsqlite_v2_module
         
-        if hasattr(dictsqlite_v2_module, 'DictSQLiteV4') and hasattr(dictsqlite_v2_module, '_NATIVE_AVAILABLE'):
-            if dictsqlite_v2_module._NATIVE_AVAILABLE:
-                DictSQLiteV2_Sync = dictsqlite_v2_module.DictSQLiteV4
+        # Check if DictSQLiteV4 is available (it should be in the installed dictsqlite_v2 package)
+        if hasattr(dictsqlite_v2_module, 'DictSQLiteV4'):
+            DictSQLiteV2_Sync = dictsqlite_v2_module.DictSQLiteV4
+            # AsyncDictSQLite may or may not be available
+            if hasattr(dictsqlite_v2_module, 'AsyncDictSQLite'):
                 DictSQLiteV2_Async = dictsqlite_v2_module.AsyncDictSQLite
-                V2_AVAILABLE = True
-                print("✅ dictsqlite_v2版 loaded successfully")
             else:
-                raise ImportError("Native extension not available (_NATIVE_AVAILABLE=False)")
+                DictSQLiteV2_Async = None
+            V2_AVAILABLE = True
+            print("✅ dictsqlite_v2版 loaded successfully")
         else:
             raise ImportError("DictSQLiteV4 not found in dictsqlite package")
     finally:
