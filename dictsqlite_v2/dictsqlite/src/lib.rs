@@ -55,6 +55,22 @@ use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
+// v4.2.4 パフォーマンス最適化定数
+/// 小容量キャパシティの閾値 (この値以下では常にLRU追跡を行う)
+const SMALL_CAPACITY_THRESHOLD: usize = 100;
+
+/// LRU追跡開始の閾値パーセンテージ (大容量の場合)
+/// キャパシティの110%に達するまでLRU追跡をスキップ
+const LRU_TRACKING_THRESHOLD_PERCENT: usize = 110;
+
+/// エビクション開始の閾値パーセンテージ
+/// キャパシティの110%を超えたらエビクション開始
+const EVICTION_THRESHOLD_PERCENT: usize = 110;
+
+/// バッチエビクションのパーセンテージ
+/// 一度に全キャパシティの10%をエビクション
+const BATCH_EVICTION_PERCENT: usize = 10;
+
 // サブモジュールのインポート
 // async_ops: 非同期操作を提供するモジュール
 mod async_ops;
@@ -968,12 +984,12 @@ impl DictSQLiteV4 {
         // v4.2.4最適化: LRU追跡は必要な場合のみ実行（Memory/Lazyモードではスキップ）
         // WriteThroughモードまたはキャパシティ超過時のみLRU追跡
         let current_size = self.hot_tier.len();
-        let tracking_threshold = if self.config.hot_tier_capacity <= 100 {
+        let tracking_threshold = if self.config.hot_tier_capacity <= SMALL_CAPACITY_THRESHOLD {
             // 小容量: 常に追跡（テスト互換性）
             0
         } else {
-            // 大容量: 110%から追跡（パフォーマンス優先）
-            (self.config.hot_tier_capacity * 110) / 100
+            // 大容量: LRU_TRACKING_THRESHOLD_PERCENT%から追跡（パフォーマンス優先）
+            (self.config.hot_tier_capacity * LRU_TRACKING_THRESHOLD_PERCENT) / 100
         };
         let needs_lru = self.config.persist_mode == PersistMode::WriteThrough 
             || current_size >= tracking_threshold;
@@ -1102,12 +1118,12 @@ impl DictSQLiteV4 {
         // Memory/Lazyモードでは大容量を前提としているため、LRU追跡を最小化
         // WriteThroughモードまたはキャパシティ超過時のみLRU追跡を有効化
         let current_size = self.hot_tier.len();
-        let tracking_threshold = if self.config.hot_tier_capacity <= 100 {
+        let tracking_threshold = if self.config.hot_tier_capacity <= SMALL_CAPACITY_THRESHOLD {
             // 小容量: 常に追跡（テスト互換性）
             0
         } else {
-            // 大容量: 110%から追跡（パフォーマンス優先）
-            (self.config.hot_tier_capacity * 110) / 100
+            // 大容量: LRU_TRACKING_THRESHOLD_PERCENT%から追跡（パフォーマンス優先）
+            (self.config.hot_tier_capacity * LRU_TRACKING_THRESHOLD_PERCENT) / 100
         };
         let needs_lru = self.config.persist_mode == PersistMode::WriteThrough 
             || current_size >= tracking_threshold;
@@ -1132,9 +1148,9 @@ impl DictSQLiteV4 {
             }
         }
 
-        // v4.2.4最適化: エビクション閾値を110%に設定（チェック頻度削減）
-        // キャパシティを10%超過してからエビクション実行
-        let eviction_threshold = (self.config.hot_tier_capacity * 110) / 100;
+        // v4.2.4最適化: エビクション閾値をEVICTION_THRESHOLD_PERCENT%に設定（チェック頻度削減）
+        // キャパシティをEVICTION_THRESHOLD_PERCENT%超過してからエビクション実行
+        let eviction_threshold = (self.config.hot_tier_capacity * EVICTION_THRESHOLD_PERCENT) / 100;
         if self.hot_tier.len() > eviction_threshold {
             self.evict_to_warm_tier()?;
         }
@@ -1150,14 +1166,15 @@ impl DictSQLiteV4 {
     ///
     /// # v4.2.4最適化
     /// 複数エントリを一度にエビクションし、bulk_insertで一括書き込み
+    /// BATCH_EVICTION_PERCENT%のエントリを一度に処理
     ///
     /// # エラー
     /// - ストレージ書き込みに失敗した場合: IOError
     fn evict_to_warm_tier(&self) -> PyResult<()> {
         let mut tracker = self.access_tracker.lock().unwrap();
         
-        // v4.2.4最適化: 一度に10%のエントリをエビクション（バッチ処理）
-        let eviction_count = std::cmp::max(1, self.config.hot_tier_capacity / 10);
+        // v4.2.4最適化: 一度にBATCH_EVICTION_PERCENT%のエントリをエビクション（バッチ処理）
+        let eviction_count = std::cmp::max(1, self.config.hot_tier_capacity * BATCH_EVICTION_PERCENT / 100);
         let mut evicted_items = HashMap::new();
 
         // 複数のLRUエントリを一度に収集

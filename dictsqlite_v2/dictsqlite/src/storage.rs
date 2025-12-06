@@ -104,6 +104,10 @@ impl StorageEngine {
             .with_init(|conn| {
                 // SQLiteのパフォーマンス最適化
                 // これらのPRAGMAは読み書きの速度を大幅に向上させます
+                // 
+                // ⚠️ 注意: synchronous=OFFは最大パフォーマンスを優先します
+                // システムクラッシュやデータ損失時にデータベース破損のリスクがあります
+                // プロダクション環境では synchronous=NORMAL を推奨
                 conn.execute_batch(
                     "
                     PRAGMA journal_mode=WAL;
