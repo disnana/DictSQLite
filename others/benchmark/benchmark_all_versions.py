@@ -16,17 +16,22 @@ import importlib.util
 from pathlib import Path
 from typing import Dict, Tuple, Any
 
-# Add paths
+# Add paths - modified order to prioritize site-packages for dictsqlite_v2
 REPO_ROOT = Path(__file__).parent.parent.parent
-# Don't add REPO_ROOT to path to avoid conflicts with installed dictsqlite_v2
 
-# Add dictsqlite_v2 path (but the installed version will be used)
-V2_DIR = REPO_ROOT / 'dictsqlite_v2' / 'dictsqlite' / 'python'
-# sys.path.insert(0, str(V2_DIR))  # Commented out to use installed version
+# First, ensure site-packages is in the path for dictsqlite_v2
+import site
+site_packages = site.getusersitepackages()
+if site_packages and site_packages not in sys.path:
+    sys.path.insert(0, site_packages)
 
 # Add dictsqlite-fastest beta v2 path
 BETA_V2_DIR = REPO_ROOT / 'others' / 'beta-versions' / 'dictsqlite-fastest' / 'beta'
 sys.path.insert(0, str(BETA_V2_DIR))
+
+# Add benchmark directory to path for VersionManager
+BENCHMARK_DIR = REPO_ROOT / 'others' / 'benchmark'
+sys.path.insert(0, str(BENCHMARK_DIR))
 
 # Add benchmark directory to path for VersionManager
 BENCHMARK_DIR = REPO_ROOT / 'others' / 'benchmark'
@@ -44,15 +49,27 @@ except ImportError:
 
 # Import versions
 try:
-    # Import Original version directly from source to avoid conflicts
+    # Import Original version directly from source to avoid conflicts with installed packages
     import importlib.util
-    original_main = REPO_ROOT / 'dictsqlite' / 'main.py'
-    spec = importlib.util.spec_from_file_location("dictsqlite_original_main", str(original_main))
+    import importlib.machinery
+    
+    # Create a custom loader that doesn't check sys.modules
+    original_main_path = str(REPO_ROOT / 'dictsqlite' / 'main.py')
+    loader = importlib.machinery.SourceFileLoader('dictsqlite_original_main', original_main_path)
+    spec = importlib.util.spec_from_loader('dictsqlite_original_main', loader)
     dictsqlite_original = importlib.util.module_from_spec(spec)
-    sys.modules['dictsqlite_original_main'] = dictsqlite_original
-    spec.loader.exec_module(dictsqlite_original)
+    
+    # Temporarily manipulate sys.path to ensure correct module resolution
+    original_syspath = sys.path.copy()
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        loader.exec_module(dictsqlite_original)
+    finally:
+        sys.path = original_syspath
+    
     DictSQLite = dictsqlite_original.DictSQLite
     ORIGINAL_AVAILABLE = True
+    print("✅ Original版 loaded successfully")
 except Exception as e:
     print(f"⚠ DictSQLite (Original) not available: {e}")
     DictSQLite = None
@@ -60,11 +77,31 @@ except Exception as e:
 
 try:
     # Import dictsqlite_v2 (Rust extension version 2.0.6)
-    # This is the installed package, not the original
-    from dictsqlite import DictSQLiteV4 as DictSQLiteV2_Sync
-    from dictsqlite import AsyncDictSQLite as DictSQLiteV2_Async
-    V2_AVAILABLE = True
-except ImportError as e:
+    # Remove any previously imported dictsqlite from sys.modules
+    if 'dictsqlite' in sys.modules:
+        del sys.modules['dictsqlite']
+    
+    # Temporarily filter out local dictsqlite from sys.path
+    original_path = sys.path.copy()
+    sys.path = [p for p in sys.path if str(REPO_ROOT / 'dictsqlite') not in p]
+    
+    try:
+        import dictsqlite as dictsqlite_v2_module
+        
+        if hasattr(dictsqlite_v2_module, 'DictSQLiteV4') and hasattr(dictsqlite_v2_module, '_NATIVE_AVAILABLE'):
+            if dictsqlite_v2_module._NATIVE_AVAILABLE:
+                DictSQLiteV2_Sync = dictsqlite_v2_module.DictSQLiteV4
+                DictSQLiteV2_Async = dictsqlite_v2_module.AsyncDictSQLite
+                V2_AVAILABLE = True
+                print("✅ dictsqlite_v2版 loaded successfully")
+            else:
+                raise ImportError("Native extension not available (_NATIVE_AVAILABLE=False)")
+        else:
+            raise ImportError("DictSQLiteV4 not found in dictsqlite package")
+    finally:
+        sys.path = original_path
+        
+except Exception as e:
     print(f"⚠ dictsqlite_v2 not available: {e}")
     DictSQLiteV2_Sync = None
     DictSQLiteV2_Async = None
