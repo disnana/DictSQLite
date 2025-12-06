@@ -139,7 +139,6 @@ print("BENCHMARK_RESULTS_END")
             }
         
         # Parse JSON results from stdout
-        import json
         output = result.stdout
         
         # Extract JSON between markers
