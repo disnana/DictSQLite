@@ -393,28 +393,8 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             self.db = db
             self.table_name = table_name
 
-        def get_raw_value(self, key):
-            """DBから生の値を取得し、必要に応じて復号/デコードして返す。"""
-            result_queue = queue.Queue()
-            self.db.operation_queue.put((
-                self.db._fetchone,  # pylint: disable=protected-access
-                (
-                    (
-                        "SELECT value FROM "
-                        f"{self.db._quote_ident(self.table_name)} "  # nosec B608 - safely quoted
-                        "WHERE key = ?"
-                    ),
-                    (key,),
-                ),
-                {}, result_queue
-            ))
-            result = result_queue.get()
-            if isinstance(result, Exception):
-                raise result
-            if result is None:
-                raise KeyError(f"Key {key} not found in table {self.table_name}.")
-
-            value_str = result[0]
+        def _deserialize_value(self, value_str, key=None):
+            """文字列形式の値をデシリアライズして返す。"""
             if self.db.password is not None:
                 value_str = self.db._decrypt(value_str)  # pylint: disable=protected-access
 
@@ -431,7 +411,6 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                     if isinstance(value_str, str):
                         # base64またはlatin1でエンコードされたpickleデータ
                         value_bytes = base64.b64decode(value_str)
-                        # または: value_bytes = value_str.encode('latin1')
                     else:
                         value_bytes = value_str
                     # 安全なUnpicklerで復元
@@ -453,6 +432,29 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                     )
                     # pickleデコードも失敗した場合は文字列として返す
                     return value_str
+
+        def get_raw_value(self, key):
+            """DBから生の値を取得し、必要に応じて復号/デコードして返す。"""
+            result_queue = queue.Queue()
+            self.db.operation_queue.put((
+                self.db._fetchone,  # pylint: disable=protected-access
+                (
+                    (
+                        "SELECT value FROM "
+                        f"{self.db._quote_ident(self.table_name)} "  # nosec B608 - safely quoted
+                        "WHERE key = ?"
+                    ),
+                    (key,),
+                ),
+                {}, result_queue
+            ))
+            result = result_queue.get()
+            if isinstance(result, Exception):
+                raise result
+            if result is None:
+                raise KeyError(f"Key {key} not found in table {self.table_name}.")
+
+            return self._deserialize_value(result[0], key)
 
         def __getitem__(self, key):
             raw_value = self.get_raw_value(key)
@@ -500,7 +502,10 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         def __delitem__(self, key):
             self.db.operation_queue.put((
                 self.db._execute,  # pylint: disable=protected-access
-                (f"DELETE FROM {self.db._quote_ident(self.table_name)} WHERE key = ?", (key,)),
+                (  # nosec B608
+                    f"DELETE FROM {self.db._quote_ident(self.table_name)} WHERE key = ?",
+                    (key,)
+                ),
                 {}, None
             ))
 
@@ -508,7 +513,10 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             result_queue = queue.Queue()
             self.db.operation_queue.put((
                 self.db._fetchone,  # pylint: disable=protected-access
-                (f"SELECT 1 FROM {self.db._quote_ident(self.table_name)} WHERE key = ?", (key,)),
+                (  # nosec B608
+                    f"SELECT 1 FROM {self.db._quote_ident(self.table_name)} WHERE key = ?",
+                    (key,)
+                ),
                 {}, result_queue
             ))
             result = result_queue.get()
@@ -534,24 +542,69 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                 return default
 
         def __repr__(self):
-            return f"{dict(self)}"
+            """テーブル内容を辞書形式の文字列で返す。大規模テーブルでは注意。"""
+            return f"{dict(self.items())}"
 
         def __iter__(self):
+            """キーを逐次イテレートするジェネレータを返す（メモリ効率良）。"""
             for row in self.get_all_rows():
-                key = row[0]
+                yield row[0]
+
+        def __len__(self):
+            """テーブル内のエントリ数を返す（COUNT使用で効率的）。"""
+            result_queue = queue.Queue()
+            self.db.operation_queue.put((
+                self.db._fetchone,  # pylint: disable=protected-access
+                (f"SELECT COUNT(*) FROM {self.db._quote_ident(self.table_name)}",),  # nosec B608
+                {}, result_queue
+            ))
+            result = result_queue.get()
+            if isinstance(result, Exception):
+                raise result
+            return result[0] if result else 0
+
+        def __eq__(self, other):
+            """dictまたはTableProxyとの等価比較。全データをメモリにロードする。"""
+            if isinstance(other, dict):
+                return dict(self.items()) == other
+            if isinstance(other, DictSQLite.TableProxy):
+                return dict(self.items()) == dict(other.items())
+            return NotImplemented
+
+        def keys(self):
+            """全キーをリストで返す。イテレータが必要なら iter(table) を使用。"""
+            return list(self)
+
+        def values(self):
+            """全値をリストで返す。大規模テーブルではメモリ注意。"""
+            result = []
+            for row in self.get_all_rows():
+                key, raw_value_str = row[0], row[1]
                 try:
-                    # __getitem__ を経由して正しいプロキシオブジェクトを取得
-                    yield key, self[key]
-                except (KeyError, json.JSONDecodeError):
-                    # デコードできない値はそのまま返す
-                    yield key, row[1]
+                    raw_value = self._deserialize_value(raw_value_str, key)
+                    result.append(raw_value)
+                except (json.JSONDecodeError, pickle.UnpicklingError, ValueError, TypeError):
+                    result.append(raw_value_str)
+            return result
+
+        def items(self):
+            """全(key, value)ペアをリストで返す。大規模テーブルではメモリ注意。"""
+            result = []
+            for row in self.get_all_rows():
+                key, raw_value_str = row[0], row[1]
+                try:
+                    raw_value = self._deserialize_value(raw_value_str, key)
+                    result.append((key, raw_value))
+                except (json.JSONDecodeError, pickle.UnpicklingError, ValueError, TypeError):
+                    result.append((key, raw_value_str))
+            return result
 
         def get_all_rows(self):
             """テーブル内の全行を (key, value) のタプルで返す。"""
             result_queue = queue.Queue()
             self.db.operation_queue.put((
                 self.db._fetchall,  # pylint: disable=protected-access
-                (f"SELECT key, value FROM {self.db._quote_ident(self.table_name)}",),
+                (f"SELECT key, value FROM {self.db._quote_ident(self.table_name)}",),  # nosec B608
                 {}, result_queue
             ))
             result = result_queue.get()
@@ -789,6 +842,17 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             raise result
         return result is not None
 
+    def __eq__(self, other):
+        """dictまたはDictSQLiteとの等価比較。全データをメモリにロードする。"""
+        if isinstance(other, dict):
+            proxy = self.TableProxy(self, self.table_name)
+            return dict(proxy.items()) == other
+        if isinstance(other, DictSQLite):
+            proxy1 = self.TableProxy(self, self.table_name)
+            proxy2 = other.TableProxy(other, other.table_name)
+            return dict(proxy1.items()) == dict(proxy2.items())
+        return NotImplemented
+
     def __repr__(self):
         if self.version == 2:
             result = {}
@@ -893,6 +957,26 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         if isinstance(result, Exception):
             raise result
         return [row[0] for row in result]
+
+    def table(self, table_name):
+        """指定したテーブルのTableProxyを返す。テーブルが存在しない場合は作成する。
+
+        Args:
+            table_name: テーブル名
+
+        Returns:
+            TableProxy: 指定したテーブルへのプロキシオブジェクト
+        """
+        # 常に CREATE TABLE IF NOT EXISTS を実行（競合状態を回避）
+        schema = '(key TEXT PRIMARY KEY, value TEXT)'
+        create_table_sql = (
+            "CREATE TABLE IF NOT EXISTS "
+            f"{self._quote_ident(table_name)} "
+            f"{schema}"
+        )
+        self.operation_queue.put((self._execute, (create_table_sql,), {}, None))
+        self.operation_queue.join()
+        return self.TableProxy(self, table_name)
 
     def clear_table(self, table_name=None):
         """指定テーブル（未指定なら現行）の全データを削除。"""
