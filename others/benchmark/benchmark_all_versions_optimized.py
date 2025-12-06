@@ -13,8 +13,10 @@ import os
 import sys
 import tempfile
 import subprocess
+import csv
+import datetime
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 
 # Add paths
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -177,6 +179,129 @@ def generate_comparison_graphs(original_results: Dict[str, Tuple[float, float]],
     print(f"\n✅ グラフ保存完了 (Graphs saved to): {output_dir}")
 
 
+def save_csv_results(original_results: Dict[str, Tuple[float, float]], 
+                     v2_results: Dict[str, Tuple[float, float]], 
+                     beta_v2_results: Dict[str, Tuple[float, float]],
+                     test_labels: List[str],
+                     output_dir: Path = None):
+    """Save benchmark results to CSV file."""
+    if output_dir is None:
+        output_dir = BENCHMARK_DIR / "results"
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Save main CSV file
+    csv_path = output_dir / "benchmark.csv"
+    test_names = ['basic_write', 'basic_read', 'bulk_insert', 'mixed_ops']
+    
+    with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Version', 'Test', 'OPS', 'Time (s)', 'Result'])
+        
+        for test_name, label in zip(test_names, test_labels):
+            # Original
+            elapsed, ops = original_results[test_name]
+            writer.writerow(['original', label, f'{ops:.2f}', f'{elapsed:.4f}', '成功' if ops > 0 else 'スキップ'])
+            
+            # dictsqlite_v2
+            elapsed, ops = v2_results[test_name]
+            writer.writerow(['dictsqlite_v2', label, f'{ops:.2f}', f'{elapsed:.4f}', '成功' if ops > 0 else 'スキップ'])
+            
+            # fastest beta v2
+            elapsed, ops = beta_v2_results[test_name]
+            writer.writerow(['fastest_beta_v2', label, f'{ops:.2f}', f'{elapsed:.4f}', '成功' if ops > 0 else 'スキップ'])
+    
+    print(f"\n✅ CSV保存完了 (CSV saved to): {csv_path}")
+    return csv_path
+
+
+def generate_summary_markdown(original_results: Dict[str, Tuple[float, float]], 
+                               v2_results: Dict[str, Tuple[float, float]], 
+                               beta_v2_results: Dict[str, Tuple[float, float]],
+                               test_labels: List[str],
+                               output_dir: Path = None):
+    """Generate summary markdown file."""
+    if output_dir is None:
+        output_dir = BENCHMARK_DIR / "results"
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    summary_path = output_dir / "BENCHMARK_SUMMARY.md"
+    test_names = ['basic_write', 'basic_read', 'bulk_insert', 'mixed_ops']
+    
+    with open(summary_path, 'w', encoding='utf-8') as f:
+        f.write("# DictSQLite 包括的ベンチマーク結果\n\n")
+        f.write(f"**実行日時:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        
+        f.write("## 概要\n\n")
+        f.write("3つのバージョンを徹底比較:\n")
+        f.write("- **DictSQLite (Original版)**: sqlite3ベース\n")
+        f.write("- **dictsqlite_v2**: Rust拡張版 (v2.0.6)\n")
+        f.write("- **dictsqlite-fastest Beta v2**: APSWベース、高速化\n\n")
+        
+        f.write("## ベンチマーク結果\n\n")
+        f.write("| テスト | Original (ops/sec) | dictsqlite_v2 (ops/sec) | fastest Beta v2 (ops/sec) | 最速 |\n")
+        f.write("|--------|-------------------|------------------------|---------------------------|------|\n")
+        
+        for test_name, label in zip(test_names, test_labels):
+            orig_ops = original_results[test_name][1]
+            v2_ops = v2_results[test_name][1]
+            beta_ops = beta_v2_results[test_name][1]
+            
+            # Determine fastest
+            max_ops = max(orig_ops, v2_ops, beta_ops)
+            if max_ops == 0:
+                fastest = "N/A"
+            elif max_ops == orig_ops:
+                fastest = "**Original**"
+            elif max_ops == v2_ops:
+                fastest = "**dictsqlite_v2**"
+            else:
+                fastest = "**fastest Beta v2**"
+            
+            f.write(f"| {label} | {orig_ops:,.0f} | {v2_ops:,.0f} | {beta_ops:,.0f} | {fastest} |\n")
+        
+        # Overall statistics
+        f.write("\n## 総合パフォーマンス\n\n")
+        
+        sync_test_names = ['basic_write', 'basic_read', 'bulk_insert', 'mixed_ops']
+        original_avg = sum(original_results[name][1] for name in sync_test_names if original_results[name][1] > 0) / len([1 for name in sync_test_names if original_results[name][1] > 0]) if any(original_results[name][1] > 0 for name in sync_test_names) else 0
+        v2_avg = sum(v2_results[name][1] for name in sync_test_names if v2_results[name][1] > 0) / len([1 for name in sync_test_names if v2_results[name][1] > 0]) if any(v2_results[name][1] > 0 for name in sync_test_names) else 0
+        beta_v2_avg = sum(beta_v2_results[name][1] for name in sync_test_names if beta_v2_results[name][1] > 0) / len([1 for name in sync_test_names if beta_v2_results[name][1] > 0]) if any(beta_v2_results[name][1] > 0 for name in sync_test_names) else 0
+        
+        f.write("**平均スループット** (ops/sec):\n\n")
+        if original_avg > 0:
+            f.write(f"- Original版: {original_avg:,.0f}\n")
+        if v2_avg > 0:
+            f.write(f"- dictsqlite_v2版: {v2_avg:,.0f}\n")
+        if beta_v2_avg > 0:
+            f.write(f"- fastest Beta v2版: {beta_v2_avg:,.0f}\n")
+        
+        # Determine winner
+        versions = []
+        if original_avg > 0:
+            versions.append(('Original版', original_avg))
+        if v2_avg > 0:
+            versions.append(('dictsqlite_v2版', v2_avg))
+        if beta_v2_avg > 0:
+            versions.append(('fastest Beta v2版', beta_v2_avg))
+        
+        if versions:
+            sorted_versions = sorted(versions, key=lambda x: x[1], reverse=True)
+            winner = sorted_versions[0]
+            
+            f.write(f"\n## 🏆 総括\n\n")
+            f.write(f"**最速: {winner[0]}** ({winner[1]:,.0f} ops/sec)\n\n")
+            f.write("### パフォーマンスランキング\n\n")
+            for i, (name, ops) in enumerate(sorted_versions, 1):
+                medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
+                f.write(f"{medal} {i}位. {name}: {ops:,.0f} ops/sec\n")
+    
+    print(f"✅ サマリー保存完了 (Summary saved to): {summary_path}")
+    return summary_path
+
+
+
 def main():
     """Main benchmark execution."""
     print("=" * 80)
@@ -312,6 +437,38 @@ def main():
             )
         except Exception as e:
             print(f"\n⚠ Error generating graphs: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # Save CSV results
+        print(f"\n{'='*80}")
+        print("💾 CSV結果保存中... (Saving CSV results...)")
+        print(f"{'='*80}")
+        try:
+            save_csv_results(
+                original_results,
+                v2_results,
+                beta_v2_results,
+                test_labels
+            )
+        except Exception as e:
+            print(f"\n⚠ Error saving CSV: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # Generate summary markdown
+        print(f"\n{'='*80}")
+        print("📝 サマリー生成中... (Generating summary...)")
+        print(f"{'='*80}")
+        try:
+            generate_summary_markdown(
+                original_results,
+                v2_results,
+                beta_v2_results,
+                test_labels
+            )
+        except Exception as e:
+            print(f"\n⚠ Error generating summary: {e}")
             import traceback
             traceback.print_exc()
         
