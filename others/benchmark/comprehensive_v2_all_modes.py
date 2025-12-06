@@ -15,7 +15,7 @@ import os
 import asyncio
 import tracemalloc
 from pathlib import Path
-from typing import Dict, Tuple, List
+from typing import Tuple
 import json
 
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -365,6 +365,7 @@ async def main():
                         try:
                             os.unlink(path + ext)
                         except FileNotFoundError:
+                            # File may not exist; safe to ignore during cleanup
                             pass
     
     # Test fastest version
@@ -382,6 +383,7 @@ async def main():
                 try:
                     os.unlink(db_path_fastest + ext)
                 except FileNotFoundError:
+                    # File may not exist; safe to ignore during cleanup
                     pass
     
     # Print all results

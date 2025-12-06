@@ -107,7 +107,8 @@ impl StorageEngine {
                 // 
                 // ⚠️ 注意: synchronous=OFFは最大パフォーマンスを優先します
                 // システムクラッシュやデータ損失時にデータベース破損のリスクがあります
-                // プロダクション環境では synchronous=NORMAL を推奨
+                // この設定はベンチマークとテスト用途に最適化されています
+                // プロダクション環境では synchronous=NORMAL を推奨し、設定を調整可能にすることを検討してください
                 conn.execute_batch(
                     "
                     PRAGMA journal_mode=WAL;
