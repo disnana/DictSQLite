@@ -1,6 +1,6 @@
 # DictSQLite 包括的ベンチマーク結果
 
-**実行日時:** 2025-12-06 14:12:50
+**実行日時:** 2025-12-06 15:51:15
 
 ## 概要
 
@@ -13,25 +13,25 @@
 
 | テスト | Original (ops/sec) | dictsqlite_v2 (ops/sec) | fastest Beta v2 (ops/sec) | 最速 |
 |--------|-------------------|------------------------|---------------------------|------|
-| Basic Write (300 items) | 250,008 | 28,513 | 157,740 | **Original** |
-| Basic Read (300 items) | 869 | 524,070 | 2,104,166 | **fastest Beta v2** |
-| Bulk Insert (500 items) | 286,066 | 310,551 | 338,196 | **fastest Beta v2** |
-| Mixed Operations (400 items) | 465 | 253,854 | 147,078 | **dictsqlite_v2** |
+| Basic Write (300 items) | 249,959 | 37,755 | 149,388 | **Original** |
+| Basic Read (300 items) | 990 | 99,407 | 1,938,815 | **fastest Beta v2** |
+| Bulk Insert (500 items) | 288,229 | 344,247 | 347,844 | **fastest Beta v2** |
+| Mixed Operations (400 items) | 488 | 278,645 | 147,401 | **dictsqlite_v2** |
 
 ## 総合パフォーマンス
 
 **平均スループット** (ops/sec):
 
-- Original版: 134,352
-- dictsqlite_v2版: 279,247
-- fastest Beta v2版: 686,795
+- Original版: 134,916
+- dictsqlite_v2版: 190,013
+- fastest Beta v2版: 645,862
 
 ## 🏆 総括
 
-**最速: fastest Beta v2版** (686,795 ops/sec)
+**最速: fastest Beta v2版** (645,862 ops/sec)
 
 ### パフォーマンスランキング
 
-🥇 1位. fastest Beta v2版: 686,795 ops/sec
-🥈 2位. dictsqlite_v2版: 279,247 ops/sec
-🥉 3位. Original版: 134,352 ops/sec
+🥇 1位. fastest Beta v2版: 645,862 ops/sec
+🥈 2位. dictsqlite_v2版: 190,013 ops/sec
+🥉 3位. Original版: 134,916 ops/sec
