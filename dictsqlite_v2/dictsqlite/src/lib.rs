@@ -56,16 +56,16 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 // v4.2.4 パフォーマンス最適化定数
-/// 小容量キャパシティの閾値 (この値以下では常にLRU追跡を行う)
-const SMALL_CAPACITY_THRESHOLD: usize = 100;
+/// 小容量キャパシティの閾値 (この値以下では厳密なキャパシティ管理)
+const SMALL_CAPACITY_THRESHOLD: usize = 1000;
 
 /// LRU追跡開始の閾値パーセンテージ (大容量の場合)
-/// キャパシティの110%に達するまでLRU追跡をスキップ
-const LRU_TRACKING_THRESHOLD_PERCENT: usize = 110;
+/// キャパシティの105%に達するまでLRU追跡をスキップ
+const LRU_TRACKING_THRESHOLD_PERCENT: usize = 105;
 
-/// エビクション開始の閾値パーセンテージ
-/// キャパシティの110%を超えたらエビクション開始
-const EVICTION_THRESHOLD_PERCENT: usize = 110;
+/// エビクション開始の閾値パーセンテージ (大容量の場合)
+/// キャパシティの105%を超えたらエビクション開始
+const EVICTION_THRESHOLD_PERCENT_LARGE: usize = 105;
 
 /// バッチエビクションのパーセンテージ
 /// 一度に全キャパシティの10%をエビクション
@@ -1148,9 +1148,17 @@ impl DictSQLiteV4 {
             }
         }
 
-        // v4.2.4最適化: エビクション閾値をEVICTION_THRESHOLD_PERCENT%に設定（チェック頻度削減）
-        // キャパシティをEVICTION_THRESHOLD_PERCENT%超過してからエビクション実行
-        let eviction_threshold = (self.config.hot_tier_capacity * EVICTION_THRESHOLD_PERCENT) / 100;
+        // v4.2.5最適化: エビクション閾値の動的設定
+        // 小容量: 厳密な管理（テスト互換性）
+        // 大容量: 若干の余裕を持たせてチェック頻度削減
+        let eviction_threshold = if self.config.hot_tier_capacity <= SMALL_CAPACITY_THRESHOLD {
+            // 小容量: キャパシティを超えたら即座にエビクション
+            self.config.hot_tier_capacity
+        } else {
+            // 大容量: EVICTION_THRESHOLD_PERCENT_LARGE%まで許容
+            (self.config.hot_tier_capacity * EVICTION_THRESHOLD_PERCENT_LARGE) / 100
+        };
+        
         if self.hot_tier.len() > eviction_threshold {
             self.evict_to_warm_tier()?;
         }
