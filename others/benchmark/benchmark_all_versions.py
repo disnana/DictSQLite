@@ -16,13 +16,14 @@ import importlib.util
 from pathlib import Path
 from typing import Dict, Tuple, Any
 
-# Add paths
+# Add paths - modified order to prioritize site-packages for dictsqlite_v2
 REPO_ROOT = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(REPO_ROOT))  # For main dictsqlite package
 
-# Add dictsqlite_v2 path
-V2_DIR = REPO_ROOT / 'dictsqlite_v2' / 'dictsqlite' / 'python'
-sys.path.insert(0, str(V2_DIR))
+# First, ensure site-packages is in the path for dictsqlite_v2
+import site
+site_packages = site.getusersitepackages()
+if site_packages and site_packages not in sys.path:
+    sys.path.insert(0, site_packages)
 
 # Add dictsqlite-fastest beta v2 path
 BETA_V2_DIR = REPO_ROOT / 'others' / 'beta-versions' / 'dictsqlite-fastest' / 'beta'
@@ -44,20 +45,59 @@ except ImportError:
 
 # Import versions
 try:
-    from dictsqlite.main import DictSQLite  # Original (sync only)
+    # Import Original version directly from source to avoid conflicts with installed packages
+    import importlib.util
+    import importlib.machinery
+    
+    # Create a custom loader that doesn't check sys.modules
+    original_main_path = str(REPO_ROOT / 'dictsqlite' / 'main.py')
+    loader = importlib.machinery.SourceFileLoader('dictsqlite_original_main', original_main_path)
+    spec = importlib.util.spec_from_loader('dictsqlite_original_main', loader)
+    dictsqlite_original = importlib.util.module_from_spec(spec)
+    
+    # Temporarily manipulate sys.path to ensure correct module resolution
+    original_syspath = sys.path.copy()
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        loader.exec_module(dictsqlite_original)
+    finally:
+        sys.path = original_syspath
+    
+    DictSQLite = dictsqlite_original.DictSQLite
     ORIGINAL_AVAILABLE = True
-except ImportError as e:
+    print("✅ Original版 loaded successfully")
+except Exception as e:
     print(f"⚠ DictSQLite (Original) not available: {e}")
     DictSQLite = None
     ORIGINAL_AVAILABLE = False
 
 try:
     # Import dictsqlite_v2 (Rust extension version 2.0.6)
-    import dictsqlite as dictsqlite_v2_module
-    from dictsqlite import DictSQLite as DictSQLiteV2_Sync
-    from dictsqlite import AsyncDictSQLite as DictSQLiteV2_Async
-    V2_AVAILABLE = True
-except ImportError as e:
+    # Remove any previously imported dictsqlite from sys.modules
+    if 'dictsqlite' in sys.modules:
+        del sys.modules['dictsqlite']
+    
+    # Temporarily filter out local dictsqlite from sys.path
+    original_path = sys.path.copy()
+    sys.path = [p for p in sys.path if str(REPO_ROOT / 'dictsqlite') not in p]
+    
+    try:
+        import dictsqlite as dictsqlite_v2_module
+        
+        if hasattr(dictsqlite_v2_module, 'DictSQLiteV4') and hasattr(dictsqlite_v2_module, '_NATIVE_AVAILABLE'):
+            if dictsqlite_v2_module._NATIVE_AVAILABLE:
+                DictSQLiteV2_Sync = dictsqlite_v2_module.DictSQLiteV4
+                DictSQLiteV2_Async = dictsqlite_v2_module.AsyncDictSQLite
+                V2_AVAILABLE = True
+                print("✅ dictsqlite_v2版 loaded successfully")
+            else:
+                raise ImportError("Native extension not available (_NATIVE_AVAILABLE=False)")
+        else:
+            raise ImportError("DictSQLiteV4 not found in dictsqlite package")
+    finally:
+        sys.path = original_path
+        
+except Exception as e:
     print(f"⚠ dictsqlite_v2 not available: {e}")
     DictSQLiteV2_Sync = None
     DictSQLiteV2_Async = None
@@ -107,19 +147,21 @@ class BenchmarkResult:
     
     def print_comparison(self):
         """Print comparison of all versions."""
-        print(f"\n{self.name}:")
+        print(f"\n📊 {self.name}:")
         if self.original_ops > 0:
-            print(f"  Original:        {self.original_time:.3f}s ({self.original_ops:>8.0f} ops/sec)")
+            print(f"  Original版:        {self.original_time:.3f}s ({self.original_ops:>8.0f} ops/sec)")
         if self.v2_ops > 0:
             if self.original_ops > 0:
-                print(f"  dictsqlite_v2:   {self.v2_time:.3f}s ({self.v2_ops:>8.0f} ops/sec) - {self.v2_ops/self.original_ops:>5.2f}x vs Original")
+                speedup = self.v2_ops / self.original_ops
+                print(f"  dictsqlite_v2版:   {self.v2_time:.3f}s ({self.v2_ops:>8.0f} ops/sec) - {speedup:>5.2f}x 🚀")
             else:
-                print(f"  dictsqlite_v2:   {self.v2_time:.3f}s ({self.v2_ops:>8.0f} ops/sec)")
+                print(f"  dictsqlite_v2版:   {self.v2_time:.3f}s ({self.v2_ops:>8.0f} ops/sec)")
         if self.beta_v2_ops > 0:
             if self.original_ops > 0:
-                print(f"  Beta v2:         {self.beta_v2_time:.3f}s ({self.beta_v2_ops:>8.0f} ops/sec) - {self.beta_v2_ops/self.original_ops:>5.2f}x vs Original")
+                speedup = self.beta_v2_ops / self.original_ops
+                print(f"  Beta v2版:         {self.beta_v2_time:.3f}s ({self.beta_v2_ops:>8.0f} ops/sec) - {speedup:>5.2f}x 🚀")
             else:
-                print(f"  Beta v2:         {self.beta_v2_time:.3f}s ({self.beta_v2_ops:>8.0f} ops/sec)")
+                print(f"  Beta v2版:         {self.beta_v2_time:.3f}s ({self.beta_v2_ops:>8.0f} ops/sec)")
 
 
 # Sync benchmark functions for Original DictSQLite
@@ -282,11 +324,15 @@ async def benchmark_v2_concurrent_read(db, count: int) -> Tuple[float, float]:
 
 
 def run_original_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
-    """Run benchmark for Original DictSQLite (sync)."""
+    """Run benchmark for Original DictSQLite (sync).
+    
+    Original版（同期処理のみ）のベンチマークを実行します。
+    標準sqlite3ベースの実装で、同期的な書き込み・読み込み操作をテストします。
+    """
     if not ORIGINAL_AVAILABLE:
-        print(f"\n{'='*70}")
-        print(f"Skipping: Original DictSQLite (not available)")
-        print(f"{'='*70}")
+        print(f"\n{'='*80}")
+        print(f"⏭️  スキップ: Original版 (利用不可)")
+        print(f"{'='*80}")
         return {
             'basic_write': (0, 0),
             'basic_read': (0, 0),
@@ -295,33 +341,33 @@ def run_original_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
             'mixed_ops': (0, 0)
         }
     
-    print(f"\n{'='*70}")
-    print(f"Benchmarking: Original DictSQLite (sqlite3-based)")
-    print(f"{'='*70}")
+    print(f"\n{'='*80}")
+    print(f"🔬 ベンチマーク実行中: Original版 (標準sqlite3ベース)")
+    print(f"{'='*80}")
     
     results = {}
     
     with DictSQLite(db_path) as db:
         # Basic operations
-        print("\n1. Basic Write (300 items)...")
+        print("\n1. 基本書き込み / Basic Write (300 items)...")
         elapsed, ops = benchmark_basic_write_sync(db, 300)
         results['basic_write'] = (elapsed, ops)
-        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        print("2. Basic Read (300 items)...")
+        print("2. 基本読み込み / Basic Read (300 items)...")
         elapsed, ops = benchmark_basic_read_sync(db, 300)
         results['basic_read'] = (elapsed, ops)
-        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        print("3. Bulk Insert (500 items)...")
+        print("3. 一括挿入 / Bulk Insert (500 items)...")
         elapsed, ops = benchmark_bulk_insert_sync(db, 500)
         results['bulk_insert'] = (elapsed, ops)
-        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        print("4. Mixed Operations (400 items)...")
+        print("4. 混合操作 / Mixed Operations (400 items)...")
         elapsed, ops = benchmark_mixed_operations_sync(db, 400)
         results['mixed_ops'] = (elapsed, ops)
-        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
     
     # Note: concurrent_read is async-only, so we skip it for Original
     results['concurrent_read'] = (0, 0)
@@ -330,11 +376,15 @@ def run_original_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
 
 
 async def run_beta_v2_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
-    """Run benchmark for Beta v2 with optimized settings."""
+    """Run benchmark for Beta v2 with optimized settings.
+    
+    Beta v2版（完全非同期）のベンチマークを実行します。
+    APSWベースの高性能実装で、非同期操作に最適化されています。
+    """
     if not BETA_V2_AVAILABLE:
-        print(f"\n{'='*70}")
-        print(f"Skipping: dictsqlite-fastest Beta v2 (not available)")
-        print(f"{'='*70}")
+        print(f"\n{'='*80}")
+        print(f"⏭️  スキップ: Beta v2版 (利用不可)")
+        print(f"{'='*80}")
         return {
             'basic_write': (0, 0),
             'basic_read': (0, 0),
@@ -343,49 +393,53 @@ async def run_beta_v2_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
             'mixed_ops': (0, 0)
         }
     
-    print(f"\n{'='*70}")
-    print(f"Benchmarking: dictsqlite-fastest Beta v2 (aiosqlite + batching)")
-    print(f"{'='*70}")
+    print(f"\n{'='*80}")
+    print(f"🔬 ベンチマーク実行中: Beta v2版 (APSW + バッチ処理)")
+    print(f"{'='*80}")
     
     results = {}
     
     # v2 uses aiosqlite with batching - configure for best performance
     async with AsyncBetaV2(db_path) as db:
         # Basic operations
-        print("\n1. Basic Write (300 items)...")
+        print("\n1. 基本書き込み / Basic Write (300 items)...")
         elapsed, ops = await benchmark_basic_write(db, 300)
         results['basic_write'] = (elapsed, ops)
-        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        print("2. Basic Read (300 items)...")
+        print("2. 基本読み込み / Basic Read (300 items)...")
         elapsed, ops = await benchmark_basic_read(db, 300)
         results['basic_read'] = (elapsed, ops)
-        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        print("3. Concurrent Read (600 items, 8 concurrent)...")
+        print("3. 並行読み込み / Concurrent Read (600 items, 8 concurrent)...")
         elapsed, ops = await benchmark_concurrent_read(db, 600, 8)
         results['concurrent_read'] = (elapsed, ops)
-        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        print("4. Bulk Insert (500 items)...")
+        print("4. 一括挿入 / Bulk Insert (500 items)...")
         elapsed, ops = await benchmark_bulk_insert(db, 500)
         results['bulk_insert'] = (elapsed, ops)
-        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        print("5. Mixed Operations (400 items)...")
+        print("5. 混合操作 / Mixed Operations (400 items)...")
         elapsed, ops = await benchmark_mixed_operations(db, 400)
         results['mixed_ops'] = (elapsed, ops)
-        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
     
     return results
 
 
-async def run_v2_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
-    """Run benchmark for dictsqlite_v2 with optimized sync/async tests."""
+def run_v2_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
+    """Run benchmark for dictsqlite_v2 with optimized sync tests.
+    
+    dictsqlite_v2版（Rust拡張）のベンチマークを実行します。
+    同期処理で高性能Rust実装をテストします。
+    """
     if not V2_AVAILABLE:
-        print(f"\n{'='*70}")
-        print(f"Skipping: dictsqlite_v2 (not available - needs to be built)")
-        print(f"{'='*70}")
+        print(f"\n{'='*80}")
+        print(f"⏭️  スキップ: dictsqlite_v2版 (利用不可 - ビルドが必要)")
+        print(f"{'='*80}")
         return {
             'basic_write': (0, 0),
             'basic_read': (0, 0),
@@ -394,47 +448,58 @@ async def run_v2_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
             'mixed_ops': (0, 0)
         }
     
-    print(f"\n{'='*70}")
-    print(f"Benchmarking: dictsqlite_v2 (Rust extension v2.0.6 - sync/async support)")
-    print(f"{'='*70}")
+    print(f"\n{'='*80}")
+    print(f"🔬 ベンチマーク実行中: dictsqlite_v2版 (Rust拡張 v2.0.6 - 同期/非同期対応)")
+    print(f"{'='*80}")
     
     results = {}
+    results['concurrent_read'] = (0, 0)  # Not tested in sync mode
     
-    # Use async version of dictsqlite_v2
-    db = DictSQLiteV2_Async(db_path)
+    # Use sync version of dictsqlite_v2 for sync operations
+    db = DictSQLiteV2_Sync(db_path)
     try:
-        # Basic operations
-        print("\n1. Basic Write (300 items) [async]...")
-        elapsed, ops = await benchmark_v2_basic_write(db, 300)
+        # Basic operations using dict-like API
+        print("\n1. 基本書き込み / Basic Write (300 items) [sync]...")
+        start = time.time()
+        for i in range(300):
+            db[f'key_{i}'] = f'value_{i}'
+        elapsed = time.time() - start
+        ops = 300 / elapsed
         results['basic_write'] = (elapsed, ops)
-        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        print("2. Basic Read (300 items) [async]...")
-        elapsed, ops = await benchmark_v2_basic_read(db, 300)
+        print("2. 基本読み込み / Basic Read (300 items) [sync]...")
+        start = time.time()
+        for i in range(300):
+            _ = db[f'key_{i}']
+        elapsed = time.time() - start
+        ops = 300 / elapsed
         results['basic_read'] = (elapsed, ops)
-        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        print("3. Concurrent Read (600 items, 8 concurrent) [async]...")
-        elapsed, ops = await benchmark_v2_concurrent_read(db, 600)
-        results['concurrent_read'] = (elapsed, ops)
-        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
-        
-        print("4. Bulk Insert (500 items) [async]...")
-        elapsed, ops = await benchmark_v2_bulk_insert(db, 500)
+        print("3. 一括挿入 / Bulk Insert (500 items) [sync]...")
+        start = time.time()
+        for i in range(500):
+            db[f'bulk_key_{i}'] = f'bulk_value_{i}'
+        elapsed = time.time() - start
+        ops = 500 / elapsed
         results['bulk_insert'] = (elapsed, ops)
-        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        print("5. Mixed Operations (400 items) [async]...")
-        elapsed, ops = await benchmark_v2_mixed_operations(db, 400)
+        print("4. 混合操作 / Mixed Operations (400 items) [sync]...")
+        start = time.time()
+        for i in range(400):
+            db[f'mixed_{i}'] = f'data_{i}'
+            if i % 3 == 0:
+                _ = db.get(f'mixed_{i}', None)
+        elapsed = time.time() - start
+        ops = 400 / elapsed
         results['mixed_ops'] = (elapsed, ops)
-        print(f"   {elapsed:.3f}s, {ops:.0f} ops/sec")
+        print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
     finally:
         # Cleanup if the class has a close method
         if hasattr(db, 'close'):
-            if asyncio.iscoroutinefunction(db.close):
-                await db.close()
-            else:
-                db.close()
+            db.close()
     
     return results
 
@@ -443,7 +508,7 @@ def save_version_results(version_name: str, results_dict: Dict[str, Tuple[float,
     """Save benchmark results for a specific version to VersionManager.
     
     Args:
-        version_name: Version identifier (original, beta_v2, v4.1)
+        version_name: Version identifier (original, v2, beta_v2)
         results_dict: Dictionary mapping test_name to (elapsed_time, ops_per_sec)
         test_labels: List of human-readable test labels
     """
@@ -529,9 +594,9 @@ def generate_comparison_graphs(original_results: Dict[str, Tuple[float, float]],
     if V2_AVAILABLE:
         ax.bar([i + width for i in x], v2_ops, width, label='dictsqlite_v2版', alpha=0.8)
     
-    ax.set_xlabel('Test Type', fontsize=12)
-    ax.set_ylabel('Operations per Second (ops/sec)', fontsize=12)
-    ax.set_title('DictSQLite Version Comparison - All Benchmarks', fontsize=14, fontweight='bold')
+    ax.set_xlabel('テスト種類 (Test Type)', fontsize=12)
+    ax.set_ylabel('操作数/秒 (Operations per Second)', fontsize=12)
+    ax.set_title('DictSQLite バージョン比較 - 全ベンチマーク / Version Comparison', fontsize=14, fontweight='bold')
     ax.set_xticks(x)
     ax.set_xticklabels(short_labels, fontsize=10)
     ax.legend(fontsize=11)
@@ -541,7 +606,7 @@ def generate_comparison_graphs(original_results: Dict[str, Tuple[float, float]],
     graph_path = output_dir / "version_comparison_bar.png"
     plt.savefig(graph_path, dpi=150, bbox_inches='tight')
     plt.close()
-    print(f"  ✓ Saved bar chart: {graph_path}")
+    print(f"  ✓ 棒グラフ保存 (Saved bar chart): {graph_path}")
     
     # Graph 2: Speedup comparison (relative to Original or slowest)
     fig, ax = plt.subplots(figsize=(12, 6))
@@ -598,9 +663,9 @@ def generate_comparison_graphs(original_results: Dict[str, Tuple[float, float]],
                     version_speedups.append(0)
             ax.plot(x_speedup, version_speedups, marker='o', linewidth=2, markersize=8, label=version_label)
         
-        ax.set_xlabel('Test Type', fontsize=12)
-        ax.set_ylabel('Speedup (relative to baseline)', fontsize=12)
-        ax.set_title('DictSQLite Version Speedup Comparison', fontsize=14, fontweight='bold')
+        ax.set_xlabel('テスト種類 (Test Type)', fontsize=12)
+        ax.set_ylabel('速度向上率 (Speedup, relative to baseline)', fontsize=12)
+        ax.set_title('DictSQLite バージョン別速度向上比較 / Version Speedup Comparison', fontsize=14, fontweight='bold')
         ax.set_xticks(x_speedup)
         ax.set_xticklabels(labels_for_speedup, fontsize=10)
         ax.legend(fontsize=11)
@@ -611,38 +676,38 @@ def generate_comparison_graphs(original_results: Dict[str, Tuple[float, float]],
         graph_path = output_dir / "version_comparison_speedup.png"
         plt.savefig(graph_path, dpi=150, bbox_inches='tight')
         plt.close()
-        print(f"  ✓ Saved speedup chart: {graph_path}")
+        print(f"  ✓ 速度向上グラフ保存 (Saved speedup chart): {graph_path}")
     
-    print(f"\n✅ Graphs saved to: {output_dir}")
-    print(f"   - version_comparison_bar.png")
-    print(f"   - version_comparison_speedup.png")
+    print(f"\n✅ グラフ保存完了 (Graphs saved to): {output_dir}")
+    print(f"   - version_comparison_bar.png (棒グラフ)")
+    print(f"   - version_comparison_speedup.png (速度向上グラフ)")
 
 
 async def main():
     """Main benchmark execution."""
-    print("=" * 70)
-    print("DictSQLite Comprehensive Benchmark")
-    print("Original vs Beta v2 vs v4.1")
-    print("=" * 70)
+    print("=" * 80)
+    print("DictSQLite 総合ベンチマーク / Comprehensive Benchmark")
+    print("Original版 vs dictsqlite_v2版 vs Beta v2版")
+    print("=" * 80)
     
     # Version mapping table
-    print("\n" + "=" * 70)
-    print("バージョンマッピング (Version Mapping)")
-    print("=" * 70)
+    print("\n" + "=" * 80)
+    print("📋 バージョンマッピング (Version Mapping)")
+    print("=" * 80)
     print("\n以下の3つのバージョンを比較します:")
-    print("\n  1. Original版 (DictSQLite Original)")
-    print("     - ソースコード: dictsqlite/")
-    print("     - 実装: 標準sqlite3ベース")
-    print("     - 特徴: Python標準ライブラリのみ使用")
-    print("\n  2. dictsqlite_v2版 (dictsqlite_v2)")
-    print("     - ソースコード: dictsqlite_v2/dictsqlite/")
-    print("     - 実装: Rust拡張（バージョン 2.0.6）")
-    print("     - 特徴: 同期・非同期両対応の高性能Rust実装")
-    print("\n  3. Beta v2版 (dictsqlite-fastest Beta v2)")
-    print("     - ソースコード: others/beta-versions/dictsqlite-fastest/beta/")
-    print("     - 実装: APSWベース（非同期高性能版）")
-    print("     - 特徴: メモリ最適化、LRUキャッシュ")
-    print("\n" + "=" * 70)
+    print("\n  1️⃣  Original版 (DictSQLite Original)")
+    print("     📁 ソースコード: dictsqlite/")
+    print("     🔧 実装: 標準sqlite3ベース")
+    print("     ⚡ 特徴: Python標準ライブラリのみ使用（同期処理のみ）")
+    print("\n  2️⃣  dictsqlite_v2版 (dictsqlite_v2)")
+    print("     📁 ソースコード: dictsqlite_v2/dictsqlite/")
+    print("     🔧 実装: Rust拡張（バージョン 2.0.6）")
+    print("     ⚡ 特徴: 同期・非同期両対応の高性能Rust実装")
+    print("\n  3️⃣  Beta v2版 (dictsqlite-fastest Beta v2)")
+    print("     📁 ソースコード: others/beta-versions/dictsqlite-fastest/beta/")
+    print("     🔧 実装: APSWベース（非同期高性能版）")
+    print("     ⚡ 特徴: メモリ最適化、LRUキャッシュ、完全非同期対応")
+    print("\n" + "=" * 80)
     
     # Check if at least one version is available
     if not any([ORIGINAL_AVAILABLE, V2_AVAILABLE, BETA_V2_AVAILABLE]):
@@ -653,26 +718,26 @@ async def main():
         print("  - dictsqlite-fastest Beta v2: Requires APSW")
         return 1
     
-    print("\nAvailable versions:")
+    print("\n✅ 利用可能なバージョン (Available versions):")
     if ORIGINAL_AVAILABLE:
-        print("  ✓ DictSQLite (Original版): Standard sqlite3-based")
+        print("  ✓ Original版: 標準sqlite3ベース (Standard sqlite3-based)")
     else:
-        print("  ✗ DictSQLite (Original版): Not available")
+        print("  ✗ Original版: 利用不可 (Not available)")
     
     if V2_AVAILABLE:
-        print("  ✓ dictsqlite_v2 (dictsqlite_v2版): Rust extension v2.0.6 with sync/async support")
+        print("  ✓ dictsqlite_v2版: Rust拡張 v2.0.6 (同期・非同期対応)")
     else:
-        print("  ✗ dictsqlite_v2 (dictsqlite_v2版): Not available")
+        print("  ✗ dictsqlite_v2版: 利用不可 (Not available)")
     
     if BETA_V2_AVAILABLE:
-        print("  ✓ dictsqlite-fastest Beta v2 (Beta v2版): Async high-performance")
+        print("  ✓ Beta v2版: APSW非同期高性能版 (Async high-performance)")
     else:
-        print("  ✗ dictsqlite-fastest Beta v2 (Beta v2版): Not available")
+        print("  ✗ Beta v2版: 利用不可 (Not available)")
     
-    print("\nTest operations:")
-    print("  - Sync operations: Basic write/read, bulk insert")
-    print("  - Async operations: Concurrent read, async write/read (where supported)")
-    print("  - Mixed operations: Combined sync/async workloads")
+    print("\n🧪 テスト項目 (Test operations):")
+    print("  • 同期操作 (Sync): 基本的な書き込み・読み込み、一括挿入")
+    print("  • 非同期操作 (Async): 並行読み込み、非同期書き込み・読み込み")
+    print("  • 混合操作 (Mixed): 同期・非同期を組み合わせたワークロード")
     
     # Create temp files
     with tempfile.NamedTemporaryFile(delete=False, suffix='_original.db') as tmp:
@@ -735,7 +800,7 @@ async def main():
             }
         
         try:
-            v2_results = await run_v2_benchmark(v2_path)
+            v2_results = run_v2_benchmark(v2_path)
             
             # Save dictsqlite_v2 results
             if VERSION_MANAGER_AVAILABLE and V2_AVAILABLE:
@@ -762,17 +827,17 @@ async def main():
             results.append(result)
         
         # Print comparison summary
-        print(f"\n{'='*70}")
-        print("Performance Comparison Summary")
-        print(f"{'='*70}")
+        print(f"\n{'='*80}")
+        print("📊 パフォーマンス比較結果 (Performance Comparison Summary)")
+        print(f"{'='*80}")
         
         for result in results:
             result.print_comparison()
         
         # Overall statistics
-        print(f"\n{'='*70}")
-        print("Overall Performance")
-        print(f"{'='*70}")
+        print(f"\n{'='*80}")
+        print("📈 総合パフォーマンス (Overall Performance)")
+        print(f"{'='*80}")
         
         # Calculate averages (excluding concurrent_read for Original as it's async-only)
         sync_test_names = ['basic_write', 'basic_read', 'bulk_insert', 'mixed_ops']
@@ -782,52 +847,55 @@ async def main():
         v2_avg = sum(v2_results[name][1] for name in sync_test_names) / len(sync_test_names) if V2_AVAILABLE else 0
         beta_v2_avg = sum(beta_v2_results[name][1] for name in sync_test_names) / len(sync_test_names) if BETA_V2_AVAILABLE else 0
         
-        print(f"\nAverage throughput (ops/sec) - sync operations only:")
+        print(f"\n平均スループット (Average throughput, ops/sec) - 同期操作のみ:")
         if ORIGINAL_AVAILABLE:
-            print(f"  Original:        {original_avg:>10.0f}")
+            print(f"  Original版:        {original_avg:>10.0f} ops/sec")
         if V2_AVAILABLE and v2_avg > 0:
             baseline_avg = original_avg if original_avg > 0 else v2_avg
             if baseline_avg > 0 and baseline_avg != v2_avg:
-                print(f"  dictsqlite_v2:   {v2_avg:>10.0f} ({v2_avg/baseline_avg:>5.2f}x vs baseline)")
+                speedup = v2_avg / baseline_avg
+                print(f"  dictsqlite_v2版:   {v2_avg:>10.0f} ops/sec ({speedup:>5.2f}x 🚀)")
             else:
-                print(f"  dictsqlite_v2:   {v2_avg:>10.0f}")
+                print(f"  dictsqlite_v2版:   {v2_avg:>10.0f} ops/sec")
         if BETA_V2_AVAILABLE:
             baseline_avg = original_avg if original_avg > 0 else (v2_avg if v2_avg > 0 else beta_v2_avg)
             if baseline_avg > 0:
-                print(f"  Beta v2:         {beta_v2_avg:>10.0f} ({beta_v2_avg/baseline_avg:>5.2f}x vs baseline)")
+                speedup = beta_v2_avg / baseline_avg
+                print(f"  Beta v2版:         {beta_v2_avg:>10.0f} ops/sec ({speedup:>5.2f}x 🚀)")
             else:
-                print(f"  Beta v2:         {beta_v2_avg:>10.0f}")
+                print(f"  Beta v2版:         {beta_v2_avg:>10.0f} ops/sec")
         
         # Determine winner
-        print(f"\n{'='*70}")
-        print("Summary")
-        print(f"{'='*70}")
+        print(f"\n{'='*80}")
+        print("🏆 総括 (Summary)")
+        print(f"{'='*80}")
         
         versions = []
         if ORIGINAL_AVAILABLE and original_avg > 0:
-            versions.append(('Original', original_avg))
+            versions.append(('Original版', original_avg))
         if V2_AVAILABLE and v2_avg > 0:
-            versions.append(('dictsqlite_v2', v2_avg))
+            versions.append(('dictsqlite_v2版', v2_avg))
         if BETA_V2_AVAILABLE and beta_v2_avg > 0:
-            versions.append(('Beta v2', beta_v2_avg))
+            versions.append(('Beta v2版', beta_v2_avg))
         
         if not versions:
-            print("\n⚠ No successful benchmarks to compare")
+            print("\n⚠ 比較可能なベンチマーク結果がありません (No successful benchmarks to compare)")
         else:
             sorted_versions = sorted(versions, key=lambda x: x[1], reverse=True)
             winner = sorted_versions[0]
             
-            print(f"\n🏆 Winner: {winner[0]} ({winner[1]:.0f} ops/sec)")
-            print(f"\nPerformance ranking:")
+            print(f"\n🥇 最速: {winner[0]} ({winner[1]:.0f} ops/sec)")
+            print(f"\n📊 パフォーマンスランキング (Performance ranking):")
             baseline_for_comparison = sorted_versions[-1][1]  # Use slowest as baseline
             for i, (name, ops) in enumerate(sorted_versions, 1):
                 vs_baseline = ((ops / baseline_for_comparison) - 1) * 100
-                print(f"  {i}. {name}: {ops:>10.0f} ops/sec ({vs_baseline:+.1f}% vs baseline)")
+                medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
+                print(f"  {medal} {i}位. {name}: {ops:>10.0f} ops/sec (ベースライン比 {vs_baseline:+.1f}%)")
         
         # Generate comparison graphs
-        print(f"\n{'='*70}")
-        print("Generating comparison graphs...")
-        print(f"{'='*70}")
+        print(f"\n{'='*80}")
+        print("📈 比較グラフ生成中... (Generating comparison graphs...)")
+        print(f"{'='*80}")
         try:
             generate_comparison_graphs(
                 original_results, 
@@ -840,9 +908,9 @@ async def main():
             import traceback
             traceback.print_exc()
         
-        print(f"\n{'='*70}")
-        print("✅ Benchmark completed successfully!")
-        print(f"{'='*70}")
+        print(f"\n{'='*80}")
+        print("✅ ベンチマーク完了！ (Benchmark completed successfully!)")
+        print(f"{'='*80}")
         
     finally:
         # Cleanup
