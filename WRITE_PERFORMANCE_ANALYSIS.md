@@ -75,7 +75,7 @@
 2. **Batch Eviction**: Evict 10% at once with bulk_insert
 3. **Conditional LRU Tracking**: Skip tracking until needed
 4. **SQLite PRAGMA Tuning**: synchronous=OFF, 128MB cache
-5. **Write Buffer**: Batch WriteTh rough writes (buffer_size=100)
+5. **Write Buffer**: Batch WriteThrough writes (buffer_size=100)
 
 ### ⚠️ Why We Can't Match fastest's Write Speed
 
