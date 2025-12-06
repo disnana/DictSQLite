@@ -1,0 +1,160 @@
+{
+  "v2_memory_sync": [
+    {
+      "test": "Write",
+      "elapsed": 0.03258657455444336,
+      "ops_per_sec": 61374.96890501763,
+      "memory_mb": 0.004908561706542969
+    },
+    {
+      "test": "Read",
+      "elapsed": 0.015743255615234375,
+      "ops_per_sec": 127038.52677489702,
+      "memory_mb": 0.0011138916015625
+    },
+    {
+      "test": "Mixed",
+      "elapsed": 0.03051590919494629,
+      "ops_per_sec": 65539.58419601072,
+      "memory_mb": 0.0049304962158203125
+    },
+    {
+      "test": "Update",
+      "elapsed": 0.025150299072265625,
+      "ops_per_sec": 79521.91718489307,
+      "memory_mb": 0.004553794860839844
+    }
+  ],
+  "v2_memory_async": [
+    {
+      "test": "Async Write",
+      "elapsed": 0.01867532730102539,
+      "ops_per_sec": 53546.58496106217,
+      "memory_mb": 0.006731986999511719
+    },
+    {
+      "test": "Async Read",
+      "elapsed": 0.008279561996459961,
+      "ops_per_sec": 120779.33596337144,
+      "memory_mb": 0.0012340545654296875
+    },
+    {
+      "test": "Concurrent Write",
+      "elapsed": 0.022403240203857422,
+      "ops_per_sec": 89272.80080028946,
+      "memory_mb": 0.014893531799316406
+    }
+  ],
+  "v2_lazy_sync": [
+    {
+      "test": "Write",
+      "elapsed": 0.03262042999267578,
+      "ops_per_sec": 61311.270282122496,
+      "memory_mb": 0.004488945007324219
+    },
+    {
+      "test": "Read",
+      "elapsed": 0.015384435653686523,
+      "ops_per_sec": 130001.51874409162,
+      "memory_mb": 0.0011043548583984375
+    },
+    {
+      "test": "Mixed",
+      "elapsed": 0.030594825744628906,
+      "ops_per_sec": 65370.53084380163,
+      "memory_mb": 0.004665374755859375
+    },
+    {
+      "test": "Update",
+      "elapsed": 0.02475142478942871,
+      "ops_per_sec": 80803.42917690122,
+      "memory_mb": 0.004549980163574219
+    }
+  ],
+  "v2_lazy_async": [
+    {
+      "test": "Async Write",
+      "elapsed": 0.011357307434082031,
+      "ops_per_sec": 88049.03854227895,
+      "memory_mb": 0.004681587219238281
+    },
+    {
+      "test": "Async Read",
+      "elapsed": 0.008078575134277344,
+      "ops_per_sec": 123784.20493448235,
+      "memory_mb": 0.0012264251708984375
+    },
+    {
+      "test": "Concurrent Write",
+      "elapsed": 0.021909236907958984,
+      "ops_per_sec": 91285.69873985244,
+      "memory_mb": 0.015870094299316406
+    }
+  ],
+  "v2_writethrough_sync": [
+    {
+      "test": "Write",
+      "elapsed": 0.09607195854187012,
+      "ops_per_sec": 20817.72902681441,
+      "memory_mb": 0.004548072814941406
+    },
+    {
+      "test": "Read",
+      "elapsed": 0.016377925872802734,
+      "ops_per_sec": 122115.58505837483,
+      "memory_mb": 0.0011425018310546875
+    },
+    {
+      "test": "Mixed",
+      "elapsed": 0.09221339225769043,
+      "ops_per_sec": 21688.823619144147,
+      "memory_mb": 0.004611968994140625
+    },
+    {
+      "test": "Update",
+      "elapsed": 0.0921027660369873,
+      "ops_per_sec": 21714.87443924133,
+      "memory_mb": 0.004565238952636719
+    }
+  ],
+  "v2_writethrough_async": [
+    {
+      "test": "Async Write",
+      "elapsed": 0.1826467514038086,
+      "ops_per_sec": 5475.04947289825,
+      "memory_mb": 0.005953788757324219
+    },
+    {
+      "test": "Async Read",
+      "elapsed": 0.00855565071105957,
+      "ops_per_sec": 116881.81691514561,
+      "memory_mb": 0.0012569427490234375
+    },
+    {
+      "test": "Concurrent Write",
+      "elapsed": 0.30580568313598633,
+      "ops_per_sec": 6540.100823144728,
+      "memory_mb": 0.024051666259765625
+    }
+  ],
+  "fastest": [
+    {
+      "test": "Write",
+      "elapsed": 0.02573871612548828,
+      "ops_per_sec": 77703.95346252176,
+      "memory_mb": 0.4338493347167969
+    },
+    {
+      "test": "Read",
+      "elapsed": 0.10480427742004395,
+      "ops_per_sec": 19083.190583760446,
+      "memory_mb": 0.029364585876464844
+    },
+    {
+      "test": "Mixed",
+      "elapsed": 0.03335285186767578,
+      "ops_per_sec": 59964.88719869614,
+      "memory_mb": 0.47855567932128906
+    }
+  ]
+}

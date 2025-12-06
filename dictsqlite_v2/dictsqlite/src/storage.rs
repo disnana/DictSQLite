@@ -107,12 +107,12 @@ impl StorageEngine {
                 conn.execute_batch(
                     "
                     PRAGMA journal_mode=WAL;
-                    PRAGMA synchronous=NORMAL;
-                    PRAGMA cache_size=-64000;
+                    PRAGMA synchronous=OFF;
+                    PRAGMA cache_size=-128000;
                     PRAGMA temp_store=MEMORY;
                     PRAGMA mmap_size=30000000000;
                     PRAGMA page_size=4096;
-                    PRAGMA auto_vacuum=INCREMENTAL;
+                    PRAGMA wal_autocheckpoint=10000;
                 ",
                 )?;
                 Ok(())
