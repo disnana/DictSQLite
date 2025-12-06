@@ -79,8 +79,7 @@ jobs:
         if [ -f "others/beta-versions/dictsqlite-fastest/beta/requirements.txt" ]; then
           pip install -r others/beta-versions/dictsqlite-fastest/beta/requirements.txt
         fi
-        # dictsqlite_v2 の依存関係をインストール (maturin は次のステップでインストール)
-        pip install msgpack
+        # dictsqlite_v2 の依存関係は wheel インストール時に自動的に処理される
 
     - name: Set up Rust
       uses: actions-rust-lang/setup-rust-toolchain@v1
