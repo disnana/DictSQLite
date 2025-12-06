@@ -502,7 +502,10 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         def __delitem__(self, key):
             self.db.operation_queue.put((
                 self.db._execute,  # pylint: disable=protected-access
-                (f"DELETE FROM {self.db._quote_ident(self.table_name)} WHERE key = ?", (key,)),  # nosec B608
+                (  # nosec B608
+                    f"DELETE FROM {self.db._quote_ident(self.table_name)} WHERE key = ?",
+                    (key,)
+                ),
                 {}, None
             ))
 
@@ -510,7 +513,10 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             result_queue = queue.Queue()
             self.db.operation_queue.put((
                 self.db._fetchone,  # pylint: disable=protected-access
-                (f"SELECT 1 FROM {self.db._quote_ident(self.table_name)} WHERE key = ?", (key,)),  # nosec B608
+                (  # nosec B608
+                    f"SELECT 1 FROM {self.db._quote_ident(self.table_name)} WHERE key = ?",
+                    (key,)
+                ),
                 {}, result_queue
             ))
             result = result_queue.get()
@@ -565,21 +571,11 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             return NotImplemented
 
         def keys(self):
-            """テーブル内の全キー一覧を返す。
-
-            Note: Python標準のdictとは異なり、dict_keysビューではなくリストを返します。
-            """
+            """テーブル内の全キー一覧をリストで返す。"""
             return list(self)
 
         def values(self):
-            """テーブル内の全値一覧を返す。
-
-            Note: Python標準のdictとは異なり、dict_valuesビューではなくリストを返します。
-            大規模テーブルではメモリを大量消費する可能性があります。
-            
-            Returns:
-                list: デシリアライズされた生値のリスト
-            """
+            """テーブル内の全値一覧をリストで返す。大規模テーブルではメモリ注意。"""
             result = []
             for row in self.get_all_rows():
                 key, raw_value_str = row[0], row[1]
@@ -591,14 +587,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             return result
 
         def items(self):
-            """テーブル内の全(key, value)ペアを返す。
-
-            Note: Python標準のdictとは異なり、dict_itemsビューではなくリストを返します。
-            大規模テーブルではメモリを大量消費する可能性があります。
-            
-            Returns:
-                list: (key, value) タプルのリスト。valueはデシリアライズされた生値。
-            """
+            """テーブル内の全(key, value)ペアをリストで返す。大規模テーブルではメモリ注意。"""
             result = []
             for row in self.get_all_rows():
                 key, raw_value_str = row[0], row[1]
