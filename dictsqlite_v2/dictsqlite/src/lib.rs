@@ -965,8 +965,22 @@ impl DictSQLiteV4 {
     /// - 復号化に失敗した場合: ValueError
     #[pyo3(signature = (key, default=None))]
     fn get(&self, key: String, default: Option<Vec<u8>>, py: Python) -> PyResult<PyObject> {
-        // LRU追跡のためにアクセスを記録
-        self.access_tracker.lock().unwrap().put(key.clone(), ());
+        // v4.2.4最適化: LRU追跡は必要な場合のみ実行（Memory/Lazyモードではスキップ）
+        // WriteThroughモードまたはキャパシティ超過時のみLRU追跡
+        let current_size = self.hot_tier.len();
+        let tracking_threshold = if self.config.hot_tier_capacity <= 100 {
+            // 小容量: 常に追跡（テスト互換性）
+            0
+        } else {
+            // 大容量: 110%から追跡（パフォーマンス優先）
+            (self.config.hot_tier_capacity * 110) / 100
+        };
+        let needs_lru = self.config.persist_mode == PersistMode::WriteThrough 
+            || current_size >= tracking_threshold;
+        
+        if needs_lru {
+            self.access_tracker.lock().unwrap().put(key.clone(), ());
+        }
 
         // Hot tierを最初に試行（ロックフリー読み取り）
         if let Some(value) = self.hot_tier.get(&key) {
@@ -1084,16 +1098,16 @@ impl DictSQLiteV4 {
             (is_new, None)
         };
 
-        // v4.2.3最適化: LRUアクセス追跡の条件付き更新（パフォーマンス向上）
-        // 小さいキャパシティの場合は常にLRU追跡（テスト互換性）
-        // 大きいキャパシティの場合は95%から追跡開始（パフォーマンス最適化）
+        // v4.2.4最適化: LRUアクセス追跡の条件付き更新（パフォーマンス向上）
+        // Memory/Lazyモードでは大容量を前提としているため、LRU追跡を最小化
+        // WriteThroughモードまたはキャパシティ超過時のみLRU追跡を有効化
         let current_size = self.hot_tier.len();
         let tracking_threshold = if self.config.hot_tier_capacity <= 100 {
-            // 小容量: 常に追跡（正確なLRU動作）
+            // 小容量: 常に追跡（テスト互換性）
             0
         } else {
-            // 大容量: 95%から追跡（パフォーマンス優先）
-            (self.config.hot_tier_capacity * 95) / 100
+            // 大容量: 110%から追跡（パフォーマンス優先）
+            (self.config.hot_tier_capacity * 110) / 100
         };
         let needs_lru = self.config.persist_mode == PersistMode::WriteThrough 
             || current_size >= tracking_threshold;
@@ -1118,8 +1132,10 @@ impl DictSQLiteV4 {
             }
         }
 
-        // エビクションチェック: キャパシティを超えた場合は即座にエビクション
-        if self.hot_tier.len() > self.config.hot_tier_capacity {
+        // v4.2.4最適化: エビクション閾値を110%に設定（チェック頻度削減）
+        // キャパシティを10%超過してからエビクション実行
+        let eviction_threshold = (self.config.hot_tier_capacity * 110) / 100;
+        if self.hot_tier.len() > eviction_threshold {
             self.evict_to_warm_tier()?;
         }
 
@@ -1132,24 +1148,41 @@ impl DictSQLiteV4 {
     /// LRUトラッカーを使用して最も古いエントリを特定し、
     /// ストレージに書き込んでからHot tierから削除します。
     ///
+    /// # v4.2.4最適化
+    /// 複数エントリを一度にエビクションし、bulk_insertで一括書き込み
+    ///
     /// # エラー
     /// - ストレージ書き込みに失敗した場合: IOError
     fn evict_to_warm_tier(&self) -> PyResult<()> {
         let mut tracker = self.access_tracker.lock().unwrap();
+        
+        // v4.2.4最適化: 一度に10%のエントリをエビクション（バッチ処理）
+        let eviction_count = std::cmp::max(1, self.config.hot_tier_capacity / 10);
+        let mut evicted_items = HashMap::new();
 
-        // LRU（最も長く使われていない）エントリを見つける
-        if let Some((evict_key, _)) = tracker.pop_lru() {
-            // Hot tierから削除
-            if let Some((_, value)) = self.hot_tier.remove(&evict_key) {
-                // Memoryモードでない場合はストレージに書き込み
-                if self.config.persist_mode != PersistMode::Memory {
-                    let mut storage_guard = self.storage.lock().unwrap();
-                    if let Some(ref mut storage) = *storage_guard {
-                        storage.set(&evict_key, &value).map_err(|e| {
-                            PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string())
-                        })?;
-                    }
+        // 複数のLRUエントリを一度に収集
+        for _ in 0..eviction_count {
+            if let Some((evict_key, _)) = tracker.pop_lru() {
+                // Hot tierから削除
+                if let Some((_, value)) = self.hot_tier.remove(&evict_key) {
+                    evicted_items.insert(evict_key, value);
                 }
+            } else {
+                break;  // これ以上エビクション対象がない
+            }
+        }
+        
+        // トラッカーのロックを早期解放
+        drop(tracker);
+
+        // Memoryモードでない場合はストレージに一括書き込み
+        if self.config.persist_mode != PersistMode::Memory && !evicted_items.is_empty() {
+            let mut storage_guard = self.storage.lock().unwrap();
+            if let Some(ref mut storage) = *storage_guard {
+                // bulk_insertで一括書き込み（単一トランザクション）
+                storage.bulk_insert(&evicted_items).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string())
+                })?;
             }
         }
 
