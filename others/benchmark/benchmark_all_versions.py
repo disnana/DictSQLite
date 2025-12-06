@@ -32,6 +32,16 @@ sys.path.insert(0, str(V4_1_DIR))
 BENCHMARK_DIR = REPO_ROOT / 'others' / 'benchmark'
 sys.path.insert(0, str(BENCHMARK_DIR))
 
+# Import graph generation libraries
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # Non-interactive backend
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+    print("⚠ matplotlib not available. Graphs will not be generated.")
+
 # Import versions
 try:
     from dictsqlite.main import DictSQLite  # Original (sync only)
@@ -448,12 +458,172 @@ def save_version_results(version_name: str, results_dict: Dict[str, Tuple[float,
     print(f"\n✓ {version_name} の結果を保存しました: {saved_files.get('csv', 'N/A')}")
 
 
+def generate_comparison_graphs(original_results: Dict[str, Tuple[float, float]], 
+                               beta_v2_results: Dict[str, Tuple[float, float]], 
+                               v4_1_results: Dict[str, Tuple[float, float]],
+                               test_labels: list,
+                               output_dir: Path = None):
+    """Generate comparison graphs for all versions.
+    
+    Args:
+        original_results: Original version results
+        beta_v2_results: Beta v2 version results
+        v4_1_results: v4.1 version results
+        test_labels: List of test labels
+        output_dir: Output directory for graphs (default: results/graphs)
+    """
+    if not MATPLOTLIB_AVAILABLE:
+        print("\n⚠ Matplotlib not available. Skipping graph generation.")
+        return
+    
+    if output_dir is None:
+        output_dir = BENCHMARK_DIR / "results" / "graphs"
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Setup Japanese fonts
+    try:
+        plt.rcParams['font.family'] = 'sans-serif'
+        plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'Noto Sans CJK JP']
+    except Exception:
+        pass
+    
+    # Prepare data
+    test_names = ['basic_write', 'basic_read', 'concurrent_read', 'bulk_insert', 'mixed_ops']
+    short_labels = ['Write', 'Read', 'Concurrent\nRead', 'Bulk\nInsert', 'Mixed\nOps']
+    
+    # Extract OPS data
+    original_ops = [original_results[name][1] if ORIGINAL_AVAILABLE else 0 for name in test_names]
+    beta_v2_ops = [beta_v2_results[name][1] if BETA_V2_AVAILABLE else 0 for name in test_names]
+    v4_1_ops = [v4_1_results[name][1] if V4_1_AVAILABLE else 0 for name in test_names]
+    
+    # Graph 1: Bar chart comparison
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    x = range(len(test_names))
+    width = 0.25
+    
+    if ORIGINAL_AVAILABLE:
+        ax.bar([i - width for i in x], original_ops, width, label='Original版', alpha=0.8)
+    if BETA_V2_AVAILABLE:
+        ax.bar(x, beta_v2_ops, width, label='Beta v2版', alpha=0.8)
+    if V4_1_AVAILABLE:
+        ax.bar([i + width for i in x], v4_1_ops, width, label='v4.1版', alpha=0.8)
+    
+    ax.set_xlabel('Test Type', fontsize=12)
+    ax.set_ylabel('Operations per Second (ops/sec)', fontsize=12)
+    ax.set_title('DictSQLite Version Comparison - All Benchmarks', fontsize=14, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(short_labels, fontsize=10)
+    ax.legend(fontsize=11)
+    ax.grid(axis='y', alpha=0.3)
+    
+    plt.tight_layout()
+    graph_path = output_dir / "version_comparison_bar.png"
+    plt.savefig(graph_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"  ✓ Saved bar chart: {graph_path}")
+    
+    # Graph 2: Speedup comparison (relative to Original or slowest)
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # Calculate speedups
+    speedups = []
+    labels_for_speedup = []
+    
+    for i, test_name in enumerate(test_names):
+        # Find baseline - use the smallest non-zero value
+        available_ops = []
+        if ORIGINAL_AVAILABLE and original_ops[i] > 0:
+            available_ops.append(original_ops[i])
+        if BETA_V2_AVAILABLE and beta_v2_ops[i] > 0:
+            available_ops.append(beta_v2_ops[i])
+        if V4_1_AVAILABLE and v4_1_ops[i] > 0:
+            available_ops.append(v4_1_ops[i])
+        
+        if not available_ops:
+            continue
+            
+        baseline = min(available_ops)
+        
+        test_speedups = []
+        if ORIGINAL_AVAILABLE and original_ops[i] > 0:
+            test_speedups.append(original_ops[i] / baseline)
+        if BETA_V2_AVAILABLE and beta_v2_ops[i] > 0:
+            test_speedups.append(beta_v2_ops[i] / baseline)
+        if V4_1_AVAILABLE and v4_1_ops[i] > 0:
+            test_speedups.append(v4_1_ops[i] / baseline)
+        
+        if test_speedups:
+            speedups.append(test_speedups)
+            labels_for_speedup.append(short_labels[i])
+    
+    if speedups:
+        x_speedup = range(len(labels_for_speedup))
+        version_labels = []
+        if ORIGINAL_AVAILABLE:
+            version_labels.append('Original版')
+        if BETA_V2_AVAILABLE:
+            version_labels.append('Beta v2版')
+        if V4_1_AVAILABLE:
+            version_labels.append('v4.1版')
+        
+        # Plot each version's speedups across tests
+        for version_idx, version_label in enumerate(version_labels):
+            version_speedups = []
+            for test_speedup_list in speedups:
+                # Get speedup for this version from this test
+                if version_idx < len(test_speedup_list):
+                    version_speedups.append(test_speedup_list[version_idx])
+                else:
+                    version_speedups.append(0)
+            ax.plot(x_speedup, version_speedups, marker='o', linewidth=2, markersize=8, label=version_label)
+        
+        ax.set_xlabel('Test Type', fontsize=12)
+        ax.set_ylabel('Speedup (relative to baseline)', fontsize=12)
+        ax.set_title('DictSQLite Version Speedup Comparison', fontsize=14, fontweight='bold')
+        ax.set_xticks(x_speedup)
+        ax.set_xticklabels(labels_for_speedup, fontsize=10)
+        ax.legend(fontsize=11)
+        ax.grid(alpha=0.3)
+        ax.axhline(y=1.0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+        
+        plt.tight_layout()
+        graph_path = output_dir / "version_comparison_speedup.png"
+        plt.savefig(graph_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"  ✓ Saved speedup chart: {graph_path}")
+    
+    print(f"\n✅ Graphs saved to: {output_dir}")
+    print(f"   - version_comparison_bar.png")
+    print(f"   - version_comparison_speedup.png")
+
+
 async def main():
     """Main benchmark execution."""
     print("=" * 70)
     print("DictSQLite Comprehensive Benchmark")
     print("Original vs Beta v2 vs v4.1")
     print("=" * 70)
+    
+    # Version mapping table
+    print("\n" + "=" * 70)
+    print("バージョンマッピング (Version Mapping)")
+    print("=" * 70)
+    print("\n以下の3つのバージョンを比較します:")
+    print("\n  1. Original版 (Original)")
+    print("     - ソースコード: dictsqlite/")
+    print("     - 実装: 標準sqlite3ベース")
+    print("     - 特徴: Python標準ライブラリのみ使用")
+    print("\n  2. Beta v2版 (dictsqlite-fastest Beta v2)")
+    print("     - ソースコード: others/beta-versions/dictsqlite-fastest/beta/")
+    print("     - 実装: APSWベース（非同期高性能版）")
+    print("     - 特徴: メモリ最適化、LRUキャッシュ")
+    print("\n  3. v4.1版 (dictsqlite_v4.1)")
+    print("     - ソースコード: others/beta-versions/dictsqlite_v4.1/")
+    print("     - 実装: Rust拡張（超高速版）")
+    print("     - 特徴: Rust実装による最高速度")
+    print("\n" + "=" * 70)
     
     # Check if at least one version is available
     if not any([ORIGINAL_AVAILABLE, BETA_V2_AVAILABLE, V4_1_AVAILABLE]):
@@ -466,19 +636,19 @@ async def main():
     
     print("\nAvailable versions:")
     if ORIGINAL_AVAILABLE:
-        print("  ✓ DictSQLite (Original): Standard sqlite3-based")
+        print("  ✓ DictSQLite (Original版): Standard sqlite3-based")
     else:
-        print("  ✗ DictSQLite (Original): Not available")
+        print("  ✗ DictSQLite (Original版): Not available")
     
     if BETA_V2_AVAILABLE:
-        print("  ✓ dictsqlite-fastest Beta v2: Async high-performance")
+        print("  ✓ dictsqlite-fastest Beta v2 (Beta v2版): Async high-performance")
     else:
-        print("  ✗ dictsqlite-fastest Beta v2: Not available")
+        print("  ✗ dictsqlite-fastest Beta v2 (Beta v2版): Not available")
     
     if V4_1_AVAILABLE:
-        print("  ✓ dictsqlite_v4.1: Rust-based ultra-fast")
+        print("  ✓ dictsqlite_v4.1 (v4.1版): Rust-based ultra-fast")
     else:
-        print("  ✗ dictsqlite_v4.1: Not available")
+        print("  ✗ dictsqlite_v4.1 (v4.1版): Not available")
     
     print("\nTest operations:")
     print("  - Basic operations (write, read)")
@@ -635,6 +805,22 @@ async def main():
             for i, (name, ops) in enumerate(sorted_versions, 1):
                 vs_baseline = ((ops / baseline_for_comparison) - 1) * 100
                 print(f"  {i}. {name}: {ops:>10.0f} ops/sec ({vs_baseline:+.1f}% vs baseline)")
+        
+        # Generate comparison graphs
+        print(f"\n{'='*70}")
+        print("Generating comparison graphs...")
+        print(f"{'='*70}")
+        try:
+            generate_comparison_graphs(
+                original_results, 
+                beta_v2_results, 
+                v4_1_results, 
+                test_labels
+            )
+        except Exception as e:
+            print(f"\n⚠ Error generating graphs: {e}")
+            import traceback
+            traceback.print_exc()
         
         print(f"\n{'='*70}")
         print("✅ Benchmark completed successfully!")
