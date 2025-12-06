@@ -393,28 +393,8 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             self.db = db
             self.table_name = table_name
 
-        def get_raw_value(self, key):
-            """DBから生の値を取得し、必要に応じて復号/デコードして返す。"""
-            result_queue = queue.Queue()
-            self.db.operation_queue.put((
-                self.db._fetchone,  # pylint: disable=protected-access
-                (
-                    (
-                        "SELECT value FROM "
-                        f"{self.db._quote_ident(self.table_name)} "  # nosec B608 - safely quoted
-                        "WHERE key = ?"
-                    ),
-                    (key,),
-                ),
-                {}, result_queue
-            ))
-            result = result_queue.get()
-            if isinstance(result, Exception):
-                raise result
-            if result is None:
-                raise KeyError(f"Key {key} not found in table {self.table_name}.")
-
-            value_str = result[0]
+        def _deserialize_value(self, value_str, key=None):
+            """文字列形式の値をデシリアライズして返す。"""
             if self.db.password is not None:
                 value_str = self.db._decrypt(value_str)  # pylint: disable=protected-access
 
@@ -431,7 +411,6 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                     if isinstance(value_str, str):
                         # base64またはlatin1でエンコードされたpickleデータ
                         value_bytes = base64.b64decode(value_str)
-                        # または: value_bytes = value_str.encode('latin1')
                     else:
                         value_bytes = value_str
                     # 安全なUnpicklerで復元
@@ -453,6 +432,29 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                     )
                     # pickleデコードも失敗した場合は文字列として返す
                     return value_str
+
+        def get_raw_value(self, key):
+            """DBから生の値を取得し、必要に応じて復号/デコードして返す。"""
+            result_queue = queue.Queue()
+            self.db.operation_queue.put((
+                self.db._fetchone,  # pylint: disable=protected-access
+                (
+                    (
+                        "SELECT value FROM "
+                        f"{self.db._quote_ident(self.table_name)} "  # nosec B608 - safely quoted
+                        "WHERE key = ?"
+                    ),
+                    (key,),
+                ),
+                {}, result_queue
+            ))
+            result = result_queue.get()
+            if isinstance(result, Exception):
+                raise result
+            if result is None:
+                raise KeyError(f"Key {key} not found in table {self.table_name}.")
+
+            return self._deserialize_value(result[0], key)
 
         def __getitem__(self, key):
             raw_value = self.get_raw_value(key)
@@ -563,22 +565,40 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             return NotImplemented
 
         def keys(self):
-            """テーブル内の全キー一覧を返す。"""
+            """テーブル内の全キー一覧を返す。
+
+            Note: Python標準のdictとは異なり、dict_keysビューではなくリストを返します。
+            """
             return list(self)
 
         def values(self):
-            """テーブル内の全値一覧を返す。"""
-            return [self[key] for key in self]
+            """テーブル内の全値一覧を返す。
 
-        def items(self):
-            """テーブル内の全(key, value)ペアを返す。"""
+            Note: Python標準のdictとは異なり、dict_valuesビューではなくリストを返します。
+            """
             result = []
             for row in self.get_all_rows():
-                key = row[0]
+                key, raw_value_str = row[0], row[1]
                 try:
-                    result.append((key, self[key]))
-                except (KeyError, json.JSONDecodeError):
-                    result.append((key, row[1]))
+                    raw_value = self._deserialize_value(raw_value_str, key)
+                    result.append(self.db.wrap_in_proxy(key, self, raw_value))
+                except (json.JSONDecodeError, pickle.UnpicklingError, ValueError, TypeError):
+                    result.append(raw_value_str)
+            return result
+
+        def items(self):
+            """テーブル内の全(key, value)ペアを返す。
+
+            Note: Python標準のdictとは異なり、dict_itemsビューではなくリストを返します。
+            """
+            result = []
+            for row in self.get_all_rows():
+                key, raw_value_str = row[0], row[1]
+                try:
+                    raw_value = self._deserialize_value(raw_value_str, key)
+                    result.append((key, self.db.wrap_in_proxy(key, self, raw_value)))
+                except (json.JSONDecodeError, pickle.UnpicklingError, ValueError, TypeError):
+                    result.append((key, raw_value_str))
             return result
 
         def get_all_rows(self):

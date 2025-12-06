@@ -279,6 +279,6 @@ class TestDictConversion:
         db["key2"] = "value2"
         db.operation_queue.join()
 
-        proxy = db.TableProxy(db, db.table_name)
+        proxy = db.table(db.table_name)
         d = dict(proxy.items())
         assert d == {"key1": "value1", "key2": "value2"}
