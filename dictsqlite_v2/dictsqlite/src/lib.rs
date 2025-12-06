@@ -1096,11 +1096,10 @@ impl DictSQLiteV4 {
         }
 
         // v4.2.2最適化: WriteThroughモードでは書き込みバッファを使用
-        // key移動を最小化
         if self.config.persist_mode == PersistMode::WriteThrough {
             let should_flush = {
                 let mut buffer = self.write_buffer.lock().unwrap();
-                buffer.push((key, data_for_buffer.unwrap()));
+                buffer.push((key.clone(), data_for_buffer.unwrap()));
                 // バッファサイズに達したらフラッシュ
                 // buffer_size=1の場合は即時フラッシュ
                 buffer.len() >= self.buffer_size
