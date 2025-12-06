@@ -2194,6 +2194,62 @@ impl TableProxy {
     fn __str__(&self, py: Python) -> PyResult<String> {
         self.__repr__(py)
     }
+
+    /// Equality comparison: table == dict
+    ///
+    /// Compares the TableProxy with a Python dict or another TableProxy.
+    /// Returns True if all keys and values match.
+    fn __eq__(&self, other: PyObject, py: Python) -> PyResult<bool> {
+        // Get items from this table
+        let self_items = self.items(py)?;
+        let self_dict: std::collections::HashMap<String, PyObject> = 
+            self_items.into_iter().collect();
+
+        // Check if other is a dict
+        if let Ok(other_dict) = other.downcast_bound::<PyDict>(py) {
+            // Compare with dict
+            if self_dict.len() != other_dict.len() {
+                return Ok(false);
+            }
+            
+            for (key, value) in self_dict.iter() {
+                if let Some(other_value) = other_dict.get_item(&key)? {
+                    // Compare values using Python's __eq__
+                    let eq_result = value.bind(py).eq(other_value)?;
+                    if !eq_result {
+                        return Ok(false);
+                    }
+                } else {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        } else if let Ok(other_table) = other.extract::<PyRef<TableProxy>>(py) {
+            // Compare with another TableProxy
+            let other_items = other_table.items(py)?;
+            let other_dict: std::collections::HashMap<String, PyObject> = 
+                other_items.into_iter().collect();
+            
+            if self_dict.len() != other_dict.len() {
+                return Ok(false);
+            }
+            
+            for (key, value) in self_dict.iter() {
+                if let Some(other_value) = other_dict.get(key) {
+                    let eq_result = value.bind(py).eq(other_value)?;
+                    if !eq_result {
+                        return Ok(false);
+                    }
+                } else {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        } else {
+            // Not a dict or TableProxy - not equal
+            Ok(false)
+        }
+    }
 }
 
 /// Iterator for TableProxy keys
