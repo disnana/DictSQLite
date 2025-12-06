@@ -3,11 +3,21 @@
 # このワークフローは負荷が大きいため、手動実行のみ許可されています。
 # 実行方法: GitHub の「Actions」タブ → 「Performance Benchmark」→ 「Run workflow」
 #
-# テスト対象のバージョン:
-# - DictSQLite (Original): dictsqlite/ フォルダ - 標準のsqlite3ベース実装
+# テスト対象の選択オプション:
+# - all: 3つの主要バージョンを比較 (Original, Beta v2, v4.1)
+#   → Original版 (dictsqlite/)
+#   → Beta v2版 (dictsqlite-fastest beta v2)
+#   → v4.1版 (dictsqlite_v4.1 Rust実装)
+#
+# - v1, v2, v3, v4: dictsqlite-fastest Betaの各リビジョンをテスト
+#   → v1: dictsqlite-fastest beta v1
+#   → v2: dictsqlite-fastest beta v2
+#   → v3: dictsqlite-fastest beta v3-alpha
+#   → v4: dictsqlite-fastest beta v4-final
+#
+# ビルドされるRust拡張:
 # - dictsqlite_v2: dictsqlite_v2/dictsqlite/ フォルダ - バージョン 2.0.6 (Rust拡張)
 # - dictsqlite_v4.1: others/beta-versions/dictsqlite_v4.1/ - v4.1 Rust実装
-# - Beta版 v1-v4: others/beta-versions/dictsqlite-fastest/beta/ - 高速ベータ版
 
 name: Performance Benchmark
 
@@ -27,16 +37,16 @@ on:
           - 'true'
           - 'false'
       beta_version:
-        description: 'Beta版のバージョン選択'
+        description: 'テスト対象の選択'
         required: true
-        default: 'v1'
+        default: 'all'
         type: choice
         options:
+          - 'all'
           - 'v1'
           - 'v2'
           - 'v3'
           - 'v4'
-          - 'all'
 
 jobs:
   # Rust拡張のビルドを並列化
@@ -172,6 +182,22 @@ jobs:
         echo "=== バージョン情報 ==="
         echo "Python: $(python --version)"
         echo ""
+        echo "選択されたテスト対象: ${{ github.event.inputs.beta_version }}"
+        echo ""
+        
+        if [ "${{ github.event.inputs.beta_version }}" == "all" ]; then
+          echo "テスト内容: 3つの主要バージョンを比較"
+          echo "  - Original版 (dictsqlite/)"
+          echo "  - Beta v2版 (dictsqlite-fastest beta v2)"
+          echo "  - v4.1版 (dictsqlite_v4.1 Rust実装)"
+        else
+          echo "テスト内容: dictsqlite-fastest Beta ${{ github.event.inputs.beta_version }} のみ"
+          echo "  - Original版との比較"
+          echo "  - Fastest版との比較"
+        fi
+        echo ""
+        echo "インストール済みパッケージ:"
+        echo ""
         echo "DictSQLite (Original):"
         python -c "import dictsqlite.main; print(f'  Version: {dictsqlite.main.__version__}')" || echo "  インポートエラー"
         echo ""
@@ -189,9 +215,9 @@ jobs:
       run: |
         cd others/benchmark
         
-        # Beta版のバージョンに応じてインポートを変更
+        # テスト対象の選択
         BETA_VERSION="${{ github.event.inputs.beta_version }}"
-        echo "📦 選択されたBeta版: $BETA_VERSION"
+        echo "📦 選択されたテスト対象: $BETA_VERSION"
         
         # BETA_VERSIONを環境変数としてエクスポート（バージョン管理システムで使用）
         export BETA_VERSION
@@ -209,54 +235,54 @@ jobs:
             exit 1
           }
         elif [ "$BETA_VERSION" == "v2" ]; then
-          echo "🔄 ベンチマークスクリプトをv2用に変更..."
+          echo "🔄 dictsqlite-fastest Beta v2 をテスト中..."
           sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v2 import/g' comprehensive_benchmark.py || true
           sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v2 import/g' fast_comprehensive_benchmark.py || true
           
           if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
-            echo "🔬 フル機能ベンチマーク (v2) を実行中..."
+            echo "🔬 フル機能ベンチマーク (dictsqlite-fastest Beta v2) を実行中..."
             python comprehensive_benchmark.py || {
               echo "❌ ベンチマーク実行エラー"
               exit 1
             }
           else
-            echo "⚡ 高速ベンチマーク (v2) を実行中..."
+            echo "⚡ 高速ベンチマーク (dictsqlite-fastest Beta v2) を実行中..."
             python fast_comprehensive_benchmark.py || {
               echo "❌ ベンチマーク実行エラー"
               exit 1
             }
           fi
         elif [ "$BETA_VERSION" == "v3" ]; then
-          echo "🔄 ベンチマークスクリプトをv3-alpha用に変更..."
+          echo "🔄 dictsqlite-fastest Beta v3-alpha をテスト中..."
           sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v3_alpha import/g' comprehensive_benchmark.py || true
           sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v3_alpha import/g' fast_comprehensive_benchmark.py || true
           
           if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
-            echo "🔬 フル機能ベンチマーク (v3) を実行中..."
+            echo "🔬 フル機能ベンチマーク (dictsqlite-fastest Beta v3) を実行中..."
             python comprehensive_benchmark.py || {
               echo "❌ ベンチマーク実行エラー"
               exit 1
             }
           else
-            echo "⚡ 高速ベンチマーク (v3) を実行中..."
+            echo "⚡ 高速ベンチマーク (dictsqlite-fastest Beta v3) を実行中..."
             python fast_comprehensive_benchmark.py || {
               echo "❌ ベンチマーク実行エラー"
               exit 1
             }
           fi
         elif [ "$BETA_VERSION" == "v4" ]; then
-          echo "🔄 ベンチマークスクリプトをv4-final用に変更..."
+          echo "🔄 dictsqlite-fastest Beta v4-final をテスト中..."
           sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v4_final import/g' comprehensive_benchmark.py || true
           sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v4_final import/g' fast_comprehensive_benchmark.py || true
           
           if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
-            echo "🔬 フル機能ベンチマーク (v4) を実行中..."
+            echo "🔬 フル機能ベンチマーク (dictsqlite-fastest Beta v4) を実行中..."
             python comprehensive_benchmark.py || {
               echo "❌ ベンチマーク実行エラー"
               exit 1
             }
           else
-            echo "⚡ 高速ベンチマーク (v4) を実行中..."
+            echo "⚡ 高速ベンチマーク (dictsqlite-fastest Beta v4) を実行中..."
             python fast_comprehensive_benchmark.py || {
               echo "❌ ベンチマーク実行エラー"
               exit 1
@@ -265,13 +291,13 @@ jobs:
         else
           # v1の場合
           if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
-            echo "🔬 フル機能ベンチマーク (v1) を実行中..."
+            echo "🔬 フル機能ベンチマーク (dictsqlite-fastest Beta v1) を実行中..."
             python comprehensive_benchmark.py || {
               echo "❌ ベンチマーク実行エラー"
               exit 1
             }
           else
-            echo "⚡ 高速ベンチマーク (v1) を実行中..."
+            echo "⚡ 高速ベンチマーク (dictsqlite-fastest Beta v1) を実行中..."
             python fast_comprehensive_benchmark.py || {
               echo "❌ ベンチマーク実行エラー"
               exit 1
