@@ -30,7 +30,8 @@ class TestDictSQLiteDictLikeBehavior:
         """空のデータベースが空の辞書と等しいことをテスト"""
         db = DictSQLite(str(db_path))
         try:
-            assert db == {}
+            # Testing __eq__ explicitly, not boolean truthiness
+            assert db == {}  # pylint: disable=use-implicit-booleaness-not-comparison
         finally:
             db.close()
 
@@ -47,9 +48,9 @@ class TestDictSQLiteDictLikeBehavior:
         db["key1"] = "value1"
         db.operation_queue.join()
 
-        assert not (db == {"key1": "wrong_value"})
-        assert not (db == {"different_key": "value1"})
-        assert not (db == {"key1": "value1", "extra": "value"})
+        assert db != {"key1": "wrong_value"}
+        assert db != {"different_key": "value1"}
+        assert db != {"key1": "value1", "extra": "value"}
 
     def test_keys_method(self, db: DictSQLite):
         """keys()メソッドが正しく動作することをテスト"""
@@ -103,8 +104,8 @@ class TestTableProxyDictLikeBehavior:
         table["key1"] = "value1"
         db.operation_queue.join()
 
-        assert not (table == {"key1": "wrong_value"})
-        assert not (table == {"different_key": "value1"})
+        assert table != {"key1": "wrong_value"}
+        assert table != {"different_key": "value1"}
 
     def test_table_proxy_keys(self, db: DictSQLite):
         """TableProxyのkeys()メソッドをテスト"""
@@ -201,8 +202,8 @@ class TestMultipleTablesScenario:
         """Issue #XXX で報告されたシナリオをテスト"""
         db = DictSQLite(str(db_path))
         try:
-            # 空のDBは空の辞書と等しい
-            assert db == {}
+            # 空のDBは空の辞書と等しい (testing __eq__ explicitly)
+            assert db == {}  # pylint: disable=use-implicit-booleaness-not-comparison
 
             # メインテーブルに値を設定
             db['key1'] = 'value1'
