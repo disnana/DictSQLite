@@ -75,7 +75,8 @@ mod tests_storage;
 // 公開APIのエクスポート
 // AsyncDictSQLite: 非同期版のDictSQLite（高並行シナリオ向け）
 // AsyncTableProxy: 非同期テーブルプロキシ
-pub use async_ops::{AsyncDictSQLite, AsyncTableProxy};
+// AsyncTableProxyIterator: 非同期テーブルプロキシのイテレータ
+pub use async_ops::{AsyncDictSQLite, AsyncTableProxy, AsyncTableProxyIterator};
 // HybridCache: LRUエビクション付きの高性能キャッシュ
 pub use cache::HybridCache;
 // CryptoEngine: AES-256-GCM暗号化エンジン
@@ -551,6 +552,63 @@ impl FromStr for StorageMode {
     }
 }
 
+/// テーブルモード - テーブルの分離方式を制御
+///
+/// テーブル機能で使用するデータ分離方式を決定します。
+/// 用途に応じて適切なモードを選択してください。
+///
+/// # モード比較
+/// | モード   | 説明                                     | 用途                           |
+/// |----------|------------------------------------------|--------------------------------|
+/// | Prefix   | キープレフィックスでテーブルを識別       | 単一テーブルでのシンプルな管理 |
+/// | Separate | SQLite内で完全に別のテーブルを使用       | テーブル完全分離が必要な場合   |
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
+pub enum TableMode {
+    /// プレフィックスモード（デフォルト）
+    ///
+    /// - キープレフィックス（例: `users:key1`）でテーブルを識別
+    /// - 単一のSQLiteテーブル（`kv_store`）を使用
+    /// - シンプルで高速
+    /// - 既存の動作と完全互換
+    #[default]
+    Prefix,
+
+    /// 分離モード
+    ///
+    /// - 各テーブル名に対して別々のSQLiteテーブルを作成
+    /// - 完全なテーブル分離を実現
+    /// - テーブル間のデータ干渉がない
+    /// - SQLレベルでの分離が必要な場合に使用
+    Separate,
+}
+
+impl FromStr for TableMode {
+    type Err = String;
+
+    /// 文字列からTableModeを解析
+    ///
+    /// # 引数
+    /// * `s` - 解析する文字列（大文字小文字を区別しない）
+    ///
+    /// # 有効な値
+    /// - "prefix" -> TableMode::Prefix
+    /// - "separate" -> TableMode::Separate
+    ///
+    /// # 戻り値
+    /// - `Ok(TableMode)`: 解析成功
+    /// - `Err(String)`: 無効な値の場合のエラーメッセージ
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "prefix" => Ok(TableMode::Prefix),
+            "separate" => Ok(TableMode::Separate),
+            _ => Err(format!(
+                "Invalid table_mode: {}. Choose from ['prefix', 'separate']",
+                s
+            )),
+        }
+    }
+}
+
 /// 高性能 DictSQLite v4.2 実装（I/O最適化版）
 ///
 /// このクラスは、Pythonの辞書のようなインターフェースで
@@ -700,6 +758,14 @@ pub struct Config {
     /// テーブルを指定しない操作で使用されるテーブル。
     /// デフォルト: "main"
     pub table_name: String,
+
+    /// テーブルモード
+    ///
+    /// テーブルの分離方式を制御。
+    /// - Prefix: キープレフィックスでテーブルを識別（デフォルト）
+    /// - Separate: SQLite内で完全に別のテーブルを使用
+    /// デフォルト: Prefix
+    pub table_mode: TableMode,
 }
 
 impl Default for Config {
@@ -719,6 +785,7 @@ impl Default for Config {
             enable_safe_pickle: false,          // Safe Pickle検証なし
             storage_mode: StorageMode::Pickle,  // Pickle形式
             table_name: "main".to_string(),     // メインテーブル
+            table_mode: TableMode::Prefix,      // プレフィックスモード
         }
     }
 }
@@ -757,9 +824,12 @@ impl DictSQLiteV4 {
     ///
     /// # JSONB形式で高速永続化
     /// db = DictSQLiteV4("fast.db", storage_mode="jsonb", persist_mode="lazy")
+    ///
+    /// # テーブル分離モード
+    /// db = DictSQLiteV4("isolated.db", table_mode="separate")
     /// ```
     #[new]
-    #[pyo3(signature = (db_path, hot_capacity=1_000_000, enable_async=true, persist_mode="writethrough", storage_mode="pickle", table_name="main", encryption_password=None, enable_safe_pickle=false, safe_pickle_allowed_modules=None, buffer_size=100))]
+    #[pyo3(signature = (db_path, hot_capacity=1_000_000, enable_async=true, persist_mode="writethrough", storage_mode="pickle", table_name="main", encryption_password=None, enable_safe_pickle=false, safe_pickle_allowed_modules=None, buffer_size=100, table_mode="prefix"))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         db_path: String,
@@ -772,6 +842,7 @@ impl DictSQLiteV4 {
         enable_safe_pickle: bool,
         safe_pickle_allowed_modules: Option<Vec<String>>,
         buffer_size: usize,
+        table_mode: &str,
     ) -> PyResult<Self> {
         // 永続化モードを文字列からenumに変換
         let persist_mode_parsed = PersistMode::from_str(persist_mode)
@@ -779,6 +850,10 @@ impl DictSQLiteV4 {
 
         // ストレージモードを文字列からenumに変換
         let storage_mode_parsed = StorageMode::from_str(storage_mode)
+            .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+
+        // テーブルモードを文字列からenumに変換
+        let table_mode_parsed = TableMode::from_str(table_mode)
             .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
 
         // 設定を構築
@@ -790,6 +865,7 @@ impl DictSQLiteV4 {
             enable_safe_pickle,
             storage_mode: storage_mode_parsed,
             table_name: table_name.to_string(),
+            table_mode: table_mode_parsed,
             ..Default::default()
         };
 
@@ -1629,21 +1705,51 @@ impl DictSQLiteV4 {
         })
     }
 
-    /// List all tables (by extracting unique table prefixes from keys)
+    /// List all tables
+    ///
+    /// In prefix mode: extracts unique table prefixes from keys
+    /// In separate mode: lists actual SQLite tables
     fn tables(&self, _py: Python) -> PyResult<Vec<String>> {
-        let all_keys = self.keys(_py)?;
-        let mut tables = std::collections::HashSet::new();
+        match self.config.table_mode {
+            TableMode::Prefix => {
+                let all_keys = self.keys(_py)?;
+                let mut tables = std::collections::HashSet::new();
 
-        for key in all_keys {
-            if let Some(pos) = key.find(':') {
-                tables.insert(key[..pos].to_string());
-            } else {
-                // Keys without prefix belong to "main" table
-                tables.insert("main".to_string());
+                for key in all_keys {
+                    if let Some(pos) = key.find(':') {
+                        tables.insert(key[..pos].to_string());
+                    } else {
+                        // Keys without prefix belong to "main" table
+                        tables.insert("main".to_string());
+                    }
+                }
+
+                Ok(tables.into_iter().collect())
+            }
+            TableMode::Separate => {
+                // Get actual SQLite tables
+                if self.config.persist_mode == PersistMode::Memory {
+                    // For memory mode, extract from hot tier keys
+                    let mut tables = std::collections::HashSet::new();
+                    for entry in self.hot_tier.iter() {
+                        if let Some(pos) = entry.key().find(':') {
+                            tables.insert(entry.key()[..pos].to_string());
+                        }
+                    }
+                    // Always include "main" table
+                    tables.insert("main".to_string());
+                    Ok(tables.into_iter().collect())
+                } else {
+                    let storage_guard = self.storage.lock().unwrap();
+                    if let Some(ref storage) = *storage_guard {
+                        storage.list_tables()
+                            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))
+                    } else {
+                        Ok(vec!["main".to_string()])
+                    }
+                }
             }
         }
-
-        Ok(tables.into_iter().collect())
     }
 }
 
@@ -1658,21 +1764,74 @@ pub struct TableProxy {
 impl TableProxy {
     /// Dict-like access: table[key]
     fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
-        let full_key = format!("{}:{}", self.table_name, key);
         let db = self.db.borrow(py);
+        
+        // Get raw data based on table mode
+        let data: Vec<u8> = match db.config.table_mode {
+            TableMode::Prefix => {
+                // Prefix mode: use table:key format
+                let full_key = format!("{}:{}", self.table_name, key);
+                let result = db.get(full_key.clone(), None, py)?;
+                if result.is_none(py) {
+                    return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                        "Key not found: {}",
+                        key
+                    )));
+                }
+                result.extract(py)?
+            }
+            TableMode::Separate => {
+                // Separate mode: use separate SQLite table
+                // First check hot tier with table:key format
+                let cache_key = format!("{}:{}", self.table_name, key);
+                if let Some(value) = db.hot_tier.get(&cache_key) {
+                    // Decrypt if needed
+                    if let Some(ref crypto) = db.crypto {
+                        crypto.decrypt(&value).map_err(|e| {
+                            PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+                        })?
+                    } else {
+                        value.clone()
+                    }
+                } else {
+                    // Check storage
+                    let storage_guard = db.storage.lock().unwrap();
+                    if let Some(ref storage) = *storage_guard {
+                        match storage.get_with_table(&self.table_name, &key) {
+                            Ok(Some(value)) => {
+                                // Promote to hot tier
+                                drop(storage_guard);
+                                db.hot_tier.insert(cache_key, value.clone());
+                                // Decrypt if needed
+                                if let Some(ref crypto) = db.crypto {
+                                    crypto.decrypt(&value).map_err(|e| {
+                                        PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+                                    })?
+                                } else {
+                                    value
+                                }
+                            }
+                            Ok(None) => {
+                                return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                                    "Key not found: {}",
+                                    key
+                                )));
+                            }
+                            Err(e) => {
+                                return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()));
+                            }
+                        }
+                    } else {
+                        return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                            "Key not found: {}",
+                            key
+                        )));
+                    }
+                }
+            }
+        };
 
-        // Get the raw data
-        let result = db.get(full_key.clone(), None, py)?;
-        if result.is_none(py) {
-            return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
-                "Key not found: {}",
-                key
-            )));
-        }
-
-        // Extract and deserialize based on storage mode
-        let data: Vec<u8> = result.extract(py)?;
-
+        // Deserialize based on storage mode
         match db.config.storage_mode {
             StorageMode::Pickle => {
                 let pickle = py.import("pickle")?;
@@ -1704,7 +1863,6 @@ impl TableProxy {
 
     /// Dict-like access: table[key] = value
     fn __setitem__(&self, key: String, value: PyObject, py: Python) -> PyResult<()> {
-        let full_key = format!("{}:{}", self.table_name, key);
         let db = self.db.borrow(py);
 
         // Serialize based on storage mode
@@ -1736,34 +1894,151 @@ impl TableProxy {
             StorageMode::Bytes => value.extract::<Vec<u8>>(py)?,
         };
 
-        db.set(full_key, data)
+        // Store based on table mode
+        match db.config.table_mode {
+            TableMode::Prefix => {
+                // Prefix mode: use table:key format
+                let full_key = format!("{}:{}", self.table_name, key);
+                db.set(full_key, data)
+            }
+            TableMode::Separate => {
+                // Separate mode: use separate SQLite table
+                let cache_key = format!("{}:{}", self.table_name, key);
+                
+                // Encrypt if needed
+                let encrypted_data = if let Some(ref crypto) = db.crypto {
+                    crypto.encrypt(&data).map_err(|e| {
+                        PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+                    })?
+                } else {
+                    data
+                };
+
+                // Update hot tier
+                db.hot_tier.insert(cache_key.clone(), encrypted_data.clone());
+                db.access_tracker.lock().unwrap().put(cache_key, ());
+
+                // Write to storage in WriteThrough mode
+                if db.config.persist_mode == PersistMode::WriteThrough {
+                    let mut storage_guard = db.storage.lock().unwrap();
+                    if let Some(ref mut storage) = *storage_guard {
+                        storage.set_with_table(&self.table_name, &key, &encrypted_data)
+                            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+                    }
+                }
+
+                Ok(())
+            }
+        }
     }
 
     /// Dict-like access: del table[key]
     fn __delitem__(&self, key: String, py: Python) -> PyResult<()> {
-        let full_key = format!("{}:{}", self.table_name, key);
         let db = self.db.borrow(py);
-        db.delete(full_key)
+        
+        match db.config.table_mode {
+            TableMode::Prefix => {
+                let full_key = format!("{}:{}", self.table_name, key);
+                db.delete(full_key)
+            }
+            TableMode::Separate => {
+                let cache_key = format!("{}:{}", self.table_name, key);
+                
+                // Remove from hot tier
+                db.access_tracker.lock().unwrap().pop(&cache_key);
+                db.hot_tier.remove(&cache_key);
+
+                // Remove from storage
+                if db.config.persist_mode != PersistMode::Memory {
+                    let mut storage_guard = db.storage.lock().unwrap();
+                    if let Some(ref mut storage) = *storage_guard {
+                        let _ = storage.delete_with_table(&self.table_name, &key);
+                    }
+                }
+
+                Ok(())
+            }
+        }
     }
 
     /// Dict-like access: key in table
     fn __contains__(&self, key: String, py: Python) -> PyResult<bool> {
-        let full_key = format!("{}:{}", self.table_name, key);
         let db = self.db.borrow(py);
-        db.contains(full_key)
+        
+        match db.config.table_mode {
+            TableMode::Prefix => {
+                let full_key = format!("{}:{}", self.table_name, key);
+                db.contains(full_key)
+            }
+            TableMode::Separate => {
+                let cache_key = format!("{}:{}", self.table_name, key);
+                
+                // Check hot tier first
+                if db.hot_tier.contains_key(&cache_key) {
+                    return Ok(true);
+                }
+
+                // Check storage
+                if db.config.persist_mode != PersistMode::Memory {
+                    let storage_guard = db.storage.lock().unwrap();
+                    if let Some(ref storage) = *storage_guard {
+                        if let Ok(Some(_)) = storage.get_with_table(&self.table_name, &key) {
+                            return Ok(true);
+                        }
+                    }
+                }
+
+                Ok(false)
+            }
+        }
     }
 
     /// Get all keys in this table
     fn keys(&self, py: Python) -> PyResult<Vec<String>> {
         let db = self.db.borrow(py);
-        let all_keys = db.keys(py)?;
-        let prefix = format!("{}:", self.table_name);
+        
+        match db.config.table_mode {
+            TableMode::Prefix => {
+                let all_keys = db.keys(py)?;
+                let prefix = format!("{}:", self.table_name);
 
-        Ok(all_keys
-            .into_iter()
-            .filter(|k| k.starts_with(&prefix))
-            .map(|k| k[prefix.len()..].to_string())
-            .collect())
+                Ok(all_keys
+                    .into_iter()
+                    .filter(|k| k.starts_with(&prefix))
+                    .map(|k| k[prefix.len()..].to_string())
+                    .collect())
+            }
+            TableMode::Separate => {
+                use std::collections::HashSet;
+                
+                // Get keys from hot tier
+                let prefix = format!("{}:", self.table_name);
+                let mut all_keys: HashSet<String> = db
+                    .hot_tier
+                    .iter()
+                    .filter_map(|entry| {
+                        let k = entry.key().clone();
+                        if k.starts_with(&prefix) {
+                            Some(k[prefix.len()..].to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                // Get keys from storage
+                if db.config.persist_mode != PersistMode::Memory {
+                    let storage_guard = db.storage.lock().unwrap();
+                    if let Some(ref storage) = *storage_guard {
+                        if let Ok(storage_keys) = storage.keys_with_table(&self.table_name) {
+                            all_keys.extend(storage_keys);
+                        }
+                    }
+                }
+
+                Ok(all_keys.into_iter().collect())
+            }
+        }
     }
 
     /// Get all values in this table
@@ -1795,13 +2070,93 @@ impl TableProxy {
         }
     }
 
-    /// Clear all items in this table
-    fn clear(&self, py: Python) -> PyResult<()> {
-        let keys = self.keys(py)?;
-        for key in keys {
-            self.__delitem__(key, py)?;
+    /// Pop: Remove key and return value (dict.pop())
+    #[pyo3(signature = (key, default=None))]
+    fn pop(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+        match self.__getitem__(key.clone(), py) {
+            Ok(value) => {
+                self.__delitem__(key, py)?;
+                Ok(value)
+            }
+            Err(_) => {
+                match default {
+                    Some(d) => Ok(d),
+                    None => Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                        "Key not found: {}",
+                        key
+                    ))),
+                }
+            }
+        }
+    }
+
+    /// Setdefault: Set key if not exists, return value (dict.setdefault())
+    #[pyo3(signature = (key, default=None))]
+    fn setdefault(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+        match self.__getitem__(key.clone(), py) {
+            Ok(value) => Ok(value),
+            Err(_) => {
+                let value = default.unwrap_or_else(|| py.None());
+                self.__setitem__(key.clone(), value.clone_ref(py), py)?;
+                Ok(value)
+            }
+        }
+    }
+
+    /// Update: Update with dict items (dict.update())
+    fn update(&self, other: &Bound<'_, PyDict>, py: Python) -> PyResult<()> {
+        for (key, value) in other.iter() {
+            let key_str: String = key.extract()?;
+            self.__setitem__(key_str, value.into(), py)?;
         }
         Ok(())
+    }
+
+    /// Iterator support: for key in table
+    fn __iter__(slf: PyRef<Self>, py: Python) -> PyResult<Py<TableProxyIterator>> {
+        let keys = slf.keys(py)?;
+        Py::new(py, TableProxyIterator { keys, index: 0 })
+    }
+
+    /// Clear all items in this table
+    fn clear(&self, py: Python) -> PyResult<()> {
+        let db = self.db.borrow(py);
+        
+        match db.config.table_mode {
+            TableMode::Prefix => {
+                let keys = self.keys(py)?;
+                for key in keys {
+                    self.__delitem__(key, py)?;
+                }
+                Ok(())
+            }
+            TableMode::Separate => {
+                // Clear hot tier entries for this table
+                let prefix = format!("{}:", self.table_name);
+                let keys_to_remove: Vec<String> = db
+                    .hot_tier
+                    .iter()
+                    .filter(|entry| entry.key().starts_with(&prefix))
+                    .map(|entry| entry.key().clone())
+                    .collect();
+                
+                for key in keys_to_remove {
+                    db.hot_tier.remove(&key);
+                    db.access_tracker.lock().unwrap().pop(&key);
+                }
+
+                // Clear storage table
+                if db.config.persist_mode != PersistMode::Memory {
+                    let mut storage_guard = db.storage.lock().unwrap();
+                    if let Some(ref mut storage) = *storage_guard {
+                        storage.clear_table(&self.table_name)
+                            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+                    }
+                }
+
+                Ok(())
+            }
+        }
     }
 
     /// Get number of items in this table
@@ -1841,12 +2196,38 @@ impl TableProxy {
     }
 }
 
+/// Iterator for TableProxy keys
+#[pyclass]
+pub struct TableProxyIterator {
+    keys: Vec<String>,
+    index: usize,
+}
+
+#[pymethods]
+impl TableProxyIterator {
+    fn __iter__(slf: PyRef<Self>) -> PyRef<Self> {
+        slf
+    }
+
+    fn __next__(mut slf: PyRefMut<Self>) -> Option<String> {
+        if slf.index < slf.keys.len() {
+            let key = slf.keys[slf.index].clone();
+            slf.index += 1;
+            Some(key)
+        } else {
+            None
+        }
+    }
+}
+
 /// Python module definition
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<DictSQLiteV4>()?;
     m.add_class::<AsyncDictSQLite>()?;
     m.add_class::<TableProxy>()?;
+    m.add_class::<TableProxyIterator>()?;
     m.add_class::<AsyncTableProxy>()?;
+    m.add_class::<AsyncTableProxyIterator>()?;
     Ok(())
 }
