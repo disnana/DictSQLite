@@ -131,20 +131,29 @@ def run_benchmark(beta_version, full_benchmark=False):
 
 
 def run_all_versions_benchmark():
-    """Run comprehensive benchmark comparing Original, dictsqlite_v2, and Beta v2."""
+    """Run comprehensive benchmark comparing Original, dictsqlite_v2, and Beta v2.
+    
+    Uses the optimized benchmark script with separate test modules for each version
+    to avoid import conflicts and improve reliability.
+    """
     
     # ベンチマークディレクトリに移動
     benchmark_dir = Path(__file__).parent
     
-    # 専用の比較ベンチマークを実行
-    script = benchmark_dir / 'benchmark_all_versions.py'
+    # 最適化された比較ベンチマークを実行
+    script = benchmark_dir / 'benchmark_all_versions_optimized.py'
     
     if not script.exists():
         print(f"\n❌ エラー: {script} が見つかりません")
-        return False
+        print(f"   代替として benchmark_all_versions.py を試します...")
+        script = benchmark_dir / 'benchmark_all_versions.py'
+        if not script.exists():
+            print(f"❌ エラー: benchmark_all_versions.py も見つかりません")
+            return False
     
     print("\n🔬 Original版, dictsqlite_v2版, Beta v2版 総合比較ベンチマークを実行中...")
-    print(f"スクリプト: {script}")
+    print(f"スクリプト: {script.name}")
+    print(f"📝 最適化バージョン: 各バージョン用の独立したテストモジュールを使用")
     
     result = subprocess.run(
         [sys.executable, str(script)],
