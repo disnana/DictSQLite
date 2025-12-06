@@ -70,13 +70,17 @@ async def benchmark_async_read(db, count: int) -> Tuple[float, float, float]:
     return elapsed, count / elapsed, peak / (1024 * 1024)
 
 
+# Number of keys written in async_write benchmark (used by concurrent read)
+ASYNC_WRITE_COUNT = 500
+
+
 async def benchmark_async_concurrent_read(db, count: int, concurrency: int = 10) -> Tuple[float, float, float]:
     """Benchmark concurrent async read operations with memory tracking."""
     tracemalloc.start()
     
     async def read_batch(start_idx: int, batch_size: int):
         for i in range(start_idx, min(start_idx + batch_size, count)):
-            if i < 500:  # Only read keys that were written in async_write
+            if i < ASYNC_WRITE_COUNT:  # Only read keys that were written
                 try:
                     _ = await db.aget(f'async_key_{i}')
                 except KeyError:
@@ -91,8 +95,8 @@ async def benchmark_async_concurrent_read(db, count: int, concurrency: int = 10)
     current, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     
-    # Only count successful reads (500 keys)
-    actual_count = min(count, 500)
+    # Only count successful reads
+    actual_count = min(count, ASYNC_WRITE_COUNT)
     return elapsed, actual_count / elapsed, peak / (1024 * 1024)
 
 
@@ -139,12 +143,12 @@ async def run_benchmarks(db_path: str) -> Dict[str, Tuple[float, float, float]]:
     
     try:
         print("\n1. Async Write (500 items)...")
-        elapsed, ops, mem = await benchmark_async_write(db, 500)
+        elapsed, ops, mem = await benchmark_async_write(db, ASYNC_WRITE_COUNT)
         results['async_write'] = (elapsed, ops, mem)
         print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec, {mem:.2f} MB peak")
         
         print("2. Async Read (500 items)...")
-        elapsed, ops, mem = await benchmark_async_read(db, 500)
+        elapsed, ops, mem = await benchmark_async_read(db, ASYNC_WRITE_COUNT)
         results['async_read'] = (elapsed, ops, mem)
         print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec, {mem:.2f} MB peak")
         
