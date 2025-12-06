@@ -100,17 +100,16 @@ impl StorageEngine {
     /// - 並行アクセスのパフォーマンスを最適化
     pub fn new(db_path: &str, config: &Config) -> Result<Self> {
         // コネクションプールマネージャーの作成
-        let manager = SqliteConnectionManager::file(db_path)
-            .with_init(|conn| {
-                // SQLiteのパフォーマンス最適化
-                // これらのPRAGMAは読み書きの速度を大幅に向上させます
-                // 
-                // ⚠️ 注意: synchronous=OFFは最大パフォーマンスを優先します
-                // システムクラッシュやデータ損失時にデータベース破損のリスクがあります
-                // この設定はベンチマークとテスト用途に最適化されています
-                // プロダクション環境では synchronous=NORMAL を推奨し、設定を調整可能にすることを検討してください
-                conn.execute_batch(
-                    "
+        let manager = SqliteConnectionManager::file(db_path).with_init(|conn| {
+            // SQLiteのパフォーマンス最適化
+            // これらのPRAGMAは読み書きの速度を大幅に向上させます
+            //
+            // ⚠️ 注意: synchronous=OFFは最大パフォーマンスを優先します
+            // システムクラッシュやデータ損失時にデータベース破損のリスクがあります
+            // この設定はベンチマークとテスト用途に最適化されています
+            // プロダクション環境では synchronous=NORMAL を推奨し、設定を調整可能にすることを検討してください
+            conn.execute_batch(
+                "
                     PRAGMA journal_mode=WAL;
                     PRAGMA synchronous=OFF;
                     PRAGMA cache_size=-128000;
@@ -119,17 +118,15 @@ impl StorageEngine {
                     PRAGMA page_size=4096;
                     PRAGMA wal_autocheckpoint=10000;
                 ",
-                )?;
-                Ok(())
-            });
+            )?;
+            Ok(())
+        });
 
         // コネクションプールの作成
         // プールサイズはユーザー指定またはデフォルト値（20）を使用
         let pool_size = config.pool_size;
-        
-        let cold_pool = Pool::builder()
-            .max_size(pool_size as u32)
-            .build(manager)?;
+
+        let cold_pool = Pool::builder().max_size(pool_size as u32).build(manager)?;
 
         // 初期接続を取得してテーブルとインデックスを作成
         let conn = cold_pool.get()?;
@@ -156,7 +153,7 @@ impl StorageEngine {
              ON kv_store(access_count DESC, last_access DESC)",
             [],
         )?;
-        
+
         // 接続を解放（プールに返却）
         drop(conn);
 
@@ -425,7 +422,7 @@ impl StorageEngine {
             .chars()
             .filter(|c| c.is_alphanumeric() || *c == '_')
             .collect();
-        
+
         // 空の場合はデフォルトテーブル名を使用
         // kv_main を使用して他のテーブル名との一貫性を保つ
         if sanitized.is_empty() {
@@ -446,7 +443,7 @@ impl StorageEngine {
     pub fn ensure_table_exists(&self, table_name: &str) -> Result<()> {
         let safe_table_name = Self::sanitize_table_name(table_name);
         let conn = self.cold_pool.get()?;
-        
+
         // テーブルを作成（存在しない場合のみ）
         conn.execute(
             &format!(
@@ -496,7 +493,7 @@ impl StorageEngine {
         }
 
         let safe_table_name = Self::sanitize_table_name(table_name);
-        
+
         // テーブルが存在することを確認
         self.ensure_table_exists(table_name)?;
 
@@ -548,7 +545,7 @@ impl StorageEngine {
     /// - `Err(...)`: SQLiteエラー
     pub fn set_with_table(&mut self, table_name: &str, key: &str, value: &[u8]) -> Result<()> {
         let safe_table_name = Self::sanitize_table_name(table_name);
-        
+
         // テーブルが存在することを確認
         self.ensure_table_exists(table_name)?;
 
@@ -596,7 +593,7 @@ impl StorageEngine {
     /// - `Err(...)`: SQLiteエラー
     pub fn keys_with_table(&self, table_name: &str) -> Result<Vec<String>> {
         let safe_table_name = Self::sanitize_table_name(table_name);
-        
+
         // テーブルが存在することを確認
         self.ensure_table_exists(table_name)?;
 
@@ -639,10 +636,9 @@ impl StorageEngine {
     /// - `Err(...)`: SQLiteエラー
     pub fn list_tables(&self) -> Result<Vec<String>> {
         let conn = self.cold_pool.get()?;
-        let mut stmt = conn.prepare(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'kv_%'"
-        )?;
-        
+        let mut stmt =
+            conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'kv_%'")?;
+
         let tables: Result<Vec<String>, _> = stmt
             .query_map([], |row| {
                 let name: String = row.get(0)?;
@@ -655,7 +651,7 @@ impl StorageEngine {
             })?
             .filter_map(|r| r.transpose())
             .collect();
-        
+
         tables.map_err(|e| e.into())
     }
 }

@@ -102,7 +102,7 @@ def benchmark_sync_write(db, count: int, label: str = "Write") -> Tuple[float, f
         db[f'{label}_key_{i}'] = f'{label}_value_{i}'
     
     elapsed = time.time() - start
-    current, peak = tracemalloc.get_traced_memory()
+    _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     
     return elapsed, count / elapsed, peak / (1024 * 1024)
@@ -117,7 +117,7 @@ def benchmark_sync_read(db, count: int, label: str = "Read") -> Tuple[float, flo
         _ = db.get(f'{label}_key_{i}', None)
     
     elapsed = time.time() - start
-    current, peak = tracemalloc.get_traced_memory()
+    _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     
     return elapsed, count / elapsed, peak / (1024 * 1024)
@@ -134,7 +134,7 @@ def benchmark_sync_mixed(db, count: int, label: str = "Mixed") -> Tuple[float, f
             _ = db.get(f'{label}_{i}', None)
     
     elapsed = time.time() - start
-    current, peak = tracemalloc.get_traced_memory()
+    _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     
     return elapsed, count / elapsed, peak / (1024 * 1024)
@@ -149,7 +149,7 @@ async def benchmark_async_write(db, count: int, label: str = "AsyncWrite") -> Tu
         await db.aset(f'{label}_key_{i}', f'{label}_value_{i}')
     
     elapsed = time.time() - start
-    current, peak = tracemalloc.get_traced_memory()
+    _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     
     return elapsed, count / elapsed, peak / (1024 * 1024)
@@ -164,7 +164,7 @@ async def benchmark_async_read(db, count: int, label: str = "AsyncRead") -> Tupl
         _ = await db.aget(f'{label}_key_{i}')
     
     elapsed = time.time() - start
-    current, peak = tracemalloc.get_traced_memory()
+    _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     
     return elapsed, count / elapsed, peak / (1024 * 1024)
@@ -184,7 +184,7 @@ async def benchmark_async_concurrent(db, count: int, concurrency: int = 10) -> T
     await asyncio.gather(*tasks)
     
     elapsed = time.time() - start
-    current, peak = tracemalloc.get_traced_memory()
+    _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     
     return elapsed, count / elapsed, peak / (1024 * 1024)
