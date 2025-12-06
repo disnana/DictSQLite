@@ -216,10 +216,11 @@ jobs:
         cd others/benchmark
         
         # テスト対象の選択
+        # Note: BETA_VERSION という変数名ですが、"all" を含む全テスト対象に使用されます
         BETA_VERSION="${{ github.event.inputs.beta_version }}"
         echo "📦 選択されたテスト対象: $BETA_VERSION"
         
-        # BETA_VERSIONを環境変数としてエクスポート（バージョン管理システムで使用）
+        # BETA_VERSIONを環境変数としてエクスポート（バージョン管理システムとベンチマークスクリプトで使用）
         export BETA_VERSION
         
         # 結果ディレクトリを事前に作成
