@@ -587,22 +587,6 @@ def generate_comparison_graphs(original_results: Dict[str, Tuple[float, float]],
     print(f"\n✅ Graphs saved to: {output_dir}")
     print(f"   - version_comparison_bar.png")
     print(f"   - version_comparison_speedup.png")
-    
-    for test_name, label, op_count in zip(test_names, test_labels, operation_counts):
-        elapsed, ops = results_dict[test_name]
-        # For all-versions benchmark, we only have one implementation per run
-        # So we'll put the current version in the "Beta OPS" column
-        csv_lines.append(f"{label},{op_count},N/A,N/A,N/A,N/A,{elapsed},{ops},N/A,N/A,N/A")
-    
-    csv_content = '\n'.join(csv_lines)
-    
-    # Save to version manager
-    saved_files = vm.save_benchmark_result(
-        csv_content=csv_content,
-        version_string=version_name
-    )
-    
-    print(f"\n✓ {version_name} の結果を保存しました: {saved_files.get('csv', 'N/A')}")
 
 
 async def main():
