@@ -1084,9 +1084,13 @@ impl DictSQLiteV4 {
             (is_new, None)
         };
 
-        // v4.2.1最適化: LRUアクセス追跡を新しいキーのみに更新（パフォーマンス向上）
-        // 既存キーの更新ではLRU順序を変更しない（書き込みパフォーマンス優先）
-        if is_new_key {
+        // v4.2.1最適化: LRUアクセス追跡の条件付き更新（パフォーマンス向上）
+        // キャパシティの90%以下の場合、LRU追跡をスキップ（エビクション不要なため）
+        // これにより書き込みパフォーマンスが大幅に向上
+        let current_size = self.hot_tier.len();
+        let tracking_threshold = (self.config.hot_tier_capacity * 9) / 10; // 90%
+        
+        if is_new_key && current_size > tracking_threshold {
             self.access_tracker.lock().unwrap().put(key.clone(), ());
         }
 
