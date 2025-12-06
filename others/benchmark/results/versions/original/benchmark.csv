@@ -1,6 +1,6 @@
 Test Name,Operation Count,Original Time (s),Original OPS,Fastest Time (s),Fastest OPS,Beta Time (s),Beta OPS,Speedup (Fastest/Original),Speedup (Beta/Original),Speedup (Beta/Fastest)
-Basic Write (300 items),300,N/A,N/A,N/A,N/A,0.0010170936584472656,294958.08720112516,N/A,N/A,N/A
-Basic Read (300 items),300,N/A,N/A,N/A,N/A,0.3228325843811035,929.2742260671256,N/A,N/A,N/A
+Basic Write (300 items),300,N/A,N/A,N/A,N/A,0.0010302066802978516,291203.7028465633,N/A,N/A,N/A
+Basic Read (300 items),300,N/A,N/A,N/A,N/A,0.32590341567993164,920.5181215241657,N/A,N/A,N/A
 Concurrent Read (600 items, 8 concurrent),600,N/A,N/A,N/A,N/A,0,0,N/A,N/A,N/A
-Bulk Insert (500 items),500,N/A,N/A,N/A,N/A,0.0016350746154785156,305796.44211140275,N/A,N/A,N/A
-Mixed Operations (400 items),400,N/A,N/A,N/A,N/A,0.9984602928161621,400.6168326151439,N/A,N/A,N/A
+Bulk Insert (500 items),500,N/A,N/A,N/A,N/A,0.0016422271728515625,304464.5760743322,N/A,N/A,N/A
+Mixed Operations (400 items),400,N/A,N/A,N/A,N/A,1.0171449184417725,393.2576300069265,N/A,N/A,N/A

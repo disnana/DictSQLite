@@ -33,10 +33,6 @@ sys.path.insert(0, str(BETA_V2_DIR))
 BENCHMARK_DIR = REPO_ROOT / 'others' / 'benchmark'
 sys.path.insert(0, str(BENCHMARK_DIR))
 
-# Add benchmark directory to path for VersionManager
-BENCHMARK_DIR = REPO_ROOT / 'others' / 'benchmark'
-sys.path.insert(0, str(BENCHMARK_DIR))
-
 # Import graph generation libraries
 try:
     import matplotlib
