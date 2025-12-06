@@ -43,9 +43,6 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.11"]
-    
-    env:
-      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta:${{ github.workspace }}/dictsqlite_v2/dictsqlite/python
 
     steps:
     - name: Checkout repository
@@ -96,18 +93,6 @@ jobs:
         echo "📦 Installing Rust v4.1 extension..."
         pip install --force-reinstall target/wheels/dictsqlite_v4-*.whl
         echo "✅ Rust v4.1 extension built and installed successfully"
-
-    - name: Build dictsqlite_v2 extension
-      run: |
-        pip install maturin
-        cd dictsqlite_v2/dictsqlite
-        echo "🔨 Building dictsqlite_v2 extension..."
-        echo "Current directory: $(pwd)"
-        echo "Checking for Cargo.toml: $(ls -la Cargo.toml 2>&1 || echo 'NOT FOUND')"
-        maturin build --release
-        echo "📦 Installing dictsqlite_v2 extension..."
-        pip install --force-reinstall target/wheels/dictsqlite-*.whl
-        echo "✅ dictsqlite_v2 extension built and installed successfully"
 
     - name: Run fast comprehensive benchmark
       run: |
@@ -170,6 +155,7 @@ jobs:
           fi
         fi
       env:
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta
         BETA_VERSION: ${{ github.event.inputs.beta_version }}
       continue-on-error: false
 
@@ -180,6 +166,8 @@ jobs:
         cd others/benchmark
         echo "📊 バージョン間比較を生成中..."
         python compare_versions.py || echo "⚠️ バージョン比較の生成に失敗しました（初回実行の場合は正常）"
+      env:
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta
       continue-on-error: true
 
     - name: List benchmark results
