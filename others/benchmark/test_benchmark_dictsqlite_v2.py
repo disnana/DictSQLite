@@ -32,9 +32,15 @@ def check_dictsqlite_v2_installed() -> bool:
 
 # Try to import dictsqlite_v2
 try:
-    # Filter out local dictsqlite from path to get installed version
+    # Filter out paths that could contain the local dictsqlite package
+    # We need to remove the repository root to avoid importing the local dictsqlite
     original_path = sys.path.copy()
-    sys.path = [p for p in sys.path if 'dictsqlite' not in p.lower() or 'site-packages' in p]
+    repo_root_str = str(REPO_ROOT)
+    
+    # Remove repository root and any paths inside it (except site-packages)
+    sys.path = [p for p in sys.path 
+                if not (p.startswith(repo_root_str) or 'dictsqlite' in p.lower()) 
+                or 'site-packages' in p]
     
     from dictsqlite import DictSQLiteV4
     
