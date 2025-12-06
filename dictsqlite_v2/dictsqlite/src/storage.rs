@@ -96,8 +96,8 @@ impl StorageEngine {
     /// - `mmap_size=30GB`: メモリマッピングで大規模データアクセスを高速化
     ///
     /// # コネクションプール
-    /// - プールサイズ: CPUコア数の2倍（並行アクセス最適化）
-    /// - 最大接続数: max(10, CPUコア数 * 2)
+    /// - プールサイズ: ユーザー指定可能（デフォルト: 20）
+    /// - 並行アクセスのパフォーマンスを最適化
     pub fn new(db_path: &str, config: &Config) -> Result<Self> {
         // コネクションプールマネージャーの作成
         let manager = SqliteConnectionManager::file(db_path)
@@ -119,9 +119,8 @@ impl StorageEngine {
             });
 
         // コネクションプールの作成
-        // プールサイズはCPUコア数の2倍に設定（読み取りと書き込みの並行処理を最適化）
-        let num_cpus = num_cpus::get();
-        let pool_size = std::cmp::max(10, num_cpus * 2);
+        // プールサイズはユーザー指定またはデフォルト値（20）を使用
+        let pool_size = config.pool_size;
         
         let cold_pool = Pool::builder()
             .max_size(pool_size as u32)

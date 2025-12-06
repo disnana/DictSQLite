@@ -82,7 +82,8 @@ class DictSQLite:
         safe_pickle_allowed_modules=None,
         buffer_size=100,
         encoding='utf-8',
-        table_mode="prefix"
+        table_mode="prefix",
+        pool_size=20
     ):
         """
         Initialize DictSQLite v4.0
@@ -104,6 +105,8 @@ class DictSQLite:
             table_mode: Table isolation mode (default: "prefix")
                        - "prefix": Use key prefixes for table isolation (current behavior)
                        - "separate": Use separate SQLite tables for complete isolation
+            pool_size: Connection pool size for SQLite (default: 20)
+                      Determines the maximum number of concurrent database connections
         """
         if not _NATIVE_AVAILABLE:
             raise RuntimeError(
@@ -128,7 +131,8 @@ class DictSQLite:
             enable_safe_pickle,
             safe_pickle_allowed_modules,
             buffer_size,
-            table_mode
+            table_mode,
+            pool_size
         )
         # Python-side safe_pickle control: when native extension isn't performing
         # safe unpickle checks (or when we prefer Python-side checking), honor
