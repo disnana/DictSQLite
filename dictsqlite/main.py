@@ -542,15 +542,16 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                 return default
 
         def __repr__(self):
+            """テーブル内容を辞書形式の文字列で返す。大規模テーブルでは注意。"""
             return f"{dict(self.items())}"
 
         def __iter__(self):
-            """辞書と同様に、キーのみをイテレートする。"""
+            """キーを逐次イテレートするジェネレータを返す（メモリ効率良）。"""
             for row in self.get_all_rows():
                 yield row[0]
 
         def __len__(self):
-            """テーブル内のエントリ数を返す。"""
+            """テーブル内のエントリ数を返す（COUNT使用で効率的）。"""
             result_queue = queue.Queue()
             self.db.operation_queue.put((
                 self.db._fetchone,  # pylint: disable=protected-access
@@ -563,7 +564,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             return result[0] if result else 0
 
         def __eq__(self, other):
-            """辞書との等価比較をサポート。"""
+            """dictまたはTableProxyとの等価比較。全データをメモリにロードする。"""
             if isinstance(other, dict):
                 return dict(self.items()) == other
             if isinstance(other, DictSQLite.TableProxy):
@@ -571,11 +572,11 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             return NotImplemented
 
         def keys(self):
-            """テーブル内の全キー一覧をリストで返す。"""
+            """全キーをリストで返す。イテレータが必要なら iter(table) を使用。"""
             return list(self)
 
         def values(self):
-            """テーブル内の全値一覧をリストで返す。大規模テーブルではメモリ注意。"""
+            """全値をリストで返す。大規模テーブルではメモリ注意。"""
             result = []
             for row in self.get_all_rows():
                 key, raw_value_str = row[0], row[1]
@@ -587,7 +588,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             return result
 
         def items(self):
-            """テーブル内の全(key, value)ペアをリストで返す。大規模テーブルではメモリ注意。"""
+            """全(key, value)ペアをリストで返す。大規模テーブルではメモリ注意。"""
             result = []
             for row in self.get_all_rows():
                 key, raw_value_str = row[0], row[1]
@@ -842,7 +843,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         return result is not None
 
     def __eq__(self, other):
-        """辞書との等価比較をサポート。"""
+        """dictまたはDictSQLiteとの等価比較。全データをメモリにロードする。"""
         if isinstance(other, dict):
             proxy = self.TableProxy(self, self.table_name)
             return dict(proxy.items()) == other
@@ -966,16 +967,15 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         Returns:
             TableProxy: 指定したテーブルへのプロキシオブジェクト
         """
-        # テーブルが存在しない場合は作成（self.table_name を変更しない）
-        if table_name not in self.tables():
-            schema = '(key TEXT PRIMARY KEY, value TEXT)'
-            create_table_sql = (
-                "CREATE TABLE IF NOT EXISTS "
-                f"{self._quote_ident(table_name)} "
-                f"{schema}"
-            )
-            self.operation_queue.put((self._execute, (create_table_sql,), {}, None))
-            self.operation_queue.join()
+        # 常に CREATE TABLE IF NOT EXISTS を実行（競合状態を回避）
+        schema = '(key TEXT PRIMARY KEY, value TEXT)'
+        create_table_sql = (
+            "CREATE TABLE IF NOT EXISTS "
+            f"{self._quote_ident(table_name)} "
+            f"{schema}"
+        )
+        self.operation_queue.put((self._execute, (create_table_sql,), {}, None))
+        self.operation_queue.join()
         return self.TableProxy(self, table_name)
 
     def clear_table(self, table_name=None):

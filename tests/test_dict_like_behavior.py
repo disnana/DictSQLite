@@ -28,12 +28,9 @@ class TestDictSQLiteDictLikeBehavior:
 
     def test_empty_db_equals_empty_dict(self, db_path):
         """空のデータベースが空の辞書と等しいことをテスト"""
-        db = DictSQLite(str(db_path))
-        try:
+        with DictSQLite(str(db_path)) as db:
             # Testing __eq__ explicitly, not boolean truthiness
             assert db == {}  # pylint: disable=use-implicit-booleaness-not-comparison
-        finally:
-            db.close()
 
     def test_db_equals_dict_with_values(self, db: DictSQLite):
         """値を持つデータベースが対応する辞書と等しいことをテスト"""
@@ -200,8 +197,7 @@ class TestMultipleTablesScenario:
 
     def test_issue_scenario(self, db_path):
         """Issue #XXX で報告されたシナリオをテスト"""
-        db = DictSQLite(str(db_path))
-        try:
+        with DictSQLite(str(db_path)) as db:
             # 空のDBは空の辞書と等しい (testing __eq__ explicitly)
             assert db == {}  # pylint: disable=use-implicit-booleaness-not-comparison
 
@@ -238,9 +234,6 @@ class TestMultipleTablesScenario:
             # 辞書との等価比較テスト
             assert table1 == {"tkey1": 'tvalue1'}
             assert table2 == {"tkey2": 'tvalue2'}
-
-        finally:
-            db.close()
 
     def test_table_does_not_affect_main_table(self, db: DictSQLite):
         """table()メソッドがメインテーブルに影響しないことをテスト"""
