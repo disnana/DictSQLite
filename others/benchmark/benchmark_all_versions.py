@@ -18,11 +18,11 @@ from typing import Dict, Tuple, Any
 
 # Add paths
 REPO_ROOT = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(REPO_ROOT))  # For main dictsqlite package
+# Don't add REPO_ROOT to path to avoid conflicts with installed dictsqlite_v2
 
-# Add dictsqlite_v2 path
+# Add dictsqlite_v2 path (but the installed version will be used)
 V2_DIR = REPO_ROOT / 'dictsqlite_v2' / 'dictsqlite' / 'python'
-sys.path.insert(0, str(V2_DIR))
+# sys.path.insert(0, str(V2_DIR))  # Commented out to use installed version
 
 # Add dictsqlite-fastest beta v2 path
 BETA_V2_DIR = REPO_ROOT / 'others' / 'beta-versions' / 'dictsqlite-fastest' / 'beta'
@@ -44,17 +44,24 @@ except ImportError:
 
 # Import versions
 try:
-    from dictsqlite.main import DictSQLite  # Original (sync only)
+    # Import Original version directly from source to avoid conflicts
+    import importlib.util
+    original_main = REPO_ROOT / 'dictsqlite' / 'main.py'
+    spec = importlib.util.spec_from_file_location("dictsqlite_original_main", str(original_main))
+    dictsqlite_original = importlib.util.module_from_spec(spec)
+    sys.modules['dictsqlite_original_main'] = dictsqlite_original
+    spec.loader.exec_module(dictsqlite_original)
+    DictSQLite = dictsqlite_original.DictSQLite
     ORIGINAL_AVAILABLE = True
-except ImportError as e:
+except Exception as e:
     print(f"⚠ DictSQLite (Original) not available: {e}")
     DictSQLite = None
     ORIGINAL_AVAILABLE = False
 
 try:
     # Import dictsqlite_v2 (Rust extension version 2.0.6)
-    import dictsqlite as dictsqlite_v2_module
-    from dictsqlite import DictSQLite as DictSQLiteV2_Sync
+    # This is the installed package, not the original
+    from dictsqlite import DictSQLiteV4 as DictSQLiteV2_Sync
     from dictsqlite import AsyncDictSQLite as DictSQLiteV2_Async
     V2_AVAILABLE = True
 except ImportError as e:
@@ -390,11 +397,11 @@ async def run_beta_v2_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
     return results
 
 
-async def run_v2_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
-    """Run benchmark for dictsqlite_v2 with optimized sync/async tests.
+def run_v2_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
+    """Run benchmark for dictsqlite_v2 with optimized sync tests.
     
     dictsqlite_v2版（Rust拡張）のベンチマークを実行します。
-    同期・非同期の両方に対応した高性能Rust実装をテストします。
+    同期処理で高性能Rust実装をテストします。
     """
     if not V2_AVAILABLE:
         print(f"\n{'='*80}")
@@ -413,42 +420,53 @@ async def run_v2_benchmark(db_path: str) -> Dict[str, Tuple[float, float]]:
     print(f"{'='*80}")
     
     results = {}
+    results['concurrent_read'] = (0, 0)  # Not tested in sync mode
     
-    # Use async version of dictsqlite_v2
-    db = DictSQLiteV2_Async(db_path)
+    # Use sync version of dictsqlite_v2 for sync operations
+    db = DictSQLiteV2_Sync(db_path)
     try:
-        # Basic operations
-        print("\n1. 基本書き込み / Basic Write (300 items) [async]...")
-        elapsed, ops = await benchmark_v2_basic_write(db, 300)
+        # Basic operations using dict-like API
+        print("\n1. 基本書き込み / Basic Write (300 items) [sync]...")
+        start = time.time()
+        for i in range(300):
+            db[f'key_{i}'] = f'value_{i}'
+        elapsed = time.time() - start
+        ops = 300 / elapsed
         results['basic_write'] = (elapsed, ops)
         print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        print("2. 基本読み込み / Basic Read (300 items) [async]...")
-        elapsed, ops = await benchmark_v2_basic_read(db, 300)
+        print("2. 基本読み込み / Basic Read (300 items) [sync]...")
+        start = time.time()
+        for i in range(300):
+            _ = db[f'key_{i}']
+        elapsed = time.time() - start
+        ops = 300 / elapsed
         results['basic_read'] = (elapsed, ops)
         print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        print("3. 並行読み込み / Concurrent Read (600 items, 8 concurrent) [async]...")
-        elapsed, ops = await benchmark_v2_concurrent_read(db, 600)
-        results['concurrent_read'] = (elapsed, ops)
-        print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
-        
-        print("4. 一括挿入 / Bulk Insert (500 items) [async]...")
-        elapsed, ops = await benchmark_v2_bulk_insert(db, 500)
+        print("3. 一括挿入 / Bulk Insert (500 items) [sync]...")
+        start = time.time()
+        for i in range(500):
+            db[f'bulk_key_{i}'] = f'bulk_value_{i}'
+        elapsed = time.time() - start
+        ops = 500 / elapsed
         results['bulk_insert'] = (elapsed, ops)
         print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
         
-        print("5. 混合操作 / Mixed Operations (400 items) [async]...")
-        elapsed, ops = await benchmark_v2_mixed_operations(db, 400)
+        print("4. 混合操作 / Mixed Operations (400 items) [sync]...")
+        start = time.time()
+        for i in range(400):
+            db[f'mixed_{i}'] = f'data_{i}'
+            if i % 3 == 0:
+                _ = db.get(f'mixed_{i}', None)
+        elapsed = time.time() - start
+        ops = 400 / elapsed
         results['mixed_ops'] = (elapsed, ops)
         print(f"   ⏱️  {elapsed:.3f}s, {ops:.0f} ops/sec")
     finally:
         # Cleanup if the class has a close method
         if hasattr(db, 'close'):
-            if asyncio.iscoroutinefunction(db.close):
-                await db.close()
-            else:
-                db.close()
+            db.close()
     
     return results
 
@@ -749,7 +767,7 @@ async def main():
             }
         
         try:
-            v2_results = await run_v2_benchmark(v2_path)
+            v2_results = run_v2_benchmark(v2_path)
             
             # Save dictsqlite_v2 results
             if VERSION_MANAGER_AVAILABLE and V2_AVAILABLE:

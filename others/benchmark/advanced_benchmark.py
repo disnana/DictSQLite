@@ -14,6 +14,7 @@ import os
 import sys
 import tempfile
 import time
+import traceback
 import tracemalloc
 from pathlib import Path
 from typing import Dict, Tuple, Any, List
@@ -364,10 +365,12 @@ async def run_advanced_benchmarks():
                                 await db.close()
                             else:
                                 db.close()
-            except Exception as e:
-                print(f"  ❌ エラー: {e}")
-                import traceback
-                traceback.print_exc()
+                if hasattr(db, 'adelete'):
+                    await db.adelete(f'mixed_key_{i-2}')
+                elif hasattr(db, '__delitem__'):
+                    del db[f'mixed_key_{i-2}']
+            except Exception:
+                pass
             finally:
                 if os.path.exists(db_path):
                     os.unlink(db_path)

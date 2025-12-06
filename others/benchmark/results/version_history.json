@@ -69,6 +69,13 @@
           "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v2/benchmark.csv",
           "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v2/graphs"
         ]
+      },
+      {
+        "timestamp": "2025-12-06T12:09:13.050436",
+        "files": [
+          "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v2/benchmark.csv",
+          "/home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/versions/v2/graphs"
+        ]
       }
     ],
     "v3": [
@@ -229,5 +236,5 @@
       }
     ]
   },
-  "latest_run": "2025-12-06T11:38:01.872423"
+  "latest_run": "2025-12-06T12:09:13.050436"
 }
