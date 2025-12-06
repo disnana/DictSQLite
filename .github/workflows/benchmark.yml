@@ -79,7 +79,6 @@ jobs:
         if [ -f "others/beta-versions/dictsqlite-fastest/beta/requirements.txt" ]; then
           pip install -r others/beta-versions/dictsqlite-fastest/beta/requirements.txt
         fi
-        # dictsqlite_v2 の依存関係は wheel インストール時に自動的に処理される
 
     - name: Set up Rust
       uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -100,6 +99,7 @@ jobs:
 
     - name: Build dictsqlite_v2 extension
       run: |
+        pip install maturin
         cd dictsqlite_v2/dictsqlite
         echo "🔨 Building dictsqlite_v2 extension..."
         echo "Current directory: $(pwd)"
