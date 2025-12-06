@@ -557,7 +557,7 @@ def test_prefix_mode_table_special_characters():
         for name in table_names:
             table = db.table(name)
             table["key1"] = {"test": True}
-            assert table["key1"]["test"] == True
+            assert table["key1"]["test"] is True
         
         db.close()
         print("✅ Prefix mode special characters test passed")
@@ -581,7 +581,7 @@ def test_separate_mode_table_special_characters():
         for name in table_names:
             table = db.table(name)
             table["key1"] = {"test": True}
-            assert table["key1"]["test"] == True
+            assert table["key1"]["test"] is True
         
         db.close()
         print("✅ Separate mode special characters test passed")
@@ -911,7 +911,7 @@ def test_table_proxy_get_method():
             
             # Test .get() with default value
             result = users.get("nonexistent", {"default": True})
-            assert result["default"] == True
+            assert result["default"] is True
             
             db.close()
     print("✅ TableProxy.get() test passed")
@@ -943,7 +943,7 @@ def test_table_proxy_pop_method():
             
             # Test .pop() with non-existing key and default
             result = users.pop("nonexistent", {"default": True})
-            assert result["default"] == True
+            assert result["default"] is True
             
             # Test .pop() with non-existing key and no default (raises KeyError)
             with pytest.raises(KeyError):
@@ -1126,7 +1126,7 @@ def test_async_table_proxy_all_dict_ops():
             # Test get()
             assert users.get("alice")["name"] == "Alice"
             assert users.get("nonexistent") is None
-            assert users.get("nonexistent", {"default": True})["default"] == True
+            assert users.get("nonexistent", {"default": True})["default"] is True
             
             # Test pop()
             result = users.pop("bob")
