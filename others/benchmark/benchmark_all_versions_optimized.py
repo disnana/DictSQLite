@@ -15,6 +15,7 @@ import tempfile
 import subprocess
 import csv
 import datetime
+import json
 from pathlib import Path
 from typing import Dict, Tuple, List
 
@@ -98,17 +99,70 @@ def run_benchmark_subprocess(test_module: str, db_path: str) -> Dict[str, Tuple[
             'mixed_ops': (0, 0)
         }
     
-    # Run the test module as a subprocess
+    # Run the test module in a true subprocess to avoid import conflicts
     try:
-        # Import the module and run benchmarks
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(test_module, test_file)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        # Create a Python script that will run the benchmark and output JSON results
+        script = f"""
+import sys
+import json
+
+# Run the benchmark
+sys.path.insert(0, '{BENCHMARK_DIR}')
+from {test_module} import run_benchmarks
+
+results = run_benchmarks('{db_path}')
+# Convert to JSON-serializable format
+json_results = {{k: list(v) for k, v in results.items()}}
+print("BENCHMARK_RESULTS_START")
+print(json.dumps(json_results))
+print("BENCHMARK_RESULTS_END")
+"""
         
-        # Run the benchmarks
-        results = module.run_benchmarks(db_path)
-        return results
+        # Run in subprocess with clean environment
+        result = subprocess.run(
+            [sys.executable, '-c', script],
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 minute timeout
+            cwd=str(BENCHMARK_DIR)
+        )
+        
+        if result.returncode != 0:
+            print(f"❌ Subprocess failed with code {result.returncode}")
+            print(f"stderr: {result.stderr}")
+            print(f"stdout: {result.stdout}")
+            return {
+                'basic_write': (0, 0),
+                'basic_read': (0, 0),
+                'bulk_insert': (0, 0),
+                'mixed_ops': (0, 0)
+            }
+        
+        # Parse JSON results from stdout
+        output = result.stdout
+        
+        # Extract JSON between markers
+        start_marker = "BENCHMARK_RESULTS_START"
+        end_marker = "BENCHMARK_RESULTS_END"
+        
+        if start_marker in output and end_marker in output:
+            start_idx = output.index(start_marker) + len(start_marker)
+            end_idx = output.index(end_marker)
+            json_str = output[start_idx:end_idx].strip()
+            json_results = json.loads(json_str)
+            
+            # Convert back to tuple format
+            results = {k: tuple(v) for k, v in json_results.items()}
+            return results
+        else:
+            print(f"⚠️ Could not find result markers in output")
+            print(f"stdout: {output}")
+            return {
+                'basic_write': (0, 0),
+                'basic_read': (0, 0),
+                'bulk_insert': (0, 0),
+                'mixed_ops': (0, 0)
+            }
         
     except Exception as e:
         print(f"❌ Error running {test_module}: {e}")
