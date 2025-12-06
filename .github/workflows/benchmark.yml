@@ -390,6 +390,18 @@ jobs:
         echo "=== dictsqlite_v2 Mode Tests ==="
         if [ -d "others/benchmark/results/v2_modes" ]; then
           ls -lh others/benchmark/results/v2_modes/
+          echo ""
+          echo "=== v2 Comprehensive Comparison Log ==="
+          if [ -f "others/benchmark/results/v2_modes/comprehensive_comparison.log" ]; then
+            echo "📊 Showing v2 vs fastest comparison results:"
+            tail -50 others/benchmark/results/v2_modes/comprehensive_comparison.log
+          fi
+          echo ""
+          echo "=== v2 All Modes Comprehensive Log ==="
+          if [ -f "others/benchmark/results/v2_modes/comprehensive_all_modes.log" ]; then
+            echo "📊 Showing all modes (sync/async) results:"
+            tail -80 others/benchmark/results/v2_modes/comprehensive_all_modes.log
+          fi
         fi
 
     - name: Upload benchmark results
@@ -411,13 +423,39 @@ jobs:
     - name: Create benchmark summary
       run: |
         SUMMARY_FILE="others/benchmark/results/BENCHMARK_SUMMARY.md"
+        echo "## 📊 Benchmark Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
         if [ -f "$SUMMARY_FILE" ]; then
-          echo "## 📊 Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "### Main Benchmark Summary" >> $GITHUB_STEP_SUMMARY
           cat "$SUMMARY_FILE" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "*手動実行されたベンチマーク - $(date)*" >> $GITHUB_STEP_SUMMARY
         fi
+        
+        # Add v2 comprehensive results to summary
+        V2_LOG="others/benchmark/results/v2_modes/comprehensive_comparison.log"
+        if [ -f "$V2_LOG" ]; then
+          echo "### 🔬 dictsqlite_v2 Comprehensive Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -50 "$V2_LOG" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        # Add all modes results to summary
+        ALL_MODES_LOG="others/benchmark/results/v2_modes/comprehensive_all_modes.log"
+        if [ -f "$ALL_MODES_LOG" ]; then
+          echo "### 📊 dictsqlite_v2 All Modes (Sync/Async)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -80 "$ALL_MODES_LOG" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "---" >> $GITHUB_STEP_SUMMARY
+        echo "*ベンチマーク実行 - $(date)*" >> $GITHUB_STEP_SUMMARY
 
     - name: Display benchmark info
       run: |
