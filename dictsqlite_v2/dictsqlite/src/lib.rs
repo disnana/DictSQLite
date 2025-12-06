@@ -2200,20 +2200,20 @@ impl TableProxy {
     /// Compares the TableProxy with a Python dict or another TableProxy.
     /// Returns True if all keys and values match.
     fn __eq__(&self, other: PyObject, py: Python) -> PyResult<bool> {
-        // Get items from this table
+        // Get items from this table (we need them for comparison)
         let self_items = self.items(py)?;
-        let self_dict: std::collections::HashMap<String, PyObject> = 
-            self_items.into_iter().collect();
+        let self_len = self_items.len();
 
         // Check if other is a dict
         if let Ok(other_dict) = other.downcast_bound::<PyDict>(py) {
-            // Compare with dict
-            if self_dict.len() != other_dict.len() {
+            // Compare with dict - check size first for early exit
+            if self_len != other_dict.len() {
                 return Ok(false);
             }
             
-            for (key, value) in self_dict.iter() {
-                if let Some(other_value) = other_dict.get_item(&key)? {
+            // Compare each item directly without creating intermediate HashMap
+            for (key, value) in self_items.iter() {
+                if let Some(other_value) = other_dict.get_item(key)? {
                     // Compare values using Python's __eq__
                     let eq_result = value.bind(py).eq(other_value)?;
                     if !eq_result {
@@ -2227,16 +2227,20 @@ impl TableProxy {
         } else if let Ok(other_table) = other.extract::<PyRef<TableProxy>>(py) {
             // Compare with another TableProxy
             let other_items = other_table.items(py)?;
-            let other_dict: std::collections::HashMap<String, PyObject> = 
-                other_items.into_iter().collect();
             
-            if self_dict.len() != other_dict.len() {
+            // Check size first for early exit
+            if self_len != other_items.len() {
                 return Ok(false);
             }
             
-            for (key, value) in self_dict.iter() {
-                if let Some(other_value) = other_dict.get(key) {
-                    let eq_result = value.bind(py).eq(other_value)?;
+            // Create a HashMap only for the other table to enable O(1) lookup
+            let other_map: std::collections::HashMap<&String, &PyObject> = 
+                other_items.iter().map(|(k, v)| (k, v)).collect();
+            
+            // Compare each item
+            for (key, value) in self_items.iter() {
+                if let Some(other_value) = other_map.get(key) {
+                    let eq_result = value.bind(py).eq(*other_value)?;
                     if !eq_result {
                         return Ok(false);
                     }

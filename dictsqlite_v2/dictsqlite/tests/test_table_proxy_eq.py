@@ -1,5 +1,5 @@
 """
-Test TableProxy __eq__ functionality for DictSQLite v4.2
+Test TableProxy __eq__ functionality for DictSQLite
 
 This tests that TableProxy instances can be compared with dictionaries
 using the == operator, similar to how Python dicts work.
@@ -113,7 +113,7 @@ def test_table_proxy_eq_with_non_dict():
         assert not (table == "not a dict")
         assert not (table == 123)
         assert not (table == ["key1", "value1"])
-        assert not (table == None)
+        assert not (table == None)  # noqa: E711 - Testing equality operator, not identity
         
         db.close()
         print("✅ TableProxy __eq__ with non-dict types test passed")
