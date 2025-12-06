@@ -8,7 +8,8 @@
 #   → Original版 (dictsqlite/) - 標準sqlite3ベース
 #   → dictsqlite_v2版 (dictsqlite_v2/dictsqlite/) - Rust拡張 v2.0.6 (同期・非同期対応)
 #     * 3モード個別テスト: memory, lazy, writethrough
-#     * 非同期ベンチマーク: async write, read, concurrent, mixed
+#     * 各モード同期・非同期テスト: Write, Read, Mixed, Update, Async Write, Async Read, Concurrent
+#     * メモリ使用量プロファイリング
 #     * fastest版との詳細比較
 #   → Beta v2版 (dictsqlite-fastest beta v2) - APSWベース非同期高性能版
 #
@@ -193,8 +194,9 @@ jobs:
           echo "  - Original版 (dictsqlite/) - 標準sqlite3ベース（同期処理のみ）"
           echo "  - dictsqlite_v2版 (dictsqlite_v2/dictsqlite/) - Rust拡張 v2.0.6（同期・非同期対応）"
           echo "    * 3モード個別テスト: memory, lazy, writethrough"
-          echo "    * 非同期ベンチマーク: async write, read, concurrent, mixed"
+          echo "    * 各モード同期・非同期テスト: Write, Read, Mixed, Update, Async Write, Async Read, Concurrent"
           echo "    * メモリ使用量プロファイリング"
+          echo "    * 総合7テスト × 3モード = 21テストケース"
           echo "  - Beta v2版 (dictsqlite-fastest beta v2) - APSWベース非同期高性能版"
         else
           echo "テスト内容: dictsqlite-fastest Beta ${{ github.event.inputs.beta_version }} のみ"
@@ -248,6 +250,13 @@ jobs:
           python comprehensive_v2_vs_fastest.py > results/v2_modes/comprehensive_comparison.log 2>&1 || {
             echo "⚠️ v2全モードベンチマーク実行エラー（継続）"
             cat results/v2_modes/comprehensive_comparison.log
+          }
+          
+          echo ""
+          echo "🔬 dictsqlite_v2 全モード総合ベンチマーク(同期・非同期)を実行..."
+          python comprehensive_v2_all_modes.py > results/v2_modes/comprehensive_all_modes.log 2>&1 || {
+            echo "⚠️ v2全モード総合ベンチマーク実行エラー（継続）"
+            cat results/v2_modes/comprehensive_all_modes.log
           }
           
           echo ""
