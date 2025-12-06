@@ -43,6 +43,9 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.11"]
+    
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta:${{ github.workspace }}/dictsqlite_v2/dictsqlite/python
 
     steps:
     - name: Checkout repository
@@ -76,8 +79,8 @@ jobs:
         if [ -f "others/beta-versions/dictsqlite-fastest/beta/requirements.txt" ]; then
           pip install -r others/beta-versions/dictsqlite-fastest/beta/requirements.txt
         fi
-        # dictsqlite_v2 の依存関係をインストール
-        pip install msgpack maturin
+        # dictsqlite_v2 の依存関係をインストール (maturin は次のステップでインストール)
+        pip install msgpack
 
     - name: Set up Rust
       uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -168,7 +171,6 @@ jobs:
           fi
         fi
       env:
-        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta:${{ github.workspace }}/dictsqlite_v2/dictsqlite/python
         BETA_VERSION: ${{ github.event.inputs.beta_version }}
       continue-on-error: false
 
@@ -179,8 +181,6 @@ jobs:
         cd others/benchmark
         echo "📊 バージョン間比較を生成中..."
         python compare_versions.py || echo "⚠️ バージョン比較の生成に失敗しました（初回実行の場合は正常）"
-      env:
-        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta:${{ github.workspace }}/dictsqlite_v2/dictsqlite/python
       continue-on-error: true
 
     - name: List benchmark results
