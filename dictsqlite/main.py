@@ -534,17 +534,52 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                 return default
 
         def __repr__(self):
-            return f"{dict(self)}"
+            return f"{dict(self.items())}"
 
         def __iter__(self):
+            """辞書と同様に、キーのみをイテレートする。"""
+            for row in self.get_all_rows():
+                yield row[0]
+
+        def __len__(self):
+            """テーブル内のエントリ数を返す。"""
+            result_queue = queue.Queue()
+            self.db.operation_queue.put((
+                self.db._fetchone,  # pylint: disable=protected-access
+                (f"SELECT COUNT(*) FROM {self.db._quote_ident(self.table_name)}",),
+                {}, result_queue
+            ))
+            result = result_queue.get()
+            if isinstance(result, Exception):
+                raise result
+            return result[0] if result else 0
+
+        def __eq__(self, other):
+            """辞書との等価比較をサポート。"""
+            if isinstance(other, dict):
+                return dict(self.items()) == other
+            if isinstance(other, DictSQLite.TableProxy):
+                return dict(self.items()) == dict(other.items())
+            return NotImplemented
+
+        def keys(self):
+            """テーブル内の全キー一覧を返す。"""
+            return list(self)
+
+        def values(self):
+            """テーブル内の全値一覧を返す。"""
+            return [self[key] for key in self]
+
+        def items(self):
+            """テーブル内の全(key, value)ペアを返す。"""
+            result = []
             for row in self.get_all_rows():
                 key = row[0]
                 try:
-                    # __getitem__ を経由して正しいプロキシオブジェクトを取得
-                    yield key, self[key]
+                    result.append((key, self[key]))
                 except (KeyError, json.JSONDecodeError):
-                    # デコードできない値はそのまま返す
-                    yield key, row[1]
+                    result.append((key, row[1]))
+            return result
 
         def get_all_rows(self):
             """テーブル内の全行を (key, value) のタプルで返す。"""
@@ -789,6 +824,17 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             raise result
         return result is not None
 
+    def __eq__(self, other):
+        """辞書との等価比較をサポート。"""
+        if isinstance(other, dict):
+            proxy = self.TableProxy(self, self.table_name)
+            return dict(proxy.items()) == other
+        if isinstance(other, DictSQLite):
+            proxy1 = self.TableProxy(self, self.table_name)
+            proxy2 = other.TableProxy(other, other.table_name)
+            return dict(proxy1.items()) == dict(proxy2.items())
+        return NotImplemented
+
     def __repr__(self):
         if self.version == 2:
             result = {}
@@ -893,6 +939,24 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         if isinstance(result, Exception):
             raise result
         return [row[0] for row in result]
+
+    def table(self, table_name):
+        """指定したテーブルのTableProxyを返す。テーブルが存在しない場合は作成する。
+
+        Args:
+            table_name: テーブル名
+
+        Returns:
+            TableProxy: 指定したテーブルへのプロキシオブジェクト
+        """
+        # テーブルが存在しない場合は作成
+        if table_name not in self.tables():
+            original_table = self.table_name
+            self.create_table(table_name=table_name)
+            self.operation_queue.join()
+            # 元のテーブル名を復元
+            self.table_name = original_table
+        return self.TableProxy(self, table_name)
 
     def clear_table(self, table_name=None):
         """指定テーブル（未指定なら現行）の全データを削除。"""
