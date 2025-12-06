@@ -56,6 +56,7 @@ dictsqlite-fastest Beta v2が速い理由:
 1. **dictsqlite_v2のインストール確認**
    ```bash
    python -c "import dictsqlite; print(dictsqlite.__version__)"
+   # Note: dictsqlite_v2パッケージは内部的にDictSQLiteV4クラスを使用
    python -c "from dictsqlite import DictSQLiteV4; print('OK')"
    ```
 
@@ -175,4 +176,15 @@ impl ConnectionPool {
 
 ---
 
-詳細な分析は `BENCHMARK_ANALYSIS_DICTSQLITE_V2_VS_FASTEST.md` を参照してください。
+## 注意事項
+
+**クラス名について**: dictsqlite_v2パッケージ（バージョン2.0.6）は内部的に`DictSQLiteV4`というクラス名を使用しています。
+これは実装アーキテクチャのバージョン（v4.2）を示しており、パッケージのバージョン番号とは異なります。
+
+---
+
+**詳細な分析**: `BENCHMARK_ANALYSIS_DICTSQLITE_V2_VS_FASTEST.md` を参照してください。
+
+**作成日**: 2025-12-06  
+**分析対象**: GitHub Actions benchmark.yml workflow
+

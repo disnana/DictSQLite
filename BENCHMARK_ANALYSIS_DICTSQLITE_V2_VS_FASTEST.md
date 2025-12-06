@@ -63,11 +63,12 @@ beta,Basic Read (300 items),0.0,0.0,成功
 ```
 
 **技術スタック**:
-- **Rust**: 高性能なシステムプログラミング言語
-- **pyo3**: Python-Rustバインディング
-- **rusqlite**: RustのSQLiteバインディング
-- **DashMap**: Lock-free concurrent HashMap（Hot tier）
-- **LRU cache**: 自動メモリ管理
+- **Rust**: 高性能なシステムプログラミング言語（Edition 2021）
+- **pyo3 0.24.1**: Python-Rustバインディング（abi3-py39サポート）
+- **rusqlite 0.31**: RustのSQLiteバインディング（bundled SQLite）
+- **DashMap 5.5**: Lock-free concurrent HashMap（Hot tier）
+- **LRU 0.12**: 自動メモリ管理用のLRUキャッシュ実装
+- **Tokio 1.35**: 非同期ランタイム
 - **WAL mode**: 高速書き込み
 
 **最適化レベル**:
@@ -252,9 +253,30 @@ dictsqlite_v2が正しくインストールされていない可能性があり�
 #### 推奨2: Connection Poolの実装
 ```rust
 // 新しいモジュール: src/connection_pool.rs
+use rusqlite::Connection;
+use std::sync::{Arc, Mutex};
+
 pub struct ConnectionPool {
     pool: Vec<Arc<Mutex<Connection>>>,
     max_size: usize,
+}
+
+impl ConnectionPool {
+    pub fn new(db_path: &str, max_size: usize) -> Result<Self, rusqlite::Error> {
+        // コネクションプールを初期化
+        let mut pool = Vec::with_capacity(max_size);
+        for _ in 0..max_size {
+            let conn = Connection::open(db_path)?;
+            pool.push(Arc::new(Mutex::new(conn)));
+        }
+        Ok(Self { pool, max_size })
+    }
+    
+    pub fn get_connection(&self) -> Arc<Mutex<Connection>> {
+        // ラウンドロビンまたは最小負荷接続を返す
+        // 実装は簡略化のため省略
+        self.pool[0].clone()
+    }
 }
 ```
 
@@ -292,10 +314,15 @@ python -c "from dictsqlite import DictSQLiteV4; print('OK')"
 #### 問題2: benchmark_all_versions.pyの同期実装
 ```python
 # Line 459-503: Sync implementation for dictsqlite_v2
+# Note: dictsqlite_v2のモジュールはDictSQLiteV4としてエクスポートされている
 db = DictSQLiteV2_Sync(db_path)  # ← 正しく初期化されているか確認
+# 実際のクラス名: from dictsqlite import DictSQLiteV4
 ```
 
 **推奨**: デバッグログを追加してdictsqlite_v2が実際にロードされているか確認
+
+**補足**: dictsqlite_v2パッケージは内部的に`DictSQLiteV4`というクラス名を使用していますが、
+これは実装バージョン（v4.2アーキテクチャ）を示しており、パッケージバージョン（2.0.6）とは異なります。
 
 ### 5.3 長期的な改善
 
