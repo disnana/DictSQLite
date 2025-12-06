@@ -1070,11 +1070,11 @@ impl DictSQLiteV4 {
             value
         };
 
-        // v4.2.1最適化: WriteThroughモードでない場合、dataをmoveしてクローンを避ける
+        // v4.2.2最適化: WriteThroughモードでない場合、dataをmoveしてクローンを避ける
         let needs_clone = self.config.persist_mode == PersistMode::WriteThrough;
         
         // Hot tierに挿入（ロックフリー書き込み）
-        // 既存のエントリがある場合は新しい値で上書き
+        // key.clone()を最小化: insertは1回だけクローン
         let (is_new_key, data_for_buffer) = if needs_clone {
             let cloned = data.clone();
             let is_new = self.hot_tier.insert(key.clone(), data).is_none();
@@ -1084,21 +1084,23 @@ impl DictSQLiteV4 {
             (is_new, None)
         };
 
-        // v4.2.1最適化: LRUアクセス追跡の条件付き更新（パフォーマンス向上）
-        // キャパシティの90%以下の場合、LRU追跡をスキップ（エビクション不要なため）
-        // これにより書き込みパフォーマンスが大幅に向上
+        // v4.2.2最適化: LRUアクセス追跡の条件付き更新（パフォーマンス向上）
+        // Memory/Lazyモードでは大容量を前提としているため、LRU追跡を完全にスキップ
+        // WriteThroughモードまたはキャパシティ超過時のみLRU追跡を有効化
         let current_size = self.hot_tier.len();
-        let tracking_threshold = (self.config.hot_tier_capacity * 9) / 10; // 90%
+        let needs_lru = self.config.persist_mode == PersistMode::WriteThrough 
+            || current_size > self.config.hot_tier_capacity;
         
-        if is_new_key && current_size > tracking_threshold {
+        if is_new_key && needs_lru {
             self.access_tracker.lock().unwrap().put(key.clone(), ());
         }
 
-        // v4.2最適化: WriteThroughモードでは書き込みバッファを使用
+        // v4.2.2最適化: WriteThroughモードでは書き込みバッファを使用
+        // key移動を最小化
         if self.config.persist_mode == PersistMode::WriteThrough {
             let should_flush = {
                 let mut buffer = self.write_buffer.lock().unwrap();
-                buffer.push((key.clone(), data_for_buffer.unwrap()));
+                buffer.push((key, data_for_buffer.unwrap()));
                 // バッファサイズに達したらフラッシュ
                 // buffer_size=1の場合は即時フラッシュ
                 buffer.len() >= self.buffer_size
