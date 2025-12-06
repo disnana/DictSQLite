@@ -308,6 +308,9 @@ impl StorageEngine {
     /// Warm tierのデータをSQLiteに書き込み、メモリを解放します。
     /// シャットダウン時やメモリ逼迫時に呼び出されます。
     ///
+    /// # v4.2.1最適化
+    /// bulk_insert()を使用して高速化
+    ///
     /// # 戻り値
     /// - `Ok(usize)`: 退避したアイテム数
     /// - `Err(...)`: SQLiteエラー
@@ -321,16 +324,9 @@ impl StorageEngine {
 
         let count = items.len();
 
-        // 全アイテムをCold tierに書き込み
+        // v4.2.1最適化: bulk_insert()で一括書き込み（単一トランザクション）
         if !items.is_empty() {
-            let conn = self.cold_pool.get()?;
-            for (key, value) in items.iter() {
-                conn.execute(
-                    "INSERT OR REPLACE INTO kv_store (key, value, tier, last_access) 
-                     VALUES (?1, ?2, 2, strftime('%s', 'now'))",
-                    params![key, value],
-                )?;
-            }
+            self.bulk_insert(&items)?;
         }
 
         Ok(count)
