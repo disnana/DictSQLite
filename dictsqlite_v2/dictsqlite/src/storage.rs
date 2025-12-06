@@ -396,10 +396,12 @@ impl StorageEngine {
         let warm = self.warm_cache.lock().unwrap();
         let warm_size: usize = warm.values().map(|v| v.len()).sum();
 
-        let conn = self.cold_pool.get().unwrap();
-        let cold_tier_entries = conn
-            .query_row("SELECT COUNT(*) FROM kv_store", [], |row| row.get(0))
-            .unwrap_or(0);
+        let cold_tier_entries = if let Ok(conn) = self.cold_pool.get() {
+            conn.query_row("SELECT COUNT(*) FROM kv_store", [], |row| row.get(0))
+                .unwrap_or(0)
+        } else {
+            0
+        };
 
         StorageStats {
             warm_tier_entries: warm.len(),
