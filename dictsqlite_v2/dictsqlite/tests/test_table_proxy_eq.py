@@ -214,6 +214,86 @@ def test_issue_reproduction():
         print("✅ Issue reproduction test passed")
 
 
+def test_async_table_proxy_eq_with_dict():
+    """Test AsyncTableProxy equality comparison with dict"""
+    try:
+        from dictsqlite import AsyncDictSQLite
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_async_eq.db")
+        
+        db = AsyncDictSQLite(db_path, storage_mode="pickle")
+        
+        # Create async table proxy
+        table = db.table("test_table")
+        table["key1"] = "value1"
+        
+        # Test equality with matching dict
+        assert table == {"key1": "value1"}
+        
+        # Test inequality with non-matching dict
+        assert not (table == {"key1": "value2"})
+        assert not (table == {"key2": "value1"})
+        
+        db.close()
+        print("✅ AsyncTableProxy __eq__ with dict test passed")
+
+
+def test_async_table_proxy_eq_with_empty_dict():
+    """Test AsyncTableProxy equality comparison with empty dict"""
+    try:
+        from dictsqlite import AsyncDictSQLite
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_async_eq_empty.db")
+        
+        db = AsyncDictSQLite(db_path, storage_mode="pickle")
+        
+        # Create empty async table proxy
+        empty_table = db.table("empty")
+        
+        # Empty table should equal empty dict
+        assert empty_table == {}
+        
+        # Empty table should not equal non-empty dict
+        assert not (empty_table == {"key": "value"})
+        
+        db.close()
+        print("✅ AsyncTableProxy __eq__ with empty dict test passed")
+
+
+def test_async_table_proxy_eq_multiple_items():
+    """Test AsyncTableProxy equality comparison with multiple items"""
+    try:
+        from dictsqlite import AsyncDictSQLite
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_async_eq_multiple.db")
+        
+        db = AsyncDictSQLite(db_path, storage_mode="pickle")
+        
+        # Create table with multiple items
+        table = db.table("multi")
+        table["key1"] = "value1"
+        table["key2"] = "value2"
+        table["key3"] = "value3"
+        
+        # Test equality with matching dict
+        assert table == {"key1": "value1", "key2": "value2", "key3": "value3"}
+        
+        # Test inequality with missing key
+        assert not (table == {"key1": "value1", "key2": "value2"})
+        
+        db.close()
+        print("✅ AsyncTableProxy __eq__ with multiple items test passed")
+
+
 if __name__ == "__main__":
     print("Running TableProxy __eq__ tests...")
     
@@ -225,6 +305,9 @@ if __name__ == "__main__":
         test_table_proxy_eq_with_another_table()
         test_table_proxy_eq_jsonb_mode()
         test_issue_reproduction()
+        test_async_table_proxy_eq_with_dict()
+        test_async_table_proxy_eq_with_empty_dict()
+        test_async_table_proxy_eq_multiple_items()
         print("\n✅ All tests passed!")
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
