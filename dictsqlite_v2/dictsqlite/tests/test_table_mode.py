@@ -882,6 +882,321 @@ def test_mode_backward_compatibility():
         print("✅ Backward compatibility test passed")
 
 
+# =============================================================================
+# Comprehensive dict operation tests for TableProxy
+# =============================================================================
+
+def test_table_proxy_get_method():
+    """Test TableProxy.get() method with default values"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    for table_mode in ["prefix", "separate"]:
+        with windows_safe_temp_dir() as tmpdir:
+            db_path = os.path.join(tmpdir, f"test_get_{table_mode}.db")
+            db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode=table_mode)
+            users = db.table("users")
+            
+            # Test .get() with existing key
+            users["alice"] = {"name": "Alice", "age": 30}
+            result = users.get("alice")
+            assert result["name"] == "Alice"
+            assert result["age"] == 30
+            
+            # Test .get() with non-existing key (returns None)
+            result = users.get("nonexistent")
+            assert result is None
+            
+            # Test .get() with default value
+            result = users.get("nonexistent", {"default": True})
+            assert result["default"] == True
+            
+            db.close()
+    print("✅ TableProxy.get() test passed")
+
+
+def test_table_proxy_pop_method():
+    """Test TableProxy.pop() method"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    for table_mode in ["prefix", "separate"]:
+        with windows_safe_temp_dir() as tmpdir:
+            db_path = os.path.join(tmpdir, f"test_pop_{table_mode}.db")
+            db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode=table_mode)
+            users = db.table("users")
+            
+            # Add data
+            users["alice"] = {"name": "Alice"}
+            users["bob"] = {"name": "Bob"}
+            assert len(users) == 2
+            
+            # Test .pop() with existing key
+            result = users.pop("alice")
+            assert result["name"] == "Alice"
+            assert "alice" not in users
+            assert len(users) == 1
+            
+            # Test .pop() with non-existing key and default
+            result = users.pop("nonexistent", {"default": True})
+            assert result["default"] == True
+            
+            # Test .pop() with non-existing key and no default (raises KeyError)
+            with pytest.raises(KeyError):
+                users.pop("nonexistent")
+            
+            db.close()
+    print("✅ TableProxy.pop() test passed")
+
+
+def test_table_proxy_setdefault_method():
+    """Test TableProxy.setdefault() method"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    for table_mode in ["prefix", "separate"]:
+        with windows_safe_temp_dir() as tmpdir:
+            db_path = os.path.join(tmpdir, f"test_setdefault_{table_mode}.db")
+            db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode=table_mode)
+            users = db.table("users")
+            
+            # Test .setdefault() with non-existing key
+            result = users.setdefault("alice", {"name": "Alice", "age": 30})
+            assert result["name"] == "Alice"
+            assert "alice" in users
+            assert users["alice"]["age"] == 30
+            
+            # Test .setdefault() with existing key (should not change)
+            result = users.setdefault("alice", {"name": "New Name", "age": 99})
+            assert result["name"] == "Alice"  # Original value
+            assert result["age"] == 30  # Original value
+            
+            # Test .setdefault() with None default
+            result = users.setdefault("bob")
+            assert result is None
+            assert "bob" in users
+            
+            db.close()
+    print("✅ TableProxy.setdefault() test passed")
+
+
+def test_table_proxy_update_method():
+    """Test TableProxy.update() method"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    for table_mode in ["prefix", "separate"]:
+        with windows_safe_temp_dir() as tmpdir:
+            db_path = os.path.join(tmpdir, f"test_update_{table_mode}.db")
+            db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode=table_mode)
+            users = db.table("users")
+            
+            # Test .update() with dict
+            users.update({
+                "alice": {"name": "Alice", "age": 30},
+                "bob": {"name": "Bob", "age": 25}
+            })
+            
+            assert len(users) == 2
+            assert users["alice"]["name"] == "Alice"
+            assert users["bob"]["age"] == 25
+            
+            # Test .update() overwrites existing keys
+            users.update({"alice": {"name": "Alice Updated", "age": 31}})
+            assert users["alice"]["name"] == "Alice Updated"
+            assert users["alice"]["age"] == 31
+            
+            db.close()
+    print("✅ TableProxy.update() test passed")
+
+
+def test_table_proxy_iter_method():
+    """Test TableProxy iteration (for key in table)"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    for table_mode in ["prefix", "separate"]:
+        with windows_safe_temp_dir() as tmpdir:
+            db_path = os.path.join(tmpdir, f"test_iter_{table_mode}.db")
+            db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode=table_mode)
+            users = db.table("users")
+            
+            # Add data
+            users["alice"] = {"name": "Alice"}
+            users["bob"] = {"name": "Bob"}
+            users["charlie"] = {"name": "Charlie"}
+            
+            # Test iteration
+            keys = []
+            for key in users:
+                keys.append(key)
+            
+            assert len(keys) == 3
+            assert "alice" in keys
+            assert "bob" in keys
+            assert "charlie" in keys
+            
+            # Test list() on table
+            key_list = list(users)
+            assert len(key_list) == 3
+            
+            db.close()
+    print("✅ TableProxy iteration test passed")
+
+
+def test_table_proxy_delitem():
+    """Test TableProxy del table[key]"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    for table_mode in ["prefix", "separate"]:
+        with windows_safe_temp_dir() as tmpdir:
+            db_path = os.path.join(tmpdir, f"test_delitem_{table_mode}.db")
+            db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode=table_mode)
+            users = db.table("users")
+            
+            # Add data
+            users["alice"] = {"name": "Alice"}
+            users["bob"] = {"name": "Bob"}
+            assert len(users) == 2
+            
+            # Delete
+            del users["alice"]
+            assert "alice" not in users
+            assert len(users) == 1
+            
+            # Delete non-existing key should not raise error (behavior may vary)
+            # Just verify bob is still there
+            assert "bob" in users
+            
+            db.close()
+    print("✅ TableProxy del test passed")
+
+
+def test_async_table_proxy_all_dict_ops():
+    """Test AsyncTableProxy with all dict operations"""
+    try:
+        from dictsqlite import AsyncDictSQLite
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    for table_mode in ["prefix", "separate"]:
+        with windows_safe_temp_dir() as tmpdir:
+            db_path = os.path.join(tmpdir, f"test_async_all_{table_mode}.db")
+            db = AsyncDictSQLite(db_path, storage_mode="jsonb", table_mode=table_mode)
+            users = db.table("users")
+            
+            # Test __setitem__ and __getitem__
+            users["alice"] = {"name": "Alice", "age": 30}
+            assert users["alice"]["name"] == "Alice"
+            
+            # Test __contains__
+            assert "alice" in users
+            assert "nonexistent" not in users
+            
+            # Test __len__
+            users["bob"] = {"name": "Bob"}
+            assert len(users) == 2
+            
+            # Test keys()
+            keys = users.keys()
+            assert "alice" in keys
+            assert "bob" in keys
+            
+            # Test values()
+            values = users.values()
+            assert len(values) == 2
+            
+            # Test items()
+            items = users.items()
+            assert len(items) == 2
+            
+            # Test get()
+            assert users.get("alice")["name"] == "Alice"
+            assert users.get("nonexistent") is None
+            assert users.get("nonexistent", {"default": True})["default"] == True
+            
+            # Test pop()
+            result = users.pop("bob")
+            assert result["name"] == "Bob"
+            assert "bob" not in users
+            
+            # Test setdefault()
+            result = users.setdefault("charlie", {"name": "Charlie"})
+            assert result["name"] == "Charlie"
+            assert "charlie" in users
+            
+            # Test update()
+            users.update({"dave": {"name": "Dave"}})
+            assert users["dave"]["name"] == "Dave"
+            
+            # Test iteration
+            keys = list(users)
+            assert "alice" in keys
+            assert "charlie" in keys
+            assert "dave" in keys
+            
+            # Test __delitem__
+            del users["dave"]
+            assert "dave" not in users
+            
+            # Test clear()
+            users.clear()
+            assert len(users) == 0
+            
+            db.close()
+    print("✅ AsyncTableProxy all dict ops test passed")
+
+
+def test_table_proxy_bytes_mode():
+    """Test TableProxy dict operations with bytes storage mode"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    for table_mode in ["prefix", "separate"]:
+        with windows_safe_temp_dir() as tmpdir:
+            db_path = os.path.join(tmpdir, f"test_bytes_{table_mode}.db")
+            db = DictSQLiteV4(db_path, storage_mode="bytes", table_mode=table_mode)
+            data = db.table("data")
+            
+            # Test with bytes
+            data["key1"] = b"value1"
+            data["key2"] = b"value2"
+            
+            assert data["key1"] == b"value1"
+            assert data.get("key1") == b"value1"
+            assert data.get("nonexistent") is None
+            
+            result = data.pop("key1")
+            assert result == b"value1"
+            
+            data.setdefault("key3", b"value3")
+            assert data["key3"] == b"value3"
+            
+            data.update({"key4": b"value4", "key5": b"value5"})
+            assert len(data) == 4
+            
+            keys = list(data)
+            assert len(keys) == 4
+            
+            db.close()
+    print("✅ TableProxy bytes mode test passed")
+
+
 if __name__ == "__main__":
     print("Running table_mode tests...")
     
@@ -914,6 +1229,15 @@ if __name__ == "__main__":
         test_separate_mode_table_items_values()
         test_prefix_mode_default_behavior()
         test_mode_backward_compatibility()
+        # New comprehensive dict operation tests
+        test_table_proxy_get_method()
+        test_table_proxy_pop_method()
+        test_table_proxy_setdefault_method()
+        test_table_proxy_update_method()
+        test_table_proxy_iter_method()
+        test_table_proxy_delitem()
+        test_async_table_proxy_all_dict_ops()
+        test_table_proxy_bytes_mode()
         print("\n✅ All tests passed!")
     except Exception as e:
         print(f"\n❌ Test failed: {e}")

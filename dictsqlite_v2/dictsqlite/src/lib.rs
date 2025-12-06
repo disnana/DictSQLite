@@ -75,7 +75,8 @@ mod tests_storage;
 // 公開APIのエクスポート
 // AsyncDictSQLite: 非同期版のDictSQLite（高並行シナリオ向け）
 // AsyncTableProxy: 非同期テーブルプロキシ
-pub use async_ops::{AsyncDictSQLite, AsyncTableProxy};
+// AsyncTableProxyIterator: 非同期テーブルプロキシのイテレータ
+pub use async_ops::{AsyncDictSQLite, AsyncTableProxy, AsyncTableProxyIterator};
 // HybridCache: LRUエビクション付きの高性能キャッシュ
 pub use cache::HybridCache;
 // CryptoEngine: AES-256-GCM暗号化エンジン
@@ -2069,6 +2070,54 @@ impl TableProxy {
         }
     }
 
+    /// Pop: Remove key and return value (dict.pop())
+    #[pyo3(signature = (key, default=None))]
+    fn pop(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+        match self.__getitem__(key.clone(), py) {
+            Ok(value) => {
+                self.__delitem__(key, py)?;
+                Ok(value)
+            }
+            Err(_) => {
+                match default {
+                    Some(d) => Ok(d),
+                    None => Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                        "Key not found: {}",
+                        key
+                    ))),
+                }
+            }
+        }
+    }
+
+    /// Setdefault: Set key if not exists, return value (dict.setdefault())
+    #[pyo3(signature = (key, default=None))]
+    fn setdefault(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+        match self.__getitem__(key.clone(), py) {
+            Ok(value) => Ok(value),
+            Err(_) => {
+                let value = default.unwrap_or_else(|| py.None());
+                self.__setitem__(key.clone(), value.clone_ref(py), py)?;
+                Ok(value)
+            }
+        }
+    }
+
+    /// Update: Update with dict items (dict.update())
+    fn update(&self, other: &Bound<'_, PyDict>, py: Python) -> PyResult<()> {
+        for (key, value) in other.iter() {
+            let key_str: String = key.extract()?;
+            self.__setitem__(key_str, value.into(), py)?;
+        }
+        Ok(())
+    }
+
+    /// Iterator support: for key in table
+    fn __iter__(slf: PyRef<Self>, py: Python) -> PyResult<Py<TableProxyIterator>> {
+        let keys = slf.keys(py)?;
+        Py::new(py, TableProxyIterator { keys, index: 0 })
+    }
+
     /// Clear all items in this table
     fn clear(&self, py: Python) -> PyResult<()> {
         let db = self.db.borrow(py);
@@ -2147,12 +2196,38 @@ impl TableProxy {
     }
 }
 
+/// Iterator for TableProxy keys
+#[pyclass]
+pub struct TableProxyIterator {
+    keys: Vec<String>,
+    index: usize,
+}
+
+#[pymethods]
+impl TableProxyIterator {
+    fn __iter__(slf: PyRef<Self>) -> PyRef<Self> {
+        slf
+    }
+
+    fn __next__(mut slf: PyRefMut<Self>) -> Option<String> {
+        if slf.index < slf.keys.len() {
+            let key = slf.keys[slf.index].clone();
+            slf.index += 1;
+            Some(key)
+        } else {
+            None
+        }
+    }
+}
+
 /// Python module definition
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<DictSQLiteV4>()?;
     m.add_class::<AsyncDictSQLite>()?;
     m.add_class::<TableProxy>()?;
+    m.add_class::<TableProxyIterator>()?;
     m.add_class::<AsyncTableProxy>()?;
+    m.add_class::<AsyncTableProxyIterator>()?;
     Ok(())
 }

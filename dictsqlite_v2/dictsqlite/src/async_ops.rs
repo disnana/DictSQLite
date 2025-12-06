@@ -1,6 +1,6 @@
 use dashmap::DashMap;
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
+use pyo3::types::{PyBytes, PyDict};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -1055,6 +1055,150 @@ impl AsyncTableProxy {
         Ok(items)
     }
 
+    /// Get all values in this table
+    fn values(&self, py: Python) -> PyResult<Vec<PyObject>> {
+        let keys = self.keys(py)?;
+        let mut values = Vec::new();
+        for key in keys {
+            values.push(self.__getitem__(key, py)?);
+        }
+        Ok(values)
+    }
+
+    /// Get value with default
+    #[pyo3(signature = (key, default=None))]
+    fn get(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+        match self.__getitem__(key, py) {
+            Ok(value) => Ok(value),
+            Err(_) => Ok(default.unwrap_or_else(|| py.None())),
+        }
+    }
+
+    /// Dict-like access: del table[key]
+    fn __delitem__(&self, key: String, py: Python) -> PyResult<()> {
+        let db = self.db.borrow(py);
+        
+        match db.config.table_mode {
+            TableMode::Prefix => {
+                let full_key = format!("{}:{}", self.table_name, key);
+                // Remove from cache
+                db.cache.remove(&full_key);
+                // Remove from storage
+                if db.config.persist_mode != PersistMode::Memory {
+                    let mut storage_guard = db.storage.lock().unwrap();
+                    if let Some(ref mut storage) = *storage_guard {
+                        let _ = storage.delete(&full_key);
+                    }
+                }
+                Ok(())
+            }
+            TableMode::Separate => {
+                let cache_key = format!("{}:{}", self.table_name, key);
+                
+                // Remove from cache
+                db.cache.remove(&cache_key);
+
+                // Remove from storage
+                if db.config.persist_mode != PersistMode::Memory {
+                    let mut storage_guard = db.storage.lock().unwrap();
+                    if let Some(ref mut storage) = *storage_guard {
+                        let _ = storage.delete_with_table(&self.table_name, &key);
+                    }
+                }
+
+                Ok(())
+            }
+        }
+    }
+
+    /// Pop: Remove key and return value (dict.pop())
+    #[pyo3(signature = (key, default=None))]
+    fn pop(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+        match self.__getitem__(key.clone(), py) {
+            Ok(value) => {
+                self.__delitem__(key, py)?;
+                Ok(value)
+            }
+            Err(_) => {
+                match default {
+                    Some(d) => Ok(d),
+                    None => Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                        "Key not found: {}",
+                        key
+                    ))),
+                }
+            }
+        }
+    }
+
+    /// Setdefault: Set key if not exists, return value (dict.setdefault())
+    #[pyo3(signature = (key, default=None))]
+    fn setdefault(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+        match self.__getitem__(key.clone(), py) {
+            Ok(value) => Ok(value),
+            Err(_) => {
+                let value = default.unwrap_or_else(|| py.None());
+                self.__setitem__(key.clone(), value.clone_ref(py), py)?;
+                Ok(value)
+            }
+        }
+    }
+
+    /// Update: Update with dict items (dict.update())
+    fn update(&self, other: &Bound<'_, PyDict>, py: Python) -> PyResult<()> {
+        for (key, value) in other.iter() {
+            let key_str: String = key.extract()?;
+            self.__setitem__(key_str, value.into(), py)?;
+        }
+        Ok(())
+    }
+
+    /// Iterator support: for key in table
+    fn __iter__(slf: PyRef<Self>, py: Python) -> PyResult<Py<AsyncTableProxyIterator>> {
+        let keys = slf.keys(py)?;
+        Py::new(py, AsyncTableProxyIterator { keys, index: 0 })
+    }
+
+    /// Clear all items in this table
+    fn clear(&self, py: Python) -> PyResult<()> {
+        let db = self.db.borrow(py);
+        
+        match db.config.table_mode {
+            TableMode::Prefix => {
+                let keys = self.keys(py)?;
+                for key in keys {
+                    self.__delitem__(key, py)?;
+                }
+                Ok(())
+            }
+            TableMode::Separate => {
+                // Clear cache entries for this table
+                let prefix = format!("{}:", self.table_name);
+                let keys_to_remove: Vec<String> = db
+                    .cache
+                    .iter()
+                    .filter(|entry| entry.key().starts_with(&prefix))
+                    .map(|entry| entry.key().clone())
+                    .collect();
+                
+                for key in keys_to_remove {
+                    db.cache.remove(&key);
+                }
+
+                // Clear storage table
+                if db.config.persist_mode != PersistMode::Memory {
+                    let mut storage_guard = db.storage.lock().unwrap();
+                    if let Some(ref mut storage) = *storage_guard {
+                        storage.clear_table(&self.table_name)
+                            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+                    }
+                }
+
+                Ok(())
+            }
+        }
+    }
+
     /// Get number of items in this table
     fn __len__(&self, py: Python) -> PyResult<usize> {
         Ok(self.keys(py)?.len())
@@ -1089,5 +1233,29 @@ impl AsyncTableProxy {
     /// String representation for str()
     fn __str__(&self, py: Python) -> PyResult<String> {
         self.__repr__(py)
+    }
+}
+
+/// Iterator for AsyncTableProxy keys
+#[pyclass]
+pub struct AsyncTableProxyIterator {
+    keys: Vec<String>,
+    index: usize,
+}
+
+#[pymethods]
+impl AsyncTableProxyIterator {
+    fn __iter__(slf: PyRef<Self>) -> PyRef<Self> {
+        slf
+    }
+
+    fn __next__(mut slf: PyRefMut<Self>) -> Option<String> {
+        if slf.index < slf.keys.len() {
+            let key = slf.keys[slf.index].clone();
+            slf.index += 1;
+            Some(key)
+        } else {
+            None
+        }
     }
 }
