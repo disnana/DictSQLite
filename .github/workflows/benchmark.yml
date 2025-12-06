@@ -142,10 +142,28 @@ jobs:
     - name: Install Rust extensions
       run: |
         echo "📦 Installing Rust v4.1 extension..."
+        # Verify exactly one wheel file exists
+        WHEEL_COUNT=$(ls -1 ./wheels/v4.1/dictsqlite_v4-*.whl 2>/dev/null | wc -l)
+        if [ "$WHEEL_COUNT" -eq 0 ]; then
+          echo "❌ Error: No v4.1 wheel file found"
+          exit 1
+        elif [ "$WHEEL_COUNT" -gt 1 ]; then
+          echo "⚠️ Warning: Multiple v4.1 wheel files found, using first one"
+          ls -1 ./wheels/v4.1/dictsqlite_v4-*.whl
+        fi
         pip install --force-reinstall ./wheels/v4.1/dictsqlite_v4-*.whl
         echo "✅ Rust v4.1 extension installed"
         
         echo "📦 Installing dictsqlite_v2 extension..."
+        # Verify exactly one wheel file exists
+        WHEEL_COUNT=$(ls -1 ./wheels/v2/dictsqlite-*.whl 2>/dev/null | wc -l)
+        if [ "$WHEEL_COUNT" -eq 0 ]; then
+          echo "❌ Error: No v2 wheel file found"
+          exit 1
+        elif [ "$WHEEL_COUNT" -gt 1 ]; then
+          echo "⚠️ Warning: Multiple v2 wheel files found, using first one"
+          ls -1 ./wheels/v2/dictsqlite-*.whl
+        fi
         pip install --force-reinstall ./wheels/v2/dictsqlite-*.whl
         echo "✅ dictsqlite_v2 extension installed"
 
