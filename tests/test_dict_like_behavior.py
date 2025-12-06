@@ -230,9 +230,9 @@ class TestMultipleTablesScenario:
 
             assert table2['tkey2'] == 'tvalue2'
 
-            # keys()メソッドのテスト
-            assert table1.keys() == ['tkey1']
-            assert table2.keys() == ['tkey2']
+            # keys()メソッドのテスト（順序は保証されないのでsetで比較）
+            assert set(table1.keys()) == {'tkey1'}
+            assert set(table2.keys()) == {'tkey2'}
 
             # 辞書との等価比較テスト
             assert table1 == {"tkey1": 'tvalue1'}
