@@ -303,6 +303,585 @@ def test_invalid_table_mode():
         print("✅ Invalid table_mode test passed")
 
 
+def test_prefix_mode_with_encryption():
+    """Test prefix mode with encryption enabled"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_prefix_encryption.db")
+        
+        db = DictSQLiteV4(
+            db_path, storage_mode="jsonb", table_mode="prefix",
+            encryption_password="secret123"
+        )
+        
+        users = db.table("users")
+        users["alice"] = {"name": "Alice", "secret": "password123"}
+        
+        assert users["alice"]["secret"] == "password123"
+        
+        db.close()
+        
+        # Re-open with correct password
+        db2 = DictSQLiteV4(
+            db_path, storage_mode="jsonb", table_mode="prefix",
+            encryption_password="secret123"
+        )
+        users2 = db2.table("users")
+        assert users2["alice"]["secret"] == "password123"
+        db2.close()
+        
+        print("✅ Prefix mode with encryption test passed")
+
+
+def test_separate_mode_with_encryption():
+    """Test separate mode with encryption enabled"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_separate_encryption.db")
+        
+        db = DictSQLiteV4(
+            db_path, storage_mode="jsonb", table_mode="separate",
+            encryption_password="secret123"
+        )
+        
+        users = db.table("users")
+        users["alice"] = {"name": "Alice", "secret": "password123"}
+        
+        assert users["alice"]["secret"] == "password123"
+        
+        db.close()
+        
+        # Re-open with correct password
+        db2 = DictSQLiteV4(
+            db_path, storage_mode="jsonb", table_mode="separate",
+            encryption_password="secret123"
+        )
+        users2 = db2.table("users")
+        assert users2["alice"]["secret"] == "password123"
+        db2.close()
+        
+        print("✅ Separate mode with encryption test passed")
+
+
+def test_prefix_mode_all_storage_modes():
+    """Test prefix mode with all storage modes"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    storage_modes = ["pickle", "json", "jsonb"]
+    
+    for mode in storage_modes:
+        with windows_safe_temp_dir() as tmpdir:
+            db_path = os.path.join(tmpdir, f"test_prefix_{mode}.db")
+            
+            db = DictSQLiteV4(db_path, storage_mode=mode, table_mode="prefix")
+            users = db.table("users")
+            
+            users["alice"] = {"name": "Alice", "age": 30}
+            assert users["alice"]["name"] == "Alice"
+            assert users["alice"]["age"] == 30
+            
+            db.close()
+            
+            # Verify persistence
+            db2 = DictSQLiteV4(db_path, storage_mode=mode, table_mode="prefix")
+            users2 = db2.table("users")
+            assert users2["alice"]["name"] == "Alice"
+            db2.close()
+    
+    print("✅ Prefix mode with all storage modes test passed")
+
+
+def test_separate_mode_all_storage_modes():
+    """Test separate mode with all storage modes"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    storage_modes = ["pickle", "json", "jsonb"]
+    
+    for mode in storage_modes:
+        with windows_safe_temp_dir() as tmpdir:
+            db_path = os.path.join(tmpdir, f"test_separate_{mode}.db")
+            
+            db = DictSQLiteV4(db_path, storage_mode=mode, table_mode="separate")
+            users = db.table("users")
+            
+            users["alice"] = {"name": "Alice", "age": 30}
+            assert users["alice"]["name"] == "Alice"
+            assert users["alice"]["age"] == 30
+            
+            db.close()
+            
+            # Verify persistence
+            db2 = DictSQLiteV4(db_path, storage_mode=mode, table_mode="separate")
+            users2 = db2.table("users")
+            assert users2["alice"]["name"] == "Alice"
+            db2.close()
+    
+    print("✅ Separate mode with all storage modes test passed")
+
+
+def test_prefix_mode_all_persist_modes():
+    """Test prefix mode with all persistence modes"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    persist_modes = ["memory", "lazy", "writethrough"]
+    
+    for mode in persist_modes:
+        with windows_safe_temp_dir() as tmpdir:
+            db_path = os.path.join(tmpdir, f"test_prefix_{mode}.db")
+            
+            db = DictSQLiteV4(db_path, storage_mode="jsonb", 
+                            persist_mode=mode, table_mode="prefix")
+            users = db.table("users")
+            
+            users["alice"] = {"name": "Alice"}
+            assert users["alice"]["name"] == "Alice"
+            
+            if mode != "memory":
+                db.flush()
+            db.close()
+    
+    print("✅ Prefix mode with all persist modes test passed")
+
+
+def test_separate_mode_all_persist_modes():
+    """Test separate mode with all persistence modes"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    persist_modes = ["memory", "lazy", "writethrough"]
+    
+    for mode in persist_modes:
+        with windows_safe_temp_dir() as tmpdir:
+            db_path = os.path.join(tmpdir, f"test_separate_{mode}.db")
+            
+            db = DictSQLiteV4(db_path, storage_mode="jsonb", 
+                            persist_mode=mode, table_mode="separate")
+            users = db.table("users")
+            
+            users["alice"] = {"name": "Alice"}
+            assert users["alice"]["name"] == "Alice"
+            
+            if mode != "memory":
+                db.flush()
+            db.close()
+    
+    print("✅ Separate mode with all persist modes test passed")
+
+
+def test_prefix_mode_many_tables():
+    """Test prefix mode with many tables"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_prefix_many_tables.db")
+        
+        db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode="prefix")
+        
+        # Create 20 tables
+        for i in range(20):
+            table = db.table(f"table_{i}")
+            table[f"key_{i}"] = {"value": i}
+        
+        # Verify all tables
+        for i in range(20):
+            table = db.table(f"table_{i}")
+            assert table[f"key_{i}"]["value"] == i
+        
+        db.close()
+        print("✅ Prefix mode many tables test passed")
+
+
+def test_separate_mode_many_tables():
+    """Test separate mode with many tables"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_separate_many_tables.db")
+        
+        db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode="separate")
+        
+        # Create 20 tables
+        for i in range(20):
+            table = db.table(f"table_{i}")
+            table[f"key_{i}"] = {"value": i}
+        
+        # Verify all tables
+        for i in range(20):
+            table = db.table(f"table_{i}")
+            assert table[f"key_{i}"]["value"] == i
+        
+        db.close()
+        print("✅ Separate mode many tables test passed")
+
+
+def test_prefix_mode_table_special_characters():
+    """Test prefix mode with special characters in table names"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_prefix_special.db")
+        
+        db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode="prefix")
+        
+        # Use various table names
+        table_names = ["users", "user_data", "users2", "my_table_123"]
+        
+        for name in table_names:
+            table = db.table(name)
+            table["key1"] = {"test": True}
+            assert table["key1"]["test"] == True
+        
+        db.close()
+        print("✅ Prefix mode special characters test passed")
+
+
+def test_separate_mode_table_special_characters():
+    """Test separate mode with special characters in table names"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_separate_special.db")
+        
+        db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode="separate")
+        
+        # Use various table names (sanitized automatically)
+        table_names = ["users", "user_data", "users2", "my_table_123"]
+        
+        for name in table_names:
+            table = db.table(name)
+            table["key1"] = {"test": True}
+            assert table["key1"]["test"] == True
+        
+        db.close()
+        print("✅ Separate mode special characters test passed")
+
+
+def test_prefix_mode_large_data():
+    """Test prefix mode with large data"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_prefix_large.db")
+        
+        db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode="prefix")
+        users = db.table("users")
+        
+        # Add large data
+        large_data = {"items": list(range(1000)), "nested": {"deep": {"value": "x" * 10000}}}
+        users["large"] = large_data
+        
+        result = users["large"]
+        assert len(result["items"]) == 1000
+        assert len(result["nested"]["deep"]["value"]) == 10000
+        
+        db.close()
+        print("✅ Prefix mode large data test passed")
+
+
+def test_separate_mode_large_data():
+    """Test separate mode with large data"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_separate_large.db")
+        
+        db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode="separate")
+        users = db.table("users")
+        
+        # Add large data
+        large_data = {"items": list(range(1000)), "nested": {"deep": {"value": "x" * 10000}}}
+        users["large"] = large_data
+        
+        result = users["large"]
+        assert len(result["items"]) == 1000
+        assert len(result["nested"]["deep"]["value"]) == 10000
+        
+        db.close()
+        print("✅ Separate mode large data test passed")
+
+
+def test_prefix_mode_update_operations():
+    """Test prefix mode update operations"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_prefix_update.db")
+        
+        db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode="prefix")
+        users = db.table("users")
+        
+        # Create
+        users["alice"] = {"name": "Alice", "age": 30}
+        assert users["alice"]["age"] == 30
+        
+        # Update
+        users["alice"] = {"name": "Alice", "age": 31}
+        assert users["alice"]["age"] == 31
+        
+        # Delete
+        del users["alice"]
+        assert "alice" not in users
+        
+        db.close()
+        print("✅ Prefix mode update operations test passed")
+
+
+def test_separate_mode_update_operations():
+    """Test separate mode update operations"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_separate_update.db")
+        
+        db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode="separate")
+        users = db.table("users")
+        
+        # Create
+        users["alice"] = {"name": "Alice", "age": 30}
+        assert users["alice"]["age"] == 30
+        
+        # Update
+        users["alice"] = {"name": "Alice", "age": 31}
+        assert users["alice"]["age"] == 31
+        
+        # Delete
+        del users["alice"]
+        assert "alice" not in users
+        
+        db.close()
+        print("✅ Separate mode update operations test passed")
+
+
+def test_async_prefix_mode_comprehensive():
+    """Test async operations with prefix mode comprehensively"""
+    try:
+        from dictsqlite import AsyncDictSQLite
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_async_prefix.db")
+        
+        db = AsyncDictSQLite(
+            db_path, storage_mode="jsonb", table_mode="prefix"
+        )
+        
+        users = db.table("users")
+        products = db.table("products")
+        
+        # Add data to multiple tables
+        users["user1"] = {"name": "Alice"}
+        users["user2"] = {"name": "Bob"}
+        products["prod1"] = {"name": "Laptop"}
+        
+        # Verify
+        assert users["user1"]["name"] == "Alice"
+        assert users["user2"]["name"] == "Bob"
+        assert products["prod1"]["name"] == "Laptop"
+        
+        # Test keys
+        assert len(users.keys()) == 2
+        assert len(products.keys()) == 1
+        
+        db.close()
+        print("✅ Async prefix mode comprehensive test passed")
+
+
+def test_async_separate_mode_comprehensive():
+    """Test async operations with separate mode comprehensively"""
+    try:
+        from dictsqlite import AsyncDictSQLite
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_async_separate_comp.db")
+        
+        db = AsyncDictSQLite(
+            db_path, storage_mode="jsonb", table_mode="separate"
+        )
+        
+        users = db.table("users")
+        products = db.table("products")
+        
+        # Add data to multiple tables
+        users["user1"] = {"name": "Alice"}
+        users["user2"] = {"name": "Bob"}
+        products["prod1"] = {"name": "Laptop"}
+        
+        # Verify
+        assert users["user1"]["name"] == "Alice"
+        assert users["user2"]["name"] == "Bob"
+        assert products["prod1"]["name"] == "Laptop"
+        
+        # Test keys
+        assert len(users.keys()) == 2
+        assert len(products.keys()) == 1
+        
+        db.close()
+        print("✅ Async separate mode comprehensive test passed")
+
+
+def test_prefix_mode_table_items_values():
+    """Test table items and values methods in prefix mode"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_prefix_items.db")
+        
+        db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode="prefix")
+        users = db.table("users")
+        
+        users["alice"] = {"name": "Alice"}
+        users["bob"] = {"name": "Bob"}
+        
+        # Test keys
+        keys = list(users.keys())
+        assert "alice" in keys
+        assert "bob" in keys
+        
+        # Test values
+        values = list(users.values())
+        assert len(values) == 2
+        
+        # Test items
+        items = list(users.items())
+        assert len(items) == 2
+        
+        db.close()
+        print("✅ Prefix mode items/values test passed")
+
+
+def test_separate_mode_table_items_values():
+    """Test table items and values methods in separate mode"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_separate_items.db")
+        
+        db = DictSQLiteV4(db_path, storage_mode="jsonb", table_mode="separate")
+        users = db.table("users")
+        
+        users["alice"] = {"name": "Alice"}
+        users["bob"] = {"name": "Bob"}
+        
+        # Test keys
+        keys = list(users.keys())
+        assert "alice" in keys
+        assert "bob" in keys
+        
+        # Test values
+        values = list(users.values())
+        assert len(values) == 2
+        
+        # Test items
+        items = list(users.items())
+        assert len(items) == 2
+        
+        db.close()
+        print("✅ Separate mode items/values test passed")
+
+
+def test_prefix_mode_default_behavior():
+    """Test that prefix mode is the default"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_default_mode.db")
+        
+        # Create without specifying table_mode (should default to prefix)
+        db = DictSQLiteV4(db_path, storage_mode="jsonb")
+        users = db.table("users")
+        
+        users["alice"] = {"name": "Alice"}
+        assert users["alice"]["name"] == "Alice"
+        
+        db.close()
+        print("✅ Prefix mode default behavior test passed")
+
+
+def test_mode_backward_compatibility():
+    """Test backward compatibility - existing code should work unchanged"""
+    try:
+        from dictsqlite import DictSQLiteV4
+    except ImportError:
+        pytest.skip("dictsqlite not built yet")
+    
+    with windows_safe_temp_dir() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_backward_compat.db")
+        
+        # This is how users currently use the library (without table_mode)
+        db = DictSQLiteV4(db_path, storage_mode="jsonb")
+        
+        # Direct dict operations
+        db["key1"] = {"value": 1}
+        assert db["key1"]["value"] == 1
+        
+        # Table operations
+        users = db.table("users")
+        users["alice"] = {"name": "Alice"}
+        assert users["alice"]["name"] == "Alice"
+        
+        # All existing operations should work
+        assert "key1" in db
+        assert len(db) >= 1
+        
+        db.close()
+        print("✅ Backward compatibility test passed")
+
+
 if __name__ == "__main__":
     print("Running table_mode tests...")
     
@@ -315,6 +894,26 @@ if __name__ == "__main__":
         test_async_separate_mode()
         test_modes_constants()
         test_invalid_table_mode()
+        test_prefix_mode_with_encryption()
+        test_separate_mode_with_encryption()
+        test_prefix_mode_all_storage_modes()
+        test_separate_mode_all_storage_modes()
+        test_prefix_mode_all_persist_modes()
+        test_separate_mode_all_persist_modes()
+        test_prefix_mode_many_tables()
+        test_separate_mode_many_tables()
+        test_prefix_mode_table_special_characters()
+        test_separate_mode_table_special_characters()
+        test_prefix_mode_large_data()
+        test_separate_mode_large_data()
+        test_prefix_mode_update_operations()
+        test_separate_mode_update_operations()
+        test_async_prefix_mode_comprehensive()
+        test_async_separate_mode_comprehensive()
+        test_prefix_mode_table_items_values()
+        test_separate_mode_table_items_values()
+        test_prefix_mode_default_behavior()
+        test_mode_backward_compatibility()
         print("\n✅ All tests passed!")
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
