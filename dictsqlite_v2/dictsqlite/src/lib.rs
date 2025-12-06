@@ -766,6 +766,13 @@ pub struct Config {
     /// - Separate: SQLite内で完全に別のテーブルを使用
     /// デフォルト: Prefix
     pub table_mode: TableMode,
+
+    /// コネクションプールサイズ
+    ///
+    /// SQLiteコネクションプールの最大接続数。
+    /// 並行アクセスのパフォーマンスに影響します。
+    /// デフォルト: 20
+    pub pool_size: usize,
 }
 
 impl Default for Config {
@@ -786,6 +793,7 @@ impl Default for Config {
             storage_mode: StorageMode::Pickle,  // Pickle形式
             table_name: "main".to_string(),     // メインテーブル
             table_mode: TableMode::Prefix,      // プレフィックスモード
+            pool_size: 20,                      // コネクションプールサイズ
         }
     }
 }
@@ -805,6 +813,7 @@ impl DictSQLiteV4 {
     /// * `enable_safe_pickle` - Safe Pickle検証を有効にするか
     /// * `safe_pickle_allowed_modules` - Safe Pickleで許可するモジュールプレフィックス
     /// * `buffer_size` - 書き込みバッファサイズ（デフォルト: 100）
+    /// * `pool_size` - コネクションプールサイズ（デフォルト: 20）
     ///
     /// # 戻り値
     /// 新しいDictSQLiteV4インスタンス
@@ -829,7 +838,7 @@ impl DictSQLiteV4 {
     /// db = DictSQLiteV4("isolated.db", table_mode="separate")
     /// ```
     #[new]
-    #[pyo3(signature = (db_path, hot_capacity=1_000_000, enable_async=true, persist_mode="writethrough", storage_mode="pickle", table_name="main", encryption_password=None, enable_safe_pickle=false, safe_pickle_allowed_modules=None, buffer_size=100, table_mode="prefix"))]
+    #[pyo3(signature = (db_path, hot_capacity=1_000_000, enable_async=true, persist_mode="writethrough", storage_mode="pickle", table_name="main", encryption_password=None, enable_safe_pickle=false, safe_pickle_allowed_modules=None, buffer_size=100, table_mode="prefix", pool_size=20))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         db_path: String,
@@ -843,6 +852,7 @@ impl DictSQLiteV4 {
         safe_pickle_allowed_modules: Option<Vec<String>>,
         buffer_size: usize,
         table_mode: &str,
+        pool_size: usize,
     ) -> PyResult<Self> {
         // 永続化モードを文字列からenumに変換
         let persist_mode_parsed = PersistMode::from_str(persist_mode)
@@ -866,6 +876,7 @@ impl DictSQLiteV4 {
             storage_mode: storage_mode_parsed,
             table_name: table_name.to_string(),
             table_mode: table_mode_parsed,
+            pool_size,
             ..Default::default()
         };
 

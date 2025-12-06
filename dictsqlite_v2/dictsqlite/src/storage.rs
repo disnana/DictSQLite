@@ -11,9 +11,12 @@
 //! - WALモードによる高速書き込み
 //! - 準備済みステートメントのキャッシング
 //! - バルクインサート用のトランザクション最適化
+//! - コネクションプールによる並行アクセスの最適化
 
 use anyhow::Result;
-use rusqlite::{params, Connection};
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::params;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -50,11 +53,15 @@ pub enum MemoryTier {
 /// Warm tierキャッシュによる読み取り高速化を提供します。
 ///
 /// # スレッドセーフティ
-/// 内部のConnectionとキャッシュはMutexで保護されているため、
-/// 複数スレッドから安全にアクセス可能です。
+/// 内部のコネクションプールとキャッシュはスレッドセーフであり、
+/// 複数スレッドから安全に並行アクセス可能です。
+///
+/// # コネクションプール
+/// r2d2ライブラリを使用したコネクションプールにより、
+/// 複数の並行リクエストを効率的に処理します。
 pub struct StorageEngine {
-    /// Cold tier用のSQLite接続（Mutexでスレッドセーフ化）
-    cold_conn: Arc<Mutex<Connection>>,
+    /// Cold tier用のSQLiteコネクションプール
+    cold_pool: Pool<SqliteConnectionManager>,
 
     /// Warm tier: 頻繁にアクセスされるデータのインメモリキャッシュ
     warm_cache: Arc<Mutex<HashMap<String, Vec<u8>>>>,
@@ -87,28 +94,46 @@ impl StorageEngine {
     /// - `cache_size=-64000`: 64MBのページキャッシュ
     /// - `temp_store=MEMORY`: 一時テーブルをメモリに保持
     /// - `mmap_size=30GB`: メモリマッピングで大規模データアクセスを高速化
+    ///
+    /// # コネクションプール
+    /// - プールサイズ: ユーザー指定可能（デフォルト: 20）
+    /// - 並行アクセスのパフォーマンスを最適化
     pub fn new(db_path: &str, config: &Config) -> Result<Self> {
-        let cold_conn = Connection::open(db_path)?;
+        // コネクションプールマネージャーの作成
+        let manager = SqliteConnectionManager::file(db_path)
+            .with_init(|conn| {
+                // SQLiteのパフォーマンス最適化
+                // これらのPRAGMAは読み書きの速度を大幅に向上させます
+                conn.execute_batch(
+                    "
+                    PRAGMA journal_mode=WAL;
+                    PRAGMA synchronous=NORMAL;
+                    PRAGMA cache_size=-64000;
+                    PRAGMA temp_store=MEMORY;
+                    PRAGMA mmap_size=30000000000;
+                    PRAGMA page_size=4096;
+                    PRAGMA auto_vacuum=INCREMENTAL;
+                ",
+                )?;
+                Ok(())
+            });
 
-        // SQLiteのパフォーマンス最適化
-        // これらのPRAGMAは読み書きの速度を大幅に向上させます
-        cold_conn.execute_batch(
-            "
-            PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;
-            PRAGMA cache_size=-64000;
-            PRAGMA temp_store=MEMORY;
-            PRAGMA mmap_size=30000000000;
-            PRAGMA page_size=4096;
-            PRAGMA auto_vacuum=INCREMENTAL;
-        ",
-        )?;
+        // コネクションプールの作成
+        // プールサイズはユーザー指定またはデフォルト値（20）を使用
+        let pool_size = config.pool_size;
+        
+        let cold_pool = Pool::builder()
+            .max_size(pool_size as u32)
+            .build(manager)?;
+
+        // 初期接続を取得してテーブルとインデックスを作成
+        let conn = cold_pool.get()?;
 
         // Key-Valueストアテーブルの作成
         // tier: データがどのtierに属するか（0=Hot, 1=Warm, 2=Cold）
         // access_count: アクセス回数（プロモーション判定用）
         // last_access: 最終アクセス時刻（LRU判定用）
-        cold_conn.execute(
+        conn.execute(
             "CREATE TABLE IF NOT EXISTS kv_store (
                 key TEXT PRIMARY KEY,
                 value BLOB NOT NULL,
@@ -121,11 +146,14 @@ impl StorageEngine {
 
         // アクセスパターンに基づくtier判定用のインデックス
         // 頻繁にアクセスされるデータを効率的に特定するため
-        cold_conn.execute(
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_access 
              ON kv_store(access_count DESC, last_access DESC)",
             [],
         )?;
+        
+        // 接続を解放（プールに返却）
+        drop(conn);
 
         // Warm tierキャッシュの初期化
         // warm_tier_sizeをKBで割って概算のエントリ数とする
@@ -134,7 +162,7 @@ impl StorageEngine {
         )));
 
         Ok(StorageEngine {
-            cold_conn: Arc::new(Mutex::new(cold_conn)),
+            cold_pool,
             warm_cache,
             config: config.clone(),
             db_path: db_path.to_string(),
@@ -164,9 +192,9 @@ impl StorageEngine {
             }
         }
 
-        // Cold tier（SQLite）をチェック
+        // Cold tier（SQLite）をチェック - プールから接続を取得
         let value_opt = {
-            let conn = self.cold_conn.lock().unwrap();
+            let conn = self.cold_pool.get()?;
             // 準備済みステートメントをキャッシュしてパフォーマンス向上
             let mut stmt = conn.prepare_cached("SELECT value FROM kv_store WHERE key = ?1")?;
 
@@ -180,9 +208,9 @@ impl StorageEngine {
         };
 
         if let Some(value) = value_opt {
-            // アクセスカウントを更新（tier判定用）
+            // アクセスカウントを更新（tier判定用）- プールから接続を取得
             {
-                let conn = self.cold_conn.lock().unwrap();
+                let conn = self.cold_pool.get()?;
                 conn.execute(
                     "UPDATE kv_store SET access_count = access_count + 1, 
                      last_access = strftime('%s', 'now') WHERE key = ?1",
@@ -212,7 +240,7 @@ impl StorageEngine {
     /// - `Ok(())`: 成功
     /// - `Err(...)`: SQLiteエラー
     pub fn set(&mut self, key: &str, value: &[u8]) -> Result<()> {
-        let conn = self.cold_conn.lock().unwrap();
+        let conn = self.cold_pool.get()?;
         conn.execute(
             "INSERT OR REPLACE INTO kv_store (key, value, tier, last_access) 
              VALUES (?1, ?2, 2, strftime('%s', 'now'))",
@@ -233,7 +261,7 @@ impl StorageEngine {
     /// - `Ok(())`: 成功
     /// - `Err(...)`: トランザクションまたはSQLiteエラー
     pub fn bulk_insert(&mut self, items: &HashMap<String, Vec<u8>>) -> Result<()> {
-        let mut conn = self.cold_conn.lock().unwrap();
+        let mut conn = self.cold_pool.get()?;
         // トランザクションを開始
         let tx = conn.transaction()?;
 
@@ -295,7 +323,7 @@ impl StorageEngine {
 
         // 全アイテムをCold tierに書き込み
         if !items.is_empty() {
-            let conn = self.cold_conn.lock().unwrap();
+            let conn = self.cold_pool.get()?;
             for (key, value) in items.iter() {
                 conn.execute(
                     "INSERT OR REPLACE INTO kv_store (key, value, tier, last_access) 
@@ -314,7 +342,7 @@ impl StorageEngine {
     /// - `Ok(Vec<String>)`: 全キーのリスト
     /// - `Err(...)`: SQLiteエラー
     pub fn keys(&self) -> Result<Vec<String>> {
-        let conn = self.cold_conn.lock().unwrap();
+        let conn = self.cold_pool.get()?;
         let mut stmt = conn.prepare("SELECT key FROM kv_store")?;
         let keys: Result<Vec<String>, _> = stmt.query_map([], |row| row.get(0))?.collect();
         keys.map_err(|e| e.into())
@@ -335,7 +363,7 @@ impl StorageEngine {
         self.warm_cache.lock().unwrap().remove(key);
 
         // Cold tierから削除
-        let conn = self.cold_conn.lock().unwrap();
+        let conn = self.cold_pool.get()?;
         conn.execute("DELETE FROM kv_store WHERE key = ?1", params![key])?;
 
         Ok(())
@@ -351,7 +379,7 @@ impl StorageEngine {
     /// - `Err(...)`: SQLiteエラー
     pub fn clear(&mut self) -> Result<()> {
         self.warm_cache.lock().unwrap().clear();
-        let conn = self.cold_conn.lock().unwrap();
+        let conn = self.cold_pool.get()?;
         conn.execute("DELETE FROM kv_store", [])?;
         Ok(())
     }
@@ -367,10 +395,12 @@ impl StorageEngine {
         let warm = self.warm_cache.lock().unwrap();
         let warm_size: usize = warm.values().map(|v| v.len()).sum();
 
-        let conn = self.cold_conn.lock().unwrap();
-        let cold_tier_entries = conn
-            .query_row("SELECT COUNT(*) FROM kv_store", [], |row| row.get(0))
-            .unwrap_or(0);
+        let cold_tier_entries = if let Ok(conn) = self.cold_pool.get() {
+            conn.query_row("SELECT COUNT(*) FROM kv_store", [], |row| row.get(0))
+                .unwrap_or(0)
+        } else {
+            0
+        };
 
         StorageStats {
             warm_tier_entries: warm.len(),
@@ -414,7 +444,7 @@ impl StorageEngine {
     /// - `Err(...)`: SQLiteエラー
     pub fn ensure_table_exists(&self, table_name: &str) -> Result<()> {
         let safe_table_name = Self::sanitize_table_name(table_name);
-        let conn = self.cold_conn.lock().unwrap();
+        let conn = self.cold_pool.get()?;
         
         // テーブルを作成（存在しない場合のみ）
         conn.execute(
@@ -471,7 +501,7 @@ impl StorageEngine {
 
         // Cold tier（SQLite）をチェック
         let value_opt = {
-            let conn = self.cold_conn.lock().unwrap();
+            let conn = self.cold_pool.get()?;
             let query = format!("SELECT value FROM {} WHERE key = ?1", safe_table_name);
             let mut stmt = conn.prepare_cached(&query)?;
 
@@ -487,7 +517,7 @@ impl StorageEngine {
         if let Some(value) = value_opt {
             // アクセスカウントを更新
             {
-                let conn = self.cold_conn.lock().unwrap();
+                let conn = self.cold_pool.get()?;
                 let update_query = format!(
                     "UPDATE {} SET access_count = access_count + 1, 
                      last_access = strftime('%s', 'now') WHERE key = ?1",
@@ -521,7 +551,7 @@ impl StorageEngine {
         // テーブルが存在することを確認
         self.ensure_table_exists(table_name)?;
 
-        let conn = self.cold_conn.lock().unwrap();
+        let conn = self.cold_pool.get()?;
         let insert_query = format!(
             "INSERT OR REPLACE INTO {} (key, value, tier, last_access) 
              VALUES (?1, ?2, 2, strftime('%s', 'now'))",
@@ -548,7 +578,7 @@ impl StorageEngine {
         let safe_table_name = Self::sanitize_table_name(table_name);
 
         // Cold tierから削除
-        let conn = self.cold_conn.lock().unwrap();
+        let conn = self.cold_pool.get()?;
         let delete_query = format!("DELETE FROM {} WHERE key = ?1", safe_table_name);
         conn.execute(&delete_query, params![key])?;
 
@@ -569,7 +599,7 @@ impl StorageEngine {
         // テーブルが存在することを確認
         self.ensure_table_exists(table_name)?;
 
-        let conn = self.cold_conn.lock().unwrap();
+        let conn = self.cold_pool.get()?;
         let query = format!("SELECT key FROM {}", safe_table_name);
         let mut stmt = conn.prepare(&query)?;
         let keys: Result<Vec<String>, _> = stmt.query_map([], |row| row.get(0))?.collect();
@@ -595,7 +625,7 @@ impl StorageEngine {
         let safe_table_name = Self::sanitize_table_name(table_name);
 
         // Cold tierからテーブルの全データを削除
-        let conn = self.cold_conn.lock().unwrap();
+        let conn = self.cold_pool.get()?;
         let delete_query = format!("DELETE FROM {}", safe_table_name);
         conn.execute(&delete_query, [])?;
         Ok(())
@@ -607,7 +637,7 @@ impl StorageEngine {
     /// - `Ok(Vec<String>)`: テーブル名のリスト
     /// - `Err(...)`: SQLiteエラー
     pub fn list_tables(&self) -> Result<Vec<String>> {
-        let conn = self.cold_conn.lock().unwrap();
+        let conn = self.cold_pool.get()?;
         let mut stmt = conn.prepare(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'kv_%'"
         )?;
