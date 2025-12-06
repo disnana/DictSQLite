@@ -17,16 +17,19 @@ import logging
 # __init__ as a top-level module (no package context), a relative import fails
 # with "attempted relative import with no known parent package". Use a robust
 # strategy: try relative import first, then fall back to importing
-# 'modules.safe_pickle' (works when current dir is on sys.path), and finally
-# try 'dictsqlite.modules.safe_pickle' as a last resort.
+# 'dictsqlite.modules.safe_pickle' (works when package is installed), and finally
+# try 'modules.safe_pickle' as a last resort (works when current dir is on sys.path).
 try:
     from .modules import safe_pickle  # normal package-relative import
 except Exception:
     import importlib
     try:
-        safe_pickle = importlib.import_module('modules.safe_pickle')
+        safe_pickle = importlib.import_module('dictsqlite.modules.safe_pickle')
     except Exception:
-        raise
+        try:
+            safe_pickle = importlib.import_module('modules.safe_pickle')
+        except Exception:
+            raise
 
 logger = logging.getLogger(__name__)
 
@@ -186,17 +189,6 @@ class DictSQLite:
             return self._db.__getitem__(str(key))
         except KeyError:
             return default
-
-        # Same as __getitem__: when safe_pickle enabled, return raw bytes
-        # so caller can explicitly unpickle. Validation happens on write.
-        if isinstance(result, (bytes, bytearray)):
-            if self._enable_safe_pickle or result[:1] in (b'\x80', b'\x00'):
-                return result
-            try:
-                return result.decode(self._encoding)
-            except Exception:
-                return result
-        return result
 
     def keys(self):
         """Get all keys"""
