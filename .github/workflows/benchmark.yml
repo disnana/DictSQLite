@@ -4,10 +4,10 @@
 # 実行方法: GitHub の「Actions」タブ → 「Performance Benchmark」→ 「Run workflow」
 #
 # テスト対象の選択オプション:
-# - all: 3つの主要バージョンを比較 (Original, Beta v2, v4.1)
-#   → Original版 (dictsqlite/)
-#   → Beta v2版 (dictsqlite-fastest beta v2)
-#   → v4.1版 (dictsqlite_v4.1 Rust実装)
+# - all: 3つの主要バージョンを比較 (Original, dictsqlite_v2, Beta v2)
+#   → Original版 (dictsqlite/) - 標準sqlite3ベース
+#   → dictsqlite_v2版 (dictsqlite_v2/dictsqlite/) - Rust拡張 v2.0.6 (同期・非同期対応)
+#   → Beta v2版 (dictsqlite-fastest beta v2) - APSWベース非同期高性能版
 #
 # - v1, v2, v3, v4: dictsqlite-fastest Betaの各リビジョンをテスト
 #   → v1: dictsqlite-fastest beta v1
@@ -17,7 +17,7 @@
 #
 # ビルドされるRust拡張:
 # - dictsqlite_v2: dictsqlite_v2/dictsqlite/ フォルダ - バージョン 2.0.6 (Rust拡張)
-# - dictsqlite_v4.1: others/beta-versions/dictsqlite_v4.1/ - v4.1 Rust実装
+# - dictsqlite_v4.1: others/beta-versions/dictsqlite_v4.1/ - v4.1 Rust実装 (v1-v4モードのみ使用)
 
 name: Performance Benchmark
 
@@ -187,9 +187,9 @@ jobs:
         
         if [ "${{ github.event.inputs.beta_version }}" == "all" ]; then
           echo "テスト内容: 3つの主要バージョンを比較"
-          echo "  - Original版 (dictsqlite/)"
-          echo "  - Beta v2版 (dictsqlite-fastest beta v2)"
-          echo "  - v4.1版 (dictsqlite_v4.1 Rust実装)"
+          echo "  - Original版 (dictsqlite/) - 標準sqlite3ベース"
+          echo "  - dictsqlite_v2版 (dictsqlite_v2/dictsqlite/) - Rust拡張 v2.0.6"
+          echo "  - Beta v2版 (dictsqlite-fastest beta v2) - APSWベース非同期版"
         else
           echo "テスト内容: dictsqlite-fastest Beta ${{ github.event.inputs.beta_version }} のみ"
           echo "  - Original版との比較"
@@ -229,7 +229,7 @@ jobs:
         mkdir -p results/comparisons
         
         if [ "$BETA_VERSION" == "all" ]; then
-          echo "🔬 全バージョン (Original, Beta v2, v4.1) の比較ベンチマークを実行..."
+          echo "🔬 全バージョン (Original, dictsqlite_v2, Beta v2) の比較ベンチマークを実行..."
           python run_benchmark.py --beta all || {
             echo "❌ ベンチマーク実行エラー"
             echo "エラーログを確認してください"
