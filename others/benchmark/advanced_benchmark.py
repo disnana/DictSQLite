@@ -365,12 +365,12 @@ async def run_advanced_benchmarks():
                                 await db.close()
                             else:
                                 db.close()
-                if hasattr(db, 'adelete'):
-                    await db.adelete(f'mixed_key_{i-2}')
-                elif hasattr(db, '__delitem__'):
-                    del db[f'mixed_key_{i-2}']
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  ❌ エラー: {e}")
+                traceback.print_exc()
+            finally:
+                if os.path.exists(db_path):
+                    os.unlink(db_path)
             finally:
                 if os.path.exists(db_path):
                     os.unlink(db_path)
