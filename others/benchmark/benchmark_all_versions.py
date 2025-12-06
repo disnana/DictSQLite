@@ -37,17 +37,10 @@ try:
     import matplotlib
     matplotlib.use('Agg')  # Non-interactive backend
     import matplotlib.pyplot as plt
-    import matplotlib.font_manager as fm
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
     print("⚠ matplotlib not available. Graphs will not be generated.")
-
-try:
-    import seaborn as sns
-    SEABORN_AVAILABLE = True
-except ImportError:
-    SEABORN_AVAILABLE = False
 
 # Import versions
 try:
@@ -539,10 +532,20 @@ def generate_comparison_graphs(original_results: Dict[str, Tuple[float, float]],
     labels_for_speedup = []
     
     for i, test_name in enumerate(test_names):
-        baseline = original_ops[i] if ORIGINAL_AVAILABLE and original_ops[i] > 0 else min([beta_v2_ops[i], v4_1_ops[i]], key=lambda x: x if x > 0 else float('inf'))
-        if baseline == 0:
+        # Find baseline - use the smallest non-zero value
+        available_ops = []
+        if ORIGINAL_AVAILABLE and original_ops[i] > 0:
+            available_ops.append(original_ops[i])
+        if BETA_V2_AVAILABLE and beta_v2_ops[i] > 0:
+            available_ops.append(beta_v2_ops[i])
+        if V4_1_AVAILABLE and v4_1_ops[i] > 0:
+            available_ops.append(v4_1_ops[i])
+        
+        if not available_ops:
             continue
             
+        baseline = min(available_ops)
+        
         test_speedups = []
         if ORIGINAL_AVAILABLE and original_ops[i] > 0:
             test_speedups.append(original_ops[i] / baseline)
@@ -565,8 +568,15 @@ def generate_comparison_graphs(original_results: Dict[str, Tuple[float, float]],
         if V4_1_AVAILABLE:
             version_labels.append('v4.1版')
         
-        for i, version_label in enumerate(version_labels):
-            version_speedups = [speedup[i] if i < len(speedup) else 0 for speedup in speedups]
+        # Plot each version's speedups across tests
+        for version_idx, version_label in enumerate(version_labels):
+            version_speedups = []
+            for test_speedup_list in speedups:
+                # Get speedup for this version from this test
+                if version_idx < len(test_speedup_list):
+                    version_speedups.append(test_speedup_list[version_idx])
+                else:
+                    version_speedups.append(0)
             ax.plot(x_speedup, version_speedups, marker='o', linewidth=2, markersize=8, label=version_label)
         
         ax.set_xlabel('Test Type', fontsize=12)
