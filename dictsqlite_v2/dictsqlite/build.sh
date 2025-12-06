@@ -89,7 +89,7 @@ if [ -n "$CI" ]; then
     fi
     echo ""
     echo "🔍 Verifying installation..."
-    python -c "from dictsqlite import DictSQLiteV4, AsyncDictSQLite; print('✅ DictSQLiteV4 imported successfully'); print('✅ AsyncDictSQLite imported successfully')"
+    python -c "from dictsqlite import DictSQLiteV4, AsyncDictSQLite; print('[OK] DictSQLiteV4 imported successfully'); print('[OK] AsyncDictSQLite imported successfully')"
 else
     # In local environment, ask user
     read -p "Install the built package? (y/N): " -n 1 -r
@@ -104,7 +104,7 @@ else
         fi
         echo ""
         echo "Test installation:"
-        python -c "from dictsqlite import DictSQLiteV4; print('✅ DictSQLiteV4 imported successfully')"
+        python -c "from dictsqlite import DictSQLiteV4; print('[OK] DictSQLiteV4 imported successfully')"
     fi
 fi
 
