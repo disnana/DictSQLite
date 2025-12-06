@@ -21,6 +21,8 @@ lru = "0.12"            # LRU cache implementation
 
 # SQLite backend
 rusqlite = { version = "0.31", features = ["bundled", "backup", "blob", "hooks"] }
+r2d2 = "0.8"             # Generic connection pool
+r2d2_sqlite = "0.24"     # SQLite connection pool adapter
 
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }
