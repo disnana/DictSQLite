@@ -7,6 +7,9 @@
 # - all: 3つの主要バージョンを比較 (Original, dictsqlite_v2, Beta v2)
 #   → Original版 (dictsqlite/) - 標準sqlite3ベース
 #   → dictsqlite_v2版 (dictsqlite_v2/dictsqlite/) - Rust拡張 v2.0.6 (同期・非同期対応)
+#     * 3モード個別テスト: memory, lazy, writethrough
+#     * 非同期ベンチマーク: async write, read, concurrent, mixed
+#     * fastest版との詳細比較
 #   → Beta v2版 (dictsqlite-fastest beta v2) - APSWベース非同期高性能版
 #
 # - v1, v2, v3, v4: dictsqlite-fastest Betaの各リビジョンをテスト
@@ -189,6 +192,9 @@ jobs:
           echo "テスト内容: 3つの主要バージョンを比較"
           echo "  - Original版 (dictsqlite/) - 標準sqlite3ベース（同期処理のみ）"
           echo "  - dictsqlite_v2版 (dictsqlite_v2/dictsqlite/) - Rust拡張 v2.0.6（同期・非同期対応）"
+          echo "    * 3モード個別テスト: memory, lazy, writethrough"
+          echo "    * 非同期ベンチマーク: async write, read, concurrent, mixed"
+          echo "    * メモリ使用量プロファイリング"
           echo "  - Beta v2版 (dictsqlite-fastest beta v2) - APSWベース非同期高性能版"
         else
           echo "テスト内容: dictsqlite-fastest Beta ${{ github.event.inputs.beta_version }} のみ"
@@ -227,6 +233,7 @@ jobs:
         mkdir -p results/versions
         mkdir -p results/graphs
         mkdir -p results/comparisons
+        mkdir -p results/v2_modes
         
         if [ "$BETA_VERSION" == "all" ]; then
           echo "🔬 全バージョン (Original版, dictsqlite_v2版, Beta v2版) の比較ベンチマークを実行..."
@@ -234,6 +241,20 @@ jobs:
             echo "❌ ベンチマーク実行エラー"
             echo "エラーログを確認してください"
             exit 1
+          }
+          
+          echo ""
+          echo "🔬 dictsqlite_v2 全モード(memory, lazy, writethrough) vs fastest詳細比較を実行..."
+          python comprehensive_v2_vs_fastest.py > results/v2_modes/comprehensive_comparison.log 2>&1 || {
+            echo "⚠️ v2全モードベンチマーク実行エラー（継続）"
+            cat results/v2_modes/comprehensive_comparison.log
+          }
+          
+          echo ""
+          echo "🔬 dictsqlite_v2 非同期ベンチマークを実行..."
+          python test_async_dictsqlite_v2.py > results/v2_modes/async_benchmark.log 2>&1 || {
+            echo "⚠️ v2非同期ベンチマーク実行エラー（継続）"
+            cat results/v2_modes/async_benchmark.log
           }
         elif [ "$BETA_VERSION" == "v2" ]; then
           echo "🔄 dictsqlite-fastest Beta v2 をテスト中..."
@@ -356,6 +377,11 @@ jobs:
         if [ -d "others/benchmark/results/comparisons" ]; then
           ls -lh others/benchmark/results/comparisons/
         fi
+        echo ""
+        echo "=== dictsqlite_v2 Mode Tests ==="
+        if [ -d "others/benchmark/results/v2_modes" ]; then
+          ls -lh others/benchmark/results/v2_modes/
+        fi
 
     - name: Upload benchmark results
       uses: actions/upload-artifact@v4.4.3
@@ -370,6 +396,7 @@ jobs:
           others/benchmark/results/graphs/*.html
           others/benchmark/results/versions/**/*
           others/benchmark/results/comparisons/**/*
+          others/benchmark/results/v2_modes/**/*
         retention-days: 90
 
     - name: Create benchmark summary
