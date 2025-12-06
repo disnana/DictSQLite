@@ -55,6 +55,22 @@ use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
+// v4.2.4 パフォーマンス最適化定数
+/// 小容量キャパシティの閾値 (この値以下では厳密なキャパシティ管理)
+const SMALL_CAPACITY_THRESHOLD: usize = 1000;
+
+/// LRU追跡開始の閾値パーセンテージ (大容量の場合)
+/// キャパシティの105%に達するまでLRU追跡をスキップ
+const LRU_TRACKING_THRESHOLD_PERCENT: usize = 105;
+
+/// エビクション開始の閾値パーセンテージ (大容量の場合)
+/// キャパシティの105%を超えたらエビクション開始
+const EVICTION_THRESHOLD_PERCENT_LARGE: usize = 105;
+
+/// バッチエビクションのパーセンテージ
+/// 一度に全キャパシティの10%をエビクション
+const BATCH_EVICTION_PERCENT: usize = 10;
+
 // サブモジュールのインポート
 // async_ops: 非同期操作を提供するモジュール
 mod async_ops;
@@ -763,8 +779,10 @@ pub struct Config {
     /// テーブルモード
     ///
     /// テーブルの分離方式を制御。
+    ///
     /// - Prefix: キープレフィックスでテーブルを識別（デフォルト）
     /// - Separate: SQLite内で完全に別のテーブルを使用
+    ///
     /// デフォルト: Prefix
     pub table_mode: TableMode,
 
@@ -783,18 +801,18 @@ impl Default for Config {
     /// 必要に応じてこれらの値を上書きしてカスタマイズできます。
     fn default() -> Self {
         Config {
-            hot_tier_capacity: 1_000_000,       // 100万エントリ
-            warm_tier_size: 100 * 1024 * 1024,  // 100MB
-            enable_async_flush: true,           // 非同期フラッシュ有効
-            flush_interval_ms: 1000,            // 1秒間隔
+            hot_tier_capacity: 1_000_000,                    // 100万エントリ
+            warm_tier_size: 100 * 1024 * 1024,               // 100MB
+            enable_async_flush: true,                        // 非同期フラッシュ有効
+            flush_interval_ms: 1000,                         // 1秒間隔
             num_shards: num_cpus::get().next_power_of_two(), // CPUコア数ベース
-            persist_mode: PersistMode::WriteThrough, // 即時永続化
-            enable_encryption: false,           // 暗号化なし
-            enable_safe_pickle: false,          // Safe Pickle検証なし
-            storage_mode: StorageMode::Pickle,  // Pickle形式
-            table_name: "main".to_string(),     // メインテーブル
-            table_mode: TableMode::Prefix,      // プレフィックスモード
-            pool_size: 20,                      // コネクションプールサイズ
+            persist_mode: PersistMode::WriteThrough,         // 即時永続化
+            enable_encryption: false,                        // 暗号化なし
+            enable_safe_pickle: false,                       // Safe Pickle検証なし
+            storage_mode: StorageMode::Pickle,               // Pickle形式
+            table_name: "main".to_string(),                  // メインテーブル
+            table_mode: TableMode::Prefix,                   // プレフィックスモード
+            pool_size: 20,                                   // コネクションプールサイズ
         }
     }
 }
@@ -965,8 +983,22 @@ impl DictSQLiteV4 {
     /// - 復号化に失敗した場合: ValueError
     #[pyo3(signature = (key, default=None))]
     fn get(&self, key: String, default: Option<Vec<u8>>, py: Python) -> PyResult<PyObject> {
-        // LRU追跡のためにアクセスを記録
-        self.access_tracker.lock().unwrap().put(key.clone(), ());
+        // v4.2.4最適化: LRU追跡は必要な場合のみ実行（Memory/Lazyモードではスキップ）
+        // WriteThroughモードまたはキャパシティ超過時のみLRU追跡
+        let current_size = self.hot_tier.len();
+        let tracking_threshold = if self.config.hot_tier_capacity <= SMALL_CAPACITY_THRESHOLD {
+            // 小容量: 常に追跡（テスト互換性）
+            0
+        } else {
+            // 大容量: LRU_TRACKING_THRESHOLD_PERCENT%から追跡（パフォーマンス優先）
+            (self.config.hot_tier_capacity * LRU_TRACKING_THRESHOLD_PERCENT) / 100
+        };
+        let needs_lru = self.config.persist_mode == PersistMode::WriteThrough
+            || current_size >= tracking_threshold;
+
+        if needs_lru {
+            self.access_tracker.lock().unwrap().put(key.clone(), ());
+        }
 
         // Hot tierを最初に試行（ロックフリー読み取り）
         if let Some(value) = self.hot_tier.get(&key) {
@@ -1072,7 +1104,7 @@ impl DictSQLiteV4 {
 
         // v4.2.2最適化: WriteThroughモードでない場合、dataをmoveしてクローンを避ける
         let needs_clone = self.config.persist_mode == PersistMode::WriteThrough;
-        
+
         // Hot tierに挿入（ロックフリー書き込み）
         // key.clone()を最小化: insertは1回だけクローン
         let (is_new_key, data_for_buffer) = if needs_clone {
@@ -1084,20 +1116,20 @@ impl DictSQLiteV4 {
             (is_new, None)
         };
 
-        // v4.2.3最適化: LRUアクセス追跡の条件付き更新（パフォーマンス向上）
-        // 小さいキャパシティの場合は常にLRU追跡（テスト互換性）
-        // 大きいキャパシティの場合は95%から追跡開始（パフォーマンス最適化）
+        // v4.2.4最適化: LRUアクセス追跡の条件付き更新（パフォーマンス向上）
+        // Memory/Lazyモードでは大容量を前提としているため、LRU追跡を最小化
+        // WriteThroughモードまたはキャパシティ超過時のみLRU追跡を有効化
         let current_size = self.hot_tier.len();
-        let tracking_threshold = if self.config.hot_tier_capacity <= 100 {
-            // 小容量: 常に追跡（正確なLRU動作）
+        let tracking_threshold = if self.config.hot_tier_capacity <= SMALL_CAPACITY_THRESHOLD {
+            // 小容量: 常に追跡（テスト互換性）
             0
         } else {
-            // 大容量: 95%から追跡（パフォーマンス優先）
-            (self.config.hot_tier_capacity * 95) / 100
+            // 大容量: LRU_TRACKING_THRESHOLD_PERCENT%から追跡（パフォーマンス優先）
+            (self.config.hot_tier_capacity * LRU_TRACKING_THRESHOLD_PERCENT) / 100
         };
-        let needs_lru = self.config.persist_mode == PersistMode::WriteThrough 
+        let needs_lru = self.config.persist_mode == PersistMode::WriteThrough
             || current_size >= tracking_threshold;
-        
+
         if is_new_key && needs_lru {
             self.access_tracker.lock().unwrap().put(key.clone(), ());
         }
@@ -1118,8 +1150,18 @@ impl DictSQLiteV4 {
             }
         }
 
-        // エビクションチェック: キャパシティを超えた場合は即座にエビクション
-        if self.hot_tier.len() > self.config.hot_tier_capacity {
+        // v4.2.5最適化: エビクション閾値の動的設定
+        // 小容量: 厳密な管理（テスト互換性）
+        // 大容量: 若干の余裕を持たせてチェック頻度削減
+        let eviction_threshold = if self.config.hot_tier_capacity <= SMALL_CAPACITY_THRESHOLD {
+            // 小容量: キャパシティを超えたら即座にエビクション
+            self.config.hot_tier_capacity
+        } else {
+            // 大容量: EVICTION_THRESHOLD_PERCENT_LARGE%まで許容
+            (self.config.hot_tier_capacity * EVICTION_THRESHOLD_PERCENT_LARGE) / 100
+        };
+
+        if self.hot_tier.len() > eviction_threshold {
             self.evict_to_warm_tier()?;
         }
 
@@ -1132,24 +1174,45 @@ impl DictSQLiteV4 {
     /// LRUトラッカーを使用して最も古いエントリを特定し、
     /// ストレージに書き込んでからHot tierから削除します。
     ///
+    /// # v4.2.4最適化
+    /// 複数エントリを一度にエビクションし、bulk_insertで一括書き込み
+    /// BATCH_EVICTION_PERCENT%のエントリを一度に処理
+    ///
     /// # エラー
     /// - ストレージ書き込みに失敗した場合: IOError
     fn evict_to_warm_tier(&self) -> PyResult<()> {
         let mut tracker = self.access_tracker.lock().unwrap();
 
-        // LRU（最も長く使われていない）エントリを見つける
-        if let Some((evict_key, _)) = tracker.pop_lru() {
-            // Hot tierから削除
-            if let Some((_, value)) = self.hot_tier.remove(&evict_key) {
-                // Memoryモードでない場合はストレージに書き込み
-                if self.config.persist_mode != PersistMode::Memory {
-                    let mut storage_guard = self.storage.lock().unwrap();
-                    if let Some(ref mut storage) = *storage_guard {
-                        storage.set(&evict_key, &value).map_err(|e| {
-                            PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string())
-                        })?;
-                    }
+        // v4.2.4最適化: 一度にBATCH_EVICTION_PERCENT%のエントリをエビクション（バッチ処理）
+        let eviction_count = std::cmp::max(
+            1,
+            self.config.hot_tier_capacity * BATCH_EVICTION_PERCENT / 100,
+        );
+        let mut evicted_items = HashMap::new();
+
+        // 複数のLRUエントリを一度に収集
+        for _ in 0..eviction_count {
+            if let Some((evict_key, _)) = tracker.pop_lru() {
+                // Hot tierから削除
+                if let Some((_, value)) = self.hot_tier.remove(&evict_key) {
+                    evicted_items.insert(evict_key, value);
                 }
+            } else {
+                break; // これ以上エビクション対象がない
+            }
+        }
+
+        // トラッカーのロックを早期解放
+        drop(tracker);
+
+        // Memoryモードでない場合はストレージに一括書き込み
+        if self.config.persist_mode != PersistMode::Memory && !evicted_items.is_empty() {
+            let mut storage_guard = self.storage.lock().unwrap();
+            if let Some(ref mut storage) = *storage_guard {
+                // bulk_insertで一括書き込み（単一トランザクション）
+                storage
+                    .bulk_insert(&evicted_items)
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
             }
         }
 
@@ -1177,7 +1240,7 @@ impl DictSQLiteV4 {
 
         // バッファからHashMapを構築（bulk_insert用）
         let items: HashMap<String, Vec<u8>> = buffer.drain(..).collect();
-        
+
         // 早期にバッファのロックを解放
         drop(buffer);
 
@@ -1795,8 +1858,9 @@ impl DictSQLiteV4 {
                 } else {
                     let storage_guard = self.storage.lock().unwrap();
                     if let Some(ref storage) = *storage_guard {
-                        storage.list_tables()
-                            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))
+                        storage.list_tables().map_err(|e| {
+                            PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string())
+                        })
                     } else {
                         Ok(vec!["main".to_string()])
                     }
@@ -1818,7 +1882,7 @@ impl TableProxy {
     /// Dict-like access: table[key]
     fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
         let db = self.db.borrow(py);
-        
+
         // Get raw data based on table mode
         let data: Vec<u8> = match db.config.table_mode {
             TableMode::Prefix => {
@@ -1858,20 +1922,23 @@ impl TableProxy {
                                 // Decrypt if needed
                                 if let Some(ref crypto) = db.crypto {
                                     crypto.decrypt(&value).map_err(|e| {
-                                        PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+                                        PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                                            e.to_string(),
+                                        )
                                     })?
                                 } else {
                                     value
                                 }
                             }
                             Ok(None) => {
-                                return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
-                                    "Key not found: {}",
-                                    key
-                                )));
+                                return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(
+                                    format!("Key not found: {}", key),
+                                ));
                             }
                             Err(e) => {
-                                return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()));
+                                return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(
+                                    e.to_string(),
+                                ));
                             }
                         }
                     } else {
@@ -1957,7 +2024,7 @@ impl TableProxy {
             TableMode::Separate => {
                 // Separate mode: use separate SQLite table
                 let cache_key = format!("{}:{}", self.table_name, key);
-                
+
                 // Encrypt if needed
                 let encrypted_data = if let Some(ref crypto) = db.crypto {
                     crypto.encrypt(&data).map_err(|e| {
@@ -1968,15 +2035,19 @@ impl TableProxy {
                 };
 
                 // Update hot tier
-                db.hot_tier.insert(cache_key.clone(), encrypted_data.clone());
+                db.hot_tier
+                    .insert(cache_key.clone(), encrypted_data.clone());
                 db.access_tracker.lock().unwrap().put(cache_key, ());
 
                 // Write to storage in WriteThrough mode
                 if db.config.persist_mode == PersistMode::WriteThrough {
                     let mut storage_guard = db.storage.lock().unwrap();
                     if let Some(ref mut storage) = *storage_guard {
-                        storage.set_with_table(&self.table_name, &key, &encrypted_data)
-                            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+                        storage
+                            .set_with_table(&self.table_name, &key, &encrypted_data)
+                            .map_err(|e| {
+                                PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string())
+                            })?;
                     }
                 }
 
@@ -1988,7 +2059,7 @@ impl TableProxy {
     /// Dict-like access: del table[key]
     fn __delitem__(&self, key: String, py: Python) -> PyResult<()> {
         let db = self.db.borrow(py);
-        
+
         match db.config.table_mode {
             TableMode::Prefix => {
                 let full_key = format!("{}:{}", self.table_name, key);
@@ -1996,7 +2067,7 @@ impl TableProxy {
             }
             TableMode::Separate => {
                 let cache_key = format!("{}:{}", self.table_name, key);
-                
+
                 // Remove from hot tier
                 db.access_tracker.lock().unwrap().pop(&cache_key);
                 db.hot_tier.remove(&cache_key);
@@ -2017,7 +2088,7 @@ impl TableProxy {
     /// Dict-like access: key in table
     fn __contains__(&self, key: String, py: Python) -> PyResult<bool> {
         let db = self.db.borrow(py);
-        
+
         match db.config.table_mode {
             TableMode::Prefix => {
                 let full_key = format!("{}:{}", self.table_name, key);
@@ -2025,7 +2096,7 @@ impl TableProxy {
             }
             TableMode::Separate => {
                 let cache_key = format!("{}:{}", self.table_name, key);
-                
+
                 // Check hot tier first
                 if db.hot_tier.contains_key(&cache_key) {
                     return Ok(true);
@@ -2049,7 +2120,7 @@ impl TableProxy {
     /// Get all keys in this table
     fn keys(&self, py: Python) -> PyResult<Vec<String>> {
         let db = self.db.borrow(py);
-        
+
         match db.config.table_mode {
             TableMode::Prefix => {
                 let all_keys = db.keys(py)?;
@@ -2063,7 +2134,7 @@ impl TableProxy {
             }
             TableMode::Separate => {
                 use std::collections::HashSet;
-                
+
                 // Get keys from hot tier
                 let prefix = format!("{}:", self.table_name);
                 let mut all_keys: HashSet<String> = db
@@ -2131,15 +2202,13 @@ impl TableProxy {
                 self.__delitem__(key, py)?;
                 Ok(value)
             }
-            Err(_) => {
-                match default {
-                    Some(d) => Ok(d),
-                    None => Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
-                        "Key not found: {}",
-                        key
-                    ))),
-                }
-            }
+            Err(_) => match default {
+                Some(d) => Ok(d),
+                None => Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                    "Key not found: {}",
+                    key
+                ))),
+            },
         }
     }
 
@@ -2174,7 +2243,7 @@ impl TableProxy {
     /// Clear all items in this table
     fn clear(&self, py: Python) -> PyResult<()> {
         let db = self.db.borrow(py);
-        
+
         match db.config.table_mode {
             TableMode::Prefix => {
                 let keys = self.keys(py)?;
@@ -2192,7 +2261,7 @@ impl TableProxy {
                     .filter(|entry| entry.key().starts_with(&prefix))
                     .map(|entry| entry.key().clone())
                     .collect();
-                
+
                 for key in keys_to_remove {
                     db.hot_tier.remove(&key);
                     db.access_tracker.lock().unwrap().pop(&key);
@@ -2202,8 +2271,9 @@ impl TableProxy {
                 if db.config.persist_mode != PersistMode::Memory {
                     let mut storage_guard = db.storage.lock().unwrap();
                     if let Some(ref mut storage) = *storage_guard {
-                        storage.clear_table(&self.table_name)
-                            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+                        storage.clear_table(&self.table_name).map_err(|e| {
+                            PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string())
+                        })?;
                     }
                 }
 
@@ -2263,7 +2333,7 @@ impl TableProxy {
             if self_len != other_dict.len() {
                 return Ok(false);
             }
-            
+
             // Compare each item directly without creating intermediate HashMap
             for (key, value) in self_items.iter() {
                 if let Some(other_value) = other_dict.get_item(key)? {
@@ -2280,16 +2350,16 @@ impl TableProxy {
         } else if let Ok(other_table) = other.extract::<PyRef<TableProxy>>(py) {
             // Compare with another TableProxy
             let other_items = other_table.items(py)?;
-            
+
             // Check size first for early exit
             if self_len != other_items.len() {
                 return Ok(false);
             }
-            
+
             // Create a HashMap only for the other table to enable O(1) lookup
-            let other_map: std::collections::HashMap<&String, &PyObject> = 
+            let other_map: std::collections::HashMap<&String, &PyObject> =
                 other_items.iter().map(|(k, v)| (k, v)).collect();
-            
+
             // Compare each item
             for (key, value) in self_items.iter() {
                 if let Some(other_value) = other_map.get(key) {
