@@ -5,18 +5,18 @@
 ================================================================================
 
 1. Async Write (500 items)...
-   ⏱️  0.014s, 36557 ops/sec, 0.01 MB peak
+   ⏱️  0.014s, 37029 ops/sec, 0.01 MB peak
 2. Async Read (500 items)...
-   ⏱️  0.005s, 110504 ops/sec, 0.00 MB peak
+   ⏱️  0.004s, 112015 ops/sec, 0.00 MB peak
 3. Async Concurrent Read (1000 items, 10 concurrent)...
-   ⏱️  0.005s, 99476 ops/sec, 0.01 MB peak
+   ⏱️  0.005s, 100482 ops/sec, 0.01 MB peak
 4. Async Mixed Operations (400 items)...
-   ⏱️  0.006s, 63208 ops/sec, 0.00 MB peak
+   ⏱️  0.006s, 63760 ops/sec, 0.00 MB peak
 
 ================================================================================
 ✅ Async Benchmark completed
 ================================================================================
-async_write: 0.014s, 36557 ops/sec, 0.01 MB peak
-async_read: 0.005s, 110504 ops/sec, 0.00 MB peak
-async_concurrent_read: 0.005s, 99476 ops/sec, 0.01 MB peak
-async_mixed: 0.006s, 63208 ops/sec, 0.00 MB peak
+async_write: 0.014s, 37029 ops/sec, 0.01 MB peak
+async_read: 0.004s, 112015 ops/sec, 0.00 MB peak
+async_concurrent_read: 0.005s, 100482 ops/sec, 0.01 MB peak
+async_mixed: 0.006s, 63760 ops/sec, 0.00 MB peak
