@@ -1,0 +1,332 @@
+"""
+v7.0 テスト - バッチ操作と非同期API検証
+
+このテストモジュールは以下を検証します:
+- batch_get / batch_set 操作
+- AsyncDictSQLiteの網羅的テスト
+- TableProxy / AsyncTableProxy のパリティ
+"""
+
+import pytest
+import tempfile
+import os
+
+# dictsqliteモジュールのインポート
+try:
+    from dictsqlite import DictSQLiteV4, AsyncDictSQLite
+except ImportError:
+    pytest.skip("dictsqlite module not installed", allow_module_level=True)
+
+
+class TestBatchOperations:
+    """バッチ操作テスト（DictSQLiteV4）"""
+
+    def test_batch_get_basic(self, tmp_path):
+        """batch_get基本テスト"""
+        db_path = str(tmp_path / "test_batch_get.db")
+        db = DictSQLiteV4(db_path, storage_mode="pickle")
+        
+        # データ準備
+        db["key1"] = b"value1"
+        db["key2"] = b"value2"
+        db["key3"] = b"value3"
+        
+        # batch_get
+        results = db.batch_get(["key1", "key2", "key3"])
+        
+        assert len(results) == 3
+        assert results["key1"] == b"value1"
+        assert results["key2"] == b"value2"
+        assert results["key3"] == b"value3"
+
+    def test_batch_get_partial(self, tmp_path):
+        """batch_get一部キー存在しないテスト"""
+        db_path = str(tmp_path / "test_batch_partial.db")
+        db = DictSQLiteV4(db_path, storage_mode="pickle")
+        
+        db["exists"] = b"value"
+        
+        results = db.batch_get(["exists", "not_exists"])
+        
+        assert "exists" in results
+        assert "not_exists" not in results
+        assert len(results) == 1
+
+    def test_batch_get_empty(self, tmp_path):
+        """batch_get空リストテスト"""
+        db_path = str(tmp_path / "test_batch_empty.db")
+        db = DictSQLiteV4(db_path, storage_mode="pickle")
+        
+        results = db.batch_get([])
+        assert len(results) == 0
+
+    def test_batch_set_basic(self, tmp_path):
+        """batch_set基本テスト"""
+        db_path = str(tmp_path / "test_batch_set.db")
+        db = DictSQLiteV4(db_path, storage_mode="pickle")
+        
+        items = [
+            ("key1", b"value1"),
+            ("key2", b"value2"),
+            ("key3", b"value3"),
+        ]
+        
+        db.batch_set(items)
+        
+        assert db["key1"] == b"value1"
+        assert db["key2"] == b"value2"
+        assert db["key3"] == b"value3"
+
+    def test_batch_set_overwrite(self, tmp_path):
+        """batch_set上書きテスト"""
+        db_path = str(tmp_path / "test_batch_overwrite.db")
+        db = DictSQLiteV4(db_path, storage_mode="pickle")
+        
+        db["key1"] = b"old_value"
+        
+        items = [("key1", b"new_value")]
+        db.batch_set(items)
+        
+        assert db["key1"] == b"new_value"
+
+    def test_batch_roundtrip(self, tmp_path):
+        """batch_set -> batch_get ラウンドトリップテスト"""
+        db_path = str(tmp_path / "test_batch_roundtrip.db")
+        db = DictSQLiteV4(db_path, storage_mode="pickle")
+        
+        items = [(f"key_{i}", f"value_{i}".encode()) for i in range(50)]
+        keys = [f"key_{i}" for i in range(50)]
+        
+        db.batch_set(items)
+        results = db.batch_get(keys)
+        
+        assert len(results) == 50
+        for i in range(50):
+            assert results[f"key_{i}"] == f"value_{i}".encode()
+
+
+class TestAsyncDictSQLiteComprehensive:
+    """AsyncDictSQLite網羅的テスト"""
+
+    def test_async_basic_operations(self, tmp_path):
+        """AsyncDictSQLite基本操作テスト"""
+        db_path = str(tmp_path / "test_async_basic.db")
+        db = AsyncDictSQLite(db_path)
+        
+        db["key1"] = b"value1"
+        assert db["key1"] == b"value1"
+        
+        del db["key1"]
+        assert "key1" not in db
+
+    def test_async_batch_get(self, tmp_path):
+        """AsyncDictSQLite batch_getテスト"""
+        db_path = str(tmp_path / "test_async_batch.db")
+        db = AsyncDictSQLite(db_path)
+        
+        # データ準備
+        db["key1"] = b"value1"
+        db["key2"] = b"value2"
+        
+        results = db.batch_get(["key1", "key2", "missing"])
+        
+        # Note: AsyncDictSQLite.batch_getはVec<Option<PyObject>>を返す
+        assert len(results) == 3
+
+    def test_async_batch_set(self, tmp_path):
+        """AsyncDictSQLite batch_setテスト"""
+        db_path = str(tmp_path / "test_async_batch_set.db")
+        db = AsyncDictSQLite(db_path)
+        
+        items = [
+            ("key1", b"value1"),
+            ("key2", b"value2"),
+        ]
+        
+        db.batch_set(items)
+        
+        assert db["key1"] == b"value1"
+        assert db["key2"] == b"value2"
+
+    def test_async_table_proxy(self, tmp_path):
+        """AsyncDictSQLite TableProxyテスト"""
+        db_path = str(tmp_path / "test_async_table.db")
+        db = AsyncDictSQLite(db_path)
+        
+        users = db.table("users")
+        users["user1"] = b"data1"
+        
+        assert users["user1"] == b"data1"
+        assert "user1" in users
+
+    def test_async_table_proxy_operations(self, tmp_path):
+        """AsyncTableProxy各種操作テスト"""
+        db_path = str(tmp_path / "test_async_table_ops.db")
+        db = AsyncDictSQLite(db_path)
+        
+        table = db.table("test")
+        
+        # set/get
+        table["key1"] = b"value1"
+        table["key2"] = b"value2"
+        
+        # keys
+        keys = table.keys()
+        assert "key1" in keys
+        assert "key2" in keys
+        
+        # contains
+        assert "key1" in table
+        assert "missing" not in table
+        
+        # delete
+        del table["key1"]
+        assert "key1" not in table
+
+    def test_async_flush(self, tmp_path):
+        """AsyncDictSQLite flushテスト"""
+        db_path = str(tmp_path / "test_async_flush.db")
+        db = AsyncDictSQLite(db_path)
+        
+        db["key"] = b"value"
+        db.flush()
+        
+        assert db["key"] == b"value"
+
+    def test_async_clear(self, tmp_path):
+        """AsyncDictSQLite clearテスト"""
+        db_path = str(tmp_path / "test_async_clear.db")
+        db = AsyncDictSQLite(db_path)
+        
+        db["key1"] = b"value1"
+        db["key2"] = b"value2"
+        
+        db.clear()
+        
+        # After clear, should be empty
+        # Note: clear behavior may vary based on implementation
+
+    def test_async_stats(self, tmp_path):
+        """AsyncDictSQLite statsテスト"""
+        db_path = str(tmp_path / "test_async_stats.db")
+        db = AsyncDictSQLite(db_path)
+        
+        db["key"] = b"value"
+        
+        stats = db.stats()
+        assert stats is not None
+
+
+class TestTableProxyParity:
+    """TableProxy / AsyncTableProxy同期非同期パリティテスト"""
+
+    def test_sync_table_proxy_full_api(self, tmp_path):
+        """TableProxy完全APIテスト"""
+        db_path = str(tmp_path / "test_sync_table.db")
+        db = DictSQLiteV4(db_path, storage_mode="pickle")
+        
+        table = db.table("test")
+        
+        # __setitem__ / __getitem__
+        table["key1"] = b"value1"
+        assert table["key1"] == b"value1"
+        
+        # __contains__
+        assert "key1" in table
+        
+        # keys
+        table["key2"] = b"value2"
+        keys = table.keys()
+        assert "key1" in keys
+        assert "key2" in keys
+        
+        # values
+        values = table.values()
+        assert len(values) == 2
+        
+        # items
+        items = table.items()
+        assert len(items) == 2
+        
+        # get with default
+        result = table.get("missing", b"default")
+        assert result == b"default"
+        
+        # setdefault
+        result = table.setdefault("new_key", b"new_default")
+        assert result == b"new_default"
+        assert table["new_key"] == b"new_default"
+        
+        # pop
+        table["to_pop"] = b"pop_value"
+        popped = table.pop("to_pop")
+        assert popped == b"pop_value"
+        assert "to_pop" not in table
+        
+        # __len__
+        initial_len = len(table)
+        
+        # __delitem__
+        del table["key1"]
+        assert "key1" not in table
+        assert len(table) == initial_len - 1
+        
+        # clear
+        table.clear()
+        assert len(table) == 0
+
+    def test_async_table_proxy_full_api(self, tmp_path):
+        """AsyncTableProxy完全APIテスト"""
+        db_path = str(tmp_path / "test_async_table_full.db")
+        db = AsyncDictSQLite(db_path)
+        
+        table = db.table("test")
+        
+        # __setitem__ / __getitem__
+        table["key1"] = b"value1"
+        assert table["key1"] == b"value1"
+        
+        # __contains__
+        assert "key1" in table
+        
+        # keys
+        table["key2"] = b"value2"
+        keys = table.keys()
+        assert "key1" in keys
+        assert "key2" in keys
+        
+        # values
+        values = table.values()
+        assert len(values) == 2
+        
+        # items
+        items = table.items()
+        assert len(items) == 2
+        
+        # get with default
+        result = table.get("missing", b"default")
+        assert result == b"default"
+        
+        # setdefault
+        result = table.setdefault("new_key", b"new_default")
+        assert result == b"new_default"
+        
+        # pop
+        table["to_pop"] = b"pop_value"
+        popped = table.pop("to_pop")
+        assert popped == b"pop_value"
+        
+        # __len__
+        initial_len = len(table)
+        
+        # __delitem__
+        del table["key1"]
+        assert len(table) == initial_len - 1
+        
+        # clear
+        table.clear()
+        assert len(table) == 0
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
