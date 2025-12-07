@@ -322,7 +322,23 @@ impl Default for SafePickleValidator {
 /// - str -> string
 /// - list -> array
 /// - dict -> object
+///
+/// v6.0: pythonize統合（フォールバック付き）
+/// - pythonizeで高速変換を試行
+/// - 失敗時は手動変換にフォールバック（100%互換性保証）
 fn pyobject_to_json_value(obj: Py<PyAny>, py: Python) -> PyResult<serde_json::Value> {
+    // v6.0 Tier 2: まずpythonizeで高速変換を試行
+    if let Ok(value) = pythonize::depythonize::<serde_json::Value>(obj.bind(py)) {
+        return Ok(value);
+    }
+
+    // フォールバック: 手動変換（100%互換性保証）
+    manual_pyobject_to_json_value(obj, py)
+}
+
+/// 手動変換（フォールバック用）
+/// pythonizeが失敗した場合に使用される互換性保証の変換関数
+fn manual_pyobject_to_json_value(obj: Py<PyAny>, py: Python) -> PyResult<serde_json::Value> {
     use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 
     let obj_ref = obj.bind(py);
@@ -357,7 +373,7 @@ fn pyobject_to_json_value(obj: Py<PyAny>, py: Python) -> PyResult<serde_json::Va
         // Python list -> JSON array（再帰的に変換）
         let mut arr = Vec::new();
         for item in val.iter() {
-            arr.push(pyobject_to_json_value(item.into(), py)?);
+            arr.push(manual_pyobject_to_json_value(item.into(), py)?);
         }
         Ok(serde_json::Value::Array(arr))
     } else if let Ok(val) = obj_ref.cast::<PyDict>() {
@@ -365,7 +381,7 @@ fn pyobject_to_json_value(obj: Py<PyAny>, py: Python) -> PyResult<serde_json::Va
         let mut map = serde_json::Map::new();
         for (key, value) in val.iter() {
             let key_str: String = key.extract()?;
-            map.insert(key_str, pyobject_to_json_value(value.into(), py)?);
+            map.insert(key_str, manual_pyobject_to_json_value(value.into(), py)?);
         }
         Ok(serde_json::Value::Object(map))
     } else {
