@@ -186,14 +186,16 @@ impl StorageEngine {
 
         // v7.0: コネクションプールの最適化設定
         // max_size=32: 高負荷環境で十分な並行性（WAL推奨上限）
-        // min_idle=2: 最小2接続を維持（接続遅延回避）
+        // min_idle: 最小接続数（pool_sizeに応じて調整、max_sizeを超えないように）
         // idle_timeout=30s: アイドル接続を30秒後に回収（メモリ効率）
         // connection_timeout=5s: 接続取得タイムアウト（デッドロック防止）
         let pool_size = config.pool_size;
+        // min_idleはpool_sizeを超えてはならない（r2d2の制約）
+        let min_idle = std::cmp::min(2, pool_size) as u32;
 
         let cold_pool = Pool::builder()
             .max_size(pool_size as u32)
-            .min_idle(Some(2))
+            .min_idle(Some(min_idle))
             .idle_timeout(Some(std::time::Duration::from_secs(30)))
             .connection_timeout(std::time::Duration::from_secs(5))
             .build(manager)?;
