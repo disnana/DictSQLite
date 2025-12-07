@@ -3,8 +3,25 @@
 # このワークフローは負荷が大きいため、手動実行のみ許可されています。
 # 実行方法: GitHub の「Actions」タブ → 「Performance Benchmark」→ 「Run workflow」
 #
-# DictSQLite、DictSQLite-Fastest、DictSQLite-Fastest Beta の
-# 3つのバージョンを包括的にベンチマークし、結果をグラフ化します。
+# テスト対象の選択オプション:
+# - all: 3つの主要バージョンを比較 (Original, dictsqlite_v2, Beta v2)
+#   → Original版 (dictsqlite/) - 標準sqlite3ベース
+#   → dictsqlite_v2版 (dictsqlite_v2/dictsqlite/) - Rust拡張 v2.0.6 (同期・非同期対応)
+#     * 3モード個別テスト: memory, lazy, writethrough
+#     * 各モード同期・非同期テスト: Write, Read, Mixed, Update, Async Write, Async Read, Concurrent
+#     * メモリ使用量プロファイリング
+#     * fastest版との詳細比較
+#   → Beta v2版 (dictsqlite-fastest beta v2) - APSWベース非同期高性能版
+#
+# - v1, v2, v3, v4: dictsqlite-fastest Betaの各リビジョンをテスト
+#   → v1: dictsqlite-fastest beta v1
+#   → v2: dictsqlite-fastest beta v2
+#   → v3: dictsqlite-fastest beta v3-alpha
+#   → v4: dictsqlite-fastest beta v4-final
+#
+# ビルドされるRust拡張:
+# - dictsqlite_v2: dictsqlite_v2/dictsqlite/ フォルダ - バージョン 2.0.6 (Rust拡張)
+# - dictsqlite_v4.1: others/beta-versions/dictsqlite_v4.1/ - v4.1 Rust実装 (v1-v4モードのみ使用)
 
 name: Performance Benchmark
 
@@ -24,32 +41,78 @@ on:
           - 'true'
           - 'false'
       beta_version:
-        description: 'Beta版のバージョン選択'
+        description: 'テスト対象の選択'
         required: true
-        default: 'v1'
+        default: 'all'
         type: choice
         options:
+          - 'all'
           - 'v1'
           - 'v2'
           - 'v3'
           - 'v4'
-          - 'all'
 
 jobs:
-  benchmark:
+  # Rust拡張のビルドを並列化
+  build-rust-extensions:
     runs-on: ubuntu-latest
-    # パフォーマンステストは負荷が大きいため、手動実行のみ許可
-    # GitHub Actionsの「Actions」タブから「Performance Benchmark」を選択して実行してください
+    strategy:
+      matrix:
+        extension:
+          - name: "v4.1"
+            path: "others/beta-versions/dictsqlite_v4.1"
+            package: "dictsqlite_v4"
+          - name: "v2"
+            path: "dictsqlite_v2/dictsqlite"
+            package: "dictsqlite"
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Set up Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: stable
+
+    - name: Build Rust extension for ${{ matrix.extension.name }}
+      run: |
+        pip install maturin
+        cd ${{ matrix.extension.path }}
+        echo "🔨 Building Rust ${{ matrix.extension.name }} extension..."
+        echo "Current directory: $(pwd)"
+        echo "Checking for Cargo.toml: $(ls -la Cargo.toml 2>&1 || echo 'NOT FOUND')"
+        maturin build --release
+        echo "✅ Rust ${{ matrix.extension.name }} extension built successfully"
+
+    - name: Upload wheel artifact
+      uses: actions/upload-artifact@v4.4.3
+      with:
+        name: wheel-${{ matrix.extension.name }}
+        path: ${{ matrix.extension.path }}/target/wheels/*.whl
+        retention-days: 1
+
+  benchmark:
+    needs: build-rust-extensions
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.11"]
+    
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta:${{ github.workspace }}/dictsqlite_v2/dictsqlite/python
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
@@ -76,86 +139,216 @@ jobs:
         if [ -f "others/beta-versions/dictsqlite-fastest/beta/requirements.txt" ]; then
           pip install -r others/beta-versions/dictsqlite-fastest/beta/requirements.txt
         fi
-
-    - name: Set up Rust
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-
-    - name: Build Rust v4.1 extension
-      run: |
         pip install maturin
-        cd others/beta-versions/dictsqlite_v4.1
-        echo "🔨 Building Rust v4.1 extension..."
-        echo "Current directory: $(pwd)"
-        echo "Checking for Cargo.toml: $(ls -la Cargo.toml 2>&1 || echo 'NOT FOUND')"
-        maturin build --release
+
+    - name: Download v4.1 wheel
+      uses: actions/download-artifact@v4.1.3
+      with:
+        name: wheel-v4.1
+        path: ./wheels/v4.1
+
+    - name: Download v2 wheel
+      uses: actions/download-artifact@v4.1.3
+      with:
+        name: wheel-v2
+        path: ./wheels/v2
+
+    - name: Install Rust extensions
+      run: |
         echo "📦 Installing Rust v4.1 extension..."
-        pip install --force-reinstall target/wheels/dictsqlite_v4-*.whl
-        echo "✅ Rust v4.1 extension built and installed successfully"
+        # Verify exactly one wheel file exists
+        WHEEL_COUNT=$(ls -1 ./wheels/v4.1/dictsqlite_v4-*.whl 2>/dev/null | wc -l)
+        if [ "$WHEEL_COUNT" -eq 0 ]; then
+          echo "❌ Error: No v4.1 wheel file found"
+          exit 1
+        elif [ "$WHEEL_COUNT" -gt 1 ]; then
+          echo "⚠️ Warning: Multiple v4.1 wheel files found, using first one"
+          ls -1 ./wheels/v4.1/dictsqlite_v4-*.whl
+        fi
+        pip install --force-reinstall ./wheels/v4.1/dictsqlite_v4-*.whl
+        echo "✅ Rust v4.1 extension installed"
+        
+        echo "📦 Installing dictsqlite_v2 extension..."
+        # Verify exactly one wheel file exists
+        WHEEL_COUNT=$(ls -1 ./wheels/v2/dictsqlite-*.whl 2>/dev/null | wc -l)
+        if [ "$WHEEL_COUNT" -eq 0 ]; then
+          echo "❌ Error: No v2 wheel file found"
+          exit 1
+        elif [ "$WHEEL_COUNT" -gt 1 ]; then
+          echo "⚠️ Warning: Multiple v2 wheel files found, using first one"
+          ls -1 ./wheels/v2/dictsqlite-*.whl
+        fi
+        pip install --force-reinstall ./wheels/v2/dictsqlite-*.whl
+        echo "✅ dictsqlite_v2 extension installed"
+
+    - name: Display version information
+      run: |
+        echo "=== バージョン情報 ==="
+        echo "Python: $(python --version)"
+        echo ""
+        echo "選択されたテスト対象: ${{ github.event.inputs.beta_version }}"
+        echo ""
+        
+        if [ "${{ github.event.inputs.beta_version }}" == "all" ]; then
+          echo "テスト内容: 3つの主要バージョンを比較"
+          echo "  - Original版 (dictsqlite/) - 標準sqlite3ベース（同期処理のみ）"
+          echo "  - dictsqlite_v2版 (dictsqlite_v2/dictsqlite/) - Rust拡張 v2.0.6（同期・非同期対応）"
+          echo "    * 3モード個別テスト: memory, lazy, writethrough"
+          echo "    * 各モード同期・非同期テスト: Write, Read, Mixed, Update, Async Write, Async Read, Concurrent"
+          echo "    * メモリ使用量プロファイリング"
+          echo "    * 総合7テスト × 3モード = 21テストケース"
+          echo "  - Beta v2版 (dictsqlite-fastest beta v2) - APSWベース非同期高性能版"
+        else
+          echo "テスト内容: dictsqlite-fastest Beta ${{ github.event.inputs.beta_version }} のみ"
+          echo "  - Original版との比較"
+          echo "  - Fastest版との比較"
+        fi
+        echo ""
+        echo "インストール済みパッケージ:"
+        echo ""
+        echo "DictSQLite (Original):"
+        python -c "import dictsqlite.main; print(f'  Version: {dictsqlite.main.__version__}')" || echo "  インポートエラー"
+        echo ""
+        echo "dictsqlite_v2 (Rust拡張):"
+        echo "  pyproject.toml バージョン: 2.0.6"
+        python -c "import dictsqlite; print(f'  インポート成功')" || echo "  インポートエラー"
+        echo ""
+        echo "dictsqlite_v4.1 (Rust拡張):"
+        python -c "from dictsqlite_v4 import DictSQLiteV4; print(f'  インポート成功')" || echo "  インポートエラー"
+        echo ""
+        echo "Beta Version: ${{ github.event.inputs.beta_version }}"
+        echo "======================================"
 
     - name: Run fast comprehensive benchmark
       run: |
         cd others/benchmark
         
-        # Beta版のバージョンに応じてインポートを変更
+        # テスト対象の選択
+        # Note: BETA_VERSION という変数名ですが、"all" を含む全テスト対象に使用されます
         BETA_VERSION="${{ github.event.inputs.beta_version }}"
-        echo "📦 選択されたBeta版: $BETA_VERSION"
+        echo "📦 選択されたテスト対象: $BETA_VERSION"
         
-        # BETA_VERSIONを環境変数としてエクスポート（バージョン管理システムで使用）
+        # BETA_VERSIONを環境変数としてエクスポート（バージョン管理システムとベンチマークスクリプトで使用）
         export BETA_VERSION
         
+        # 結果ディレクトリを事前に作成
+        mkdir -p results/versions
+        mkdir -p results/graphs
+        mkdir -p results/comparisons
+        mkdir -p results/v2_modes
+        
         if [ "$BETA_VERSION" == "all" ]; then
-          echo "🔬 全バージョン (Original, Beta v2, v4.1) の比較ベンチマークを実行..."
-          python run_benchmark.py --beta all
+          echo "🔬 全バージョン (Original版, dictsqlite_v2版, Beta v2版) の比較ベンチマークを実行..."
+          python run_benchmark.py --beta all || {
+            echo "❌ ベンチマーク実行エラー"
+            echo "エラーログを確認してください"
+            exit 1
+          }
+          
+          echo ""
+          echo "🔬 dictsqlite_v2 全モード(memory, lazy, writethrough) vs fastest詳細比較を実行..."
+          python comprehensive_v2_vs_fastest.py > results/v2_modes/comprehensive_comparison.log 2>&1 || {
+            echo "⚠️ v2全モードベンチマーク実行エラー（継続）"
+            cat results/v2_modes/comprehensive_comparison.log
+          }
+          
+          echo ""
+          echo "🔬 dictsqlite_v2 全モード総合ベンチマーク(同期・非同期)を実行..."
+          python comprehensive_v2_all_modes.py > results/v2_modes/comprehensive_all_modes.log 2>&1 || {
+            echo "⚠️ v2全モード総合ベンチマーク実行エラー（継続）"
+            cat results/v2_modes/comprehensive_all_modes.log
+          }
+          
+          echo ""
+          echo "🔬 dictsqlite_v2 非同期ベンチマークを実行..."
+          python test_async_dictsqlite_v2.py > results/v2_modes/async_benchmark.log 2>&1 || {
+            echo "⚠️ v2非同期ベンチマーク実行エラー（継続）"
+            cat results/v2_modes/async_benchmark.log
+          }
         elif [ "$BETA_VERSION" == "v2" ]; then
-          echo "🔄 ベンチマークスクリプトをv2用に変更..."
-          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v2 import/g' comprehensive_benchmark.py
-          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v2 import/g' fast_comprehensive_benchmark.py
+          echo "🔄 dictsqlite-fastest Beta v2 をテスト中..."
+          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v2 import/g' comprehensive_benchmark.py || true
+          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v2 import/g' fast_comprehensive_benchmark.py || true
           
           if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
-            echo "🔬 フル機能ベンチマーク (v2) を実行中..."
-            python comprehensive_benchmark.py
+            echo "🔬 フル機能ベンチマーク (dictsqlite-fastest Beta v2) を実行中..."
+            python comprehensive_benchmark.py || {
+              echo "❌ ベンチマーク実行エラー"
+              exit 1
+            }
           else
-            echo "⚡ 高速ベンチマーク (v2) を実行中..."
-            python fast_comprehensive_benchmark.py
+            echo "⚡ 高速ベンチマーク (dictsqlite-fastest Beta v2) を実行中..."
+            python fast_comprehensive_benchmark.py || {
+              echo "❌ ベンチマーク実行エラー"
+              exit 1
+            }
           fi
         elif [ "$BETA_VERSION" == "v3" ]; then
-          echo "🔄 ベンチマークスクリプトをv3-alpha用に変更..."
-          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v3_alpha import/g' comprehensive_benchmark.py
-          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v3_alpha import/g' fast_comprehensive_benchmark.py
+          echo "🔄 dictsqlite-fastest Beta v3-alpha をテスト中..."
+          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v3_alpha import/g' comprehensive_benchmark.py || true
+          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v3_alpha import/g' fast_comprehensive_benchmark.py || true
           
           if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
-            echo "🔬 フル機能ベンチマーク (v3) を実行中..."
-            python comprehensive_benchmark.py
+            echo "🔬 フル機能ベンチマーク (dictsqlite-fastest Beta v3) を実行中..."
+            python comprehensive_benchmark.py || {
+              echo "❌ ベンチマーク実行エラー"
+              exit 1
+            }
           else
-            echo "⚡ 高速ベンチマーク (v3) を実行中..."
-            python fast_comprehensive_benchmark.py
+            echo "⚡ 高速ベンチマーク (dictsqlite-fastest Beta v3) を実行中..."
+            python fast_comprehensive_benchmark.py || {
+              echo "❌ ベンチマーク実行エラー"
+              exit 1
+            }
           fi
         elif [ "$BETA_VERSION" == "v4" ]; then
-          echo "🔄 ベンチマークスクリプトをv4-final用に変更..."
-          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v4_final import/g' comprehensive_benchmark.py
-          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v4_final import/g' fast_comprehensive_benchmark.py
+          echo "🔄 dictsqlite-fastest Beta v4-final をテスト中..."
+          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v4_final import/g' comprehensive_benchmark.py || true
+          sed -i 's/from dictsqlite_fastest_beta import/from dictsqlite_fastest_beta_v4_final import/g' fast_comprehensive_benchmark.py || true
           
           if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
-            echo "🔬 フル機能ベンチマーク (v4) を実行中..."
-            python comprehensive_benchmark.py
+            echo "🔬 フル機能ベンチマーク (dictsqlite-fastest Beta v4) を実行中..."
+            python comprehensive_benchmark.py || {
+              echo "❌ ベンチマーク実行エラー"
+              exit 1
+            }
           else
-            echo "⚡ 高速ベンチマーク (v4) を実行中..."
-            python fast_comprehensive_benchmark.py
+            echo "⚡ 高速ベンチマーク (dictsqlite-fastest Beta v4) を実行中..."
+            python fast_comprehensive_benchmark.py || {
+              echo "❌ ベンチマーク実行エラー"
+              exit 1
+            }
           fi
         else
           # v1の場合
           if [ "${{ github.event.inputs.run_full_benchmark }}" == "true" ]; then
-            echo "🔬 フル機能ベンチマーク (v1) を実行中..."
-            python comprehensive_benchmark.py
+            echo "🔬 フル機能ベンチマーク (dictsqlite-fastest Beta v1) を実行中..."
+            python comprehensive_benchmark.py || {
+              echo "❌ ベンチマーク実行エラー"
+              exit 1
+            }
           else
-            echo "⚡ 高速ベンチマーク (v1) を実行中..."
-            python fast_comprehensive_benchmark.py
+            echo "⚡ 高速ベンチマーク (dictsqlite-fastest Beta v1) を実行中..."
+            python fast_comprehensive_benchmark.py || {
+              echo "❌ ベンチマーク実行エラー"
+              exit 1
+            }
           fi
         fi
+        
+        # CSV ファイルの検証
+        echo "📊 CSV ファイルの検証..."
+        if ls results/*.csv 1> /dev/null 2>&1; then
+          for csv_file in results/*.csv; do
+            if [ -f "$csv_file" ]; then
+              lines=$(wc -l < "$csv_file")
+              echo "  ✓ $csv_file ($lines lines)"
+            fi
+          done
+        else
+          echo "  ⚠️ CSV ファイルが見つかりません"
+        fi
       env:
-        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta
         BETA_VERSION: ${{ github.event.inputs.beta_version }}
       continue-on-error: false
 
@@ -166,8 +359,6 @@ jobs:
         cd others/benchmark
         echo "📊 バージョン間比較を生成中..."
         python compare_versions.py || echo "⚠️ バージョン比較の生成に失敗しました（初回実行の場合は正常）"
-      env:
-        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta
       continue-on-error: true
 
     - name: List benchmark results
@@ -195,9 +386,26 @@ jobs:
         if [ -d "others/benchmark/results/comparisons" ]; then
           ls -lh others/benchmark/results/comparisons/
         fi
+        echo ""
+        echo "=== dictsqlite_v2 Mode Tests ==="
+        if [ -d "others/benchmark/results/v2_modes" ]; then
+          ls -lh others/benchmark/results/v2_modes/
+          echo ""
+          echo "=== v2 Comprehensive Comparison Log ==="
+          if [ -f "others/benchmark/results/v2_modes/comprehensive_comparison.log" ]; then
+            echo "📊 Showing v2 vs fastest comparison results:"
+            tail -50 others/benchmark/results/v2_modes/comprehensive_comparison.log
+          fi
+          echo ""
+          echo "=== v2 All Modes Comprehensive Log ==="
+          if [ -f "others/benchmark/results/v2_modes/comprehensive_all_modes.log" ]; then
+            echo "📊 Showing all modes (sync/async) results:"
+            tail -80 others/benchmark/results/v2_modes/comprehensive_all_modes.log
+          fi
+        fi
 
     - name: Upload benchmark results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v4.4.3
       with:
         name: benchmark-results-${{ matrix.python-version }}
         path: |
@@ -209,18 +417,45 @@ jobs:
           others/benchmark/results/graphs/*.html
           others/benchmark/results/versions/**/*
           others/benchmark/results/comparisons/**/*
+          others/benchmark/results/v2_modes/**/*
         retention-days: 90
 
     - name: Create benchmark summary
       run: |
         SUMMARY_FILE="others/benchmark/results/BENCHMARK_SUMMARY.md"
+        echo "## 📊 Benchmark Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
         if [ -f "$SUMMARY_FILE" ]; then
-          echo "## 📊 Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "### Main Benchmark Summary" >> $GITHUB_STEP_SUMMARY
           cat "$SUMMARY_FILE" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "*手動実行されたベンチマーク - $(date)*" >> $GITHUB_STEP_SUMMARY
         fi
+        
+        # Add v2 comprehensive results to summary
+        V2_LOG="others/benchmark/results/v2_modes/comprehensive_comparison.log"
+        if [ -f "$V2_LOG" ]; then
+          echo "### 🔬 dictsqlite_v2 Comprehensive Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -50 "$V2_LOG" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        # Add all modes results to summary
+        ALL_MODES_LOG="others/benchmark/results/v2_modes/comprehensive_all_modes.log"
+        if [ -f "$ALL_MODES_LOG" ]; then
+          echo "### 📊 dictsqlite_v2 All Modes (Sync/Async)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -80 "$ALL_MODES_LOG" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "---" >> $GITHUB_STEP_SUMMARY
+        echo "*ベンチマーク実行 - $(date)*" >> $GITHUB_STEP_SUMMARY
 
     - name: Display benchmark info
       run: |
