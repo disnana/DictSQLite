@@ -1,6 +1,4 @@
-// v5.1: PyO3 0.27 deprecation warnings suppressed pending full migration
-#![allow(deprecated)]
-#![allow(noop_method_call)]
+// v6.0: PyO3 0.27 API完全移行
 
 use dashmap::DashMap;
 use pyo3::prelude::*;
@@ -131,11 +129,11 @@ impl AsyncDictSQLite {
 
     /// Async get (non-blocking, no GIL for cache access)
     /// Now with storage fallback for persistence modes
-    fn get_async(&self, key: String, py: Python) -> PyResult<Option<PyObject>> {
+    fn get_async(&self, key: String, py: Python) -> PyResult<Option<Py<PyAny>>> {
         let cache = self.cache.clone();
 
         // Release GIL during cache access
-        let result = py.allow_threads(|| cache.get(&key).map(|value| value.clone()));
+        let result = py.detach(|| cache.get(&key).map(|value| value.clone()));
 
         // If found in cache, return immediately
         if let Some(value) = result {
@@ -203,11 +201,11 @@ impl AsyncDictSQLite {
 
     /// Batch get (optimized with Rayon for parallel processing)
     /// v4.2: Improved cache miss handling with batch storage reads
-    fn batch_get(&self, keys: Vec<String>, py: Python) -> PyResult<Vec<Option<PyObject>>> {
+    fn batch_get(&self, keys: Vec<String>, py: Python) -> PyResult<Vec<Option<Py<PyAny>>>> {
         let cache = self.cache.clone();
 
         // Release GIL during parallel batch processing
-        let (cached_results, cache_misses): (Vec<_>, Vec<_>) = py.allow_threads(|| {
+        let (cached_results, cache_misses): (Vec<_>, Vec<_>) = py.detach(|| {
             // Use rayon for parallel batch processing
             let results: Vec<(usize, Option<Vec<u8>>)> = keys
                 .par_iter()
@@ -246,7 +244,7 @@ impl AsyncDictSQLite {
             }
         }
 
-        // Convert to PyObjects with GIL
+        // Convert to Py<PyAny>s with GIL
         Ok(final_results
             .into_iter()
             .map(|(_, opt_value)| opt_value.map(|value| PyBytes::new(py, &value).into()))
@@ -327,7 +325,7 @@ impl AsyncDictSQLite {
         let cache = self.cache.clone();
         let storage = self.storage.clone();
         let config = self.config.clone();
-        let runtime = self.runtime.clone();
+        let runtime = self.runtime;
 
         // Check cache first
         if let Some(value) = cache.get(&key) {
@@ -368,7 +366,7 @@ impl AsyncDictSQLite {
         let storage = self.storage.clone();
         let config = self.config.clone();
         let buffer_size = self.buffer_size;
-        let runtime = self.runtime.clone();
+        let runtime = self.runtime;
 
         // Always update cache immediately for fast reads
         cache.insert(key.clone(), value.clone());
@@ -416,7 +414,7 @@ impl AsyncDictSQLite {
         let cache = self.cache.clone();
         let storage = self.storage.clone();
         let config = self.config.clone();
-        let runtime = self.runtime.clone();
+        let runtime = self.runtime;
 
         let mut results = Vec::with_capacity(keys.len());
 
@@ -469,7 +467,7 @@ impl AsyncDictSQLite {
         let storage = self.storage.clone();
         let config = self.config.clone();
         let buffer_size = self.buffer_size;
-        let runtime = self.runtime.clone();
+        let runtime = self.runtime;
 
         // Update cache immediately for all items
         for (key, value) in &items {
@@ -551,7 +549,7 @@ impl AsyncDictSQLite {
         let cache = self.cache.clone();
         let storage = self.storage.clone();
         let config = self.config.clone();
-        let runtime = self.runtime.clone();
+        let runtime = self.runtime;
 
         // Remove from cache
         cache.remove(&key);
@@ -582,7 +580,7 @@ impl AsyncDictSQLite {
         let write_buffer = self.write_buffer.clone();
         let storage = self.storage.clone();
         let config = self.config.clone();
-        let runtime = self.runtime.clone();
+        let runtime = self.runtime;
 
         if config.persist_mode == PersistMode::Memory {
             return Ok(());
@@ -635,7 +633,7 @@ impl AsyncDictSQLite {
     }
 
     /// Dict-like access: db[key]
-    fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
+    fn __getitem__(&self, key: String, py: Python) -> PyResult<Py<PyAny>> {
         // Add table prefix if default table is not "main" or empty
         let full_key = if !self.config.table_name.is_empty() && self.config.table_name != "main" {
             format!("{}:{}", self.config.table_name, key)
@@ -685,7 +683,7 @@ impl AsyncDictSQLite {
     }
 
     /// Dict-like access: db[key] = value
-    fn __setitem__(&self, key: String, value: PyObject, py: Python) -> PyResult<()> {
+    fn __setitem__(&self, key: String, value: Py<PyAny>, py: Python) -> PyResult<()> {
         // Add table prefix if default table is not "main" or empty
         let full_key = if !self.config.table_name.is_empty() && self.config.table_name != "main" {
             format!("{}:{}", self.config.table_name, key)
@@ -812,7 +810,7 @@ pub struct AsyncTableProxy {
 #[pymethods]
 impl AsyncTableProxy {
     /// Dict-like access: table[key]
-    fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
+    fn __getitem__(&self, key: String, py: Python) -> PyResult<Py<PyAny>> {
         let db = self.db.borrow(py);
 
         // Get raw data based on table mode
@@ -898,7 +896,7 @@ impl AsyncTableProxy {
     }
 
     /// Dict-like access: table[key] = value
-    fn __setitem__(&self, key: String, value: PyObject, py: Python) -> PyResult<()> {
+    fn __setitem__(&self, key: String, value: Py<PyAny>, py: Python) -> PyResult<()> {
         let db = self.db.borrow(py);
 
         // Serialize based on storage mode
@@ -1058,7 +1056,7 @@ impl AsyncTableProxy {
     }
 
     /// Get all items as (key, value) tuples
-    fn items(&self, py: Python) -> PyResult<Vec<(String, PyObject)>> {
+    fn items(&self, py: Python) -> PyResult<Vec<(String, Py<PyAny>)>> {
         let keys = self.keys(py)?;
         let mut items = Vec::new();
         for key in keys {
@@ -1068,7 +1066,7 @@ impl AsyncTableProxy {
     }
 
     /// Get all values in this table
-    fn values(&self, py: Python) -> PyResult<Vec<PyObject>> {
+    fn values(&self, py: Python) -> PyResult<Vec<Py<PyAny>>> {
         let keys = self.keys(py)?;
         let mut values = Vec::new();
         for key in keys {
@@ -1079,7 +1077,7 @@ impl AsyncTableProxy {
 
     /// Get value with default
     #[pyo3(signature = (key, default=None))]
-    fn get(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+    fn get(&self, key: String, default: Option<Py<PyAny>>, py: Python) -> PyResult<Py<PyAny>> {
         match self.__getitem__(key, py) {
             Ok(value) => Ok(value),
             Err(_) => Ok(default.unwrap_or_else(|| py.None())),
@@ -1126,7 +1124,7 @@ impl AsyncTableProxy {
 
     /// Pop: Remove key and return value (dict.pop())
     #[pyo3(signature = (key, default=None))]
-    fn pop(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+    fn pop(&self, key: String, default: Option<Py<PyAny>>, py: Python) -> PyResult<Py<PyAny>> {
         match self.__getitem__(key.clone(), py) {
             Ok(value) => {
                 self.__delitem__(key, py)?;
@@ -1144,7 +1142,7 @@ impl AsyncTableProxy {
 
     /// Setdefault: Set key if not exists, return value (dict.setdefault())
     #[pyo3(signature = (key, default=None))]
-    fn setdefault(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+    fn setdefault(&self, key: String, default: Option<Py<PyAny>>, py: Python) -> PyResult<Py<PyAny>> {
         match self.__getitem__(key.clone(), py) {
             Ok(value) => Ok(value),
             Err(_) => {
@@ -1251,13 +1249,13 @@ impl AsyncTableProxy {
     ///
     /// Compares the AsyncTableProxy with a Python dict or another AsyncTableProxy.
     /// Returns True if all keys and values match.
-    fn __eq__(&self, other: PyObject, py: Python) -> PyResult<bool> {
+    fn __eq__(&self, other: Py<PyAny>, py: Python) -> PyResult<bool> {
         // Get items from this table (we need them for comparison)
         let self_items = self.items(py)?;
         let self_len = self_items.len();
 
         // Check if other is a dict
-        if let Ok(other_dict) = other.downcast_bound::<PyDict>(py) {
+        if let Ok(other_dict) = other.cast_bound::<PyDict>(py) {
             // Compare with dict - check size first for early exit
             if self_len != other_dict.len() {
                 return Ok(false);
@@ -1286,7 +1284,7 @@ impl AsyncTableProxy {
             }
 
             // Create a HashMap only for the other table to enable O(1) lookup
-            let other_map: std::collections::HashMap<&String, &PyObject> =
+            let other_map: std::collections::HashMap<&String, &Py<PyAny>> =
                 other_items.iter().map(|(k, v)| (k, v)).collect();
 
             // Compare each item

@@ -1,6 +1,4 @@
-// v5.1: PyO3 0.27 deprecation warnings suppressed pending full migration
-// TODO: Migrate PyObject -> Py<PyAny>, with_gil -> attach, downcast -> cast
-#![allow(deprecated)]
+// v6.0: PyO3 0.27 API完全移行
 #![allow(clippy::doc_lazy_continuation)]
 
 //! # DictSQLite v4.2 - 高性能辞書型SQLiteライブラリ
@@ -52,8 +50,7 @@
 use dashmap::DashMap;
 use lru::LruCache;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict};
-use pyo3::Bound;
+use pyo3::types::{PyAny, PyBytes, PyDict};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
@@ -95,6 +92,9 @@ mod tests_lru;
 mod tests_storage;
 #[cfg(test)]
 mod tests_compression; // v5.1: 圧縮機能テスト
+#[cfg(test)]
+mod tests_v6; // v6.0: API移行検証テスト
+
 
 
 // 公開APIのエクスポート
@@ -124,7 +124,7 @@ pub use storage::{MemoryTier, StorageEngine};
 #[derive(Debug)]
 pub struct SafePicklePolicy {
     /// Python側のポリシーオブジェクトへの参照
-    policy: PyObject,
+    policy: Py<PyAny>,
 }
 
 impl SafePicklePolicy {
@@ -139,7 +139,7 @@ impl SafePicklePolicy {
     /// - `Ok(SafePicklePolicy)`: 新しいポリシーインスタンス
     /// - `Err(PyErr)`: Python側でのエラー（モジュールインポート失敗など）
     pub fn new() -> PyResult<Self> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // dictsqlite.modules からsafe_pickleをインポート
             let safe_pickle = py.import("dictsqlite.modules.safe_pickle")?;
             let policy_class = safe_pickle.getattr("SafePolicy")?;
@@ -160,7 +160,7 @@ impl SafePicklePolicy {
     /// - `Ok(SafePicklePolicy)`: パッケージ用に設定されたポリシー
     /// - `Err(PyErr)`: エラー
     pub fn for_package(pkg_prefix: &str) -> PyResult<Self> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let safe_pickle = py.import("dictsqlite.modules.safe_pickle")?;
             let policy_class = safe_pickle.getattr("SafePolicy")?;
             let policy = policy_class.call_method1("for_package", (pkg_prefix,))?;
@@ -182,7 +182,7 @@ impl SafePicklePolicy {
     /// - `Ok(SafePicklePolicy)`: 更新されたポリシー
     /// - `Err(PyErr)`: エラー
     pub fn with_module_prefix(self, prefix: String) -> PyResult<Self> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let policy_bound = self.policy.bind(py);
             let current_prefixes = policy_bound.getattr("allowed_module_prefixes")?;
 
@@ -278,10 +278,10 @@ impl SafePickleValidator {
     /// * `data` - 検証およびロードするPickleデータ
     ///
     /// # 戻り値
-    /// - `Ok(PyObject)`: 検証済みでロードされたPythonオブジェクト
+    /// - `Ok(Py<PyAny>)`: 検証済みでロードされたPythonオブジェクト
     /// - `Err(PyErr)`: 検証失敗またはロードエラー
-    pub fn validate_and_load(&self, data: &[u8]) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+    pub fn validate_and_load(&self, data: &[u8]) -> PyResult<Py<PyAny>> {
+        Python::attach(|py| {
             // safe_pickleモジュールからsafe_loads関数を取得
             let safe_pickle = py.import("dictsqlite.modules.safe_pickle")?;
             let safe_loads = safe_pickle.getattr("safe_loads")?;
@@ -322,7 +322,7 @@ impl Default for SafePickleValidator {
 /// - str -> string
 /// - list -> array
 /// - dict -> object
-fn pyobject_to_json_value(obj: PyObject, py: Python) -> PyResult<serde_json::Value> {
+fn pyobject_to_json_value(obj: Py<PyAny>, py: Python) -> PyResult<serde_json::Value> {
     use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 
     let obj_ref = obj.bind(py);
@@ -331,10 +331,10 @@ fn pyobject_to_json_value(obj: PyObject, py: Python) -> PyResult<serde_json::Val
     if obj_ref.is_none() {
         // Python None -> JSON null
         Ok(serde_json::Value::Null)
-    } else if let Ok(val) = obj_ref.downcast::<PyBool>() {
+    } else if let Ok(val) = obj_ref.cast::<PyBool>() {
         // Python bool -> JSON boolean
         Ok(serde_json::Value::Bool(val.is_true()))
-    } else if let Ok(val) = obj_ref.downcast::<PyInt>() {
+    } else if let Ok(val) = obj_ref.cast::<PyInt>() {
         // Python int -> JSON number
         if let Ok(i) = val.extract::<i64>() {
             Ok(serde_json::Value::Number(i.into()))
@@ -343,24 +343,24 @@ fn pyobject_to_json_value(obj: PyObject, py: Python) -> PyResult<serde_json::Val
             let u: u64 = val.extract()?;
             Ok(serde_json::Value::Number(u.into()))
         }
-    } else if let Ok(val) = obj_ref.downcast::<PyFloat>() {
+    } else if let Ok(val) = obj_ref.cast::<PyFloat>() {
         // Python float -> JSON number
         let f: f64 = val.extract()?;
         Ok(serde_json::Value::Number(
             serde_json::Number::from_f64(f)
                 .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid float"))?,
         ))
-    } else if let Ok(val) = obj_ref.downcast::<PyString>() {
+    } else if let Ok(val) = obj_ref.cast::<PyString>() {
         // Python str -> JSON string
         Ok(serde_json::Value::String(val.to_string()))
-    } else if let Ok(val) = obj_ref.downcast::<PyList>() {
+    } else if let Ok(val) = obj_ref.cast::<PyList>() {
         // Python list -> JSON array（再帰的に変換）
         let mut arr = Vec::new();
         for item in val.iter() {
             arr.push(pyobject_to_json_value(item.into(), py)?);
         }
         Ok(serde_json::Value::Array(arr))
-    } else if let Ok(val) = obj_ref.downcast::<PyDict>() {
+    } else if let Ok(val) = obj_ref.cast::<PyDict>() {
         // Python dict -> JSON object（再帰的に変換）
         let mut map = serde_json::Map::new();
         for (key, value) in val.iter() {
@@ -386,7 +386,7 @@ fn pyobject_to_json_value(obj: PyObject, py: Python) -> PyResult<serde_json::Val
 /// * `py` - Python GILトークン
 ///
 /// # 戻り値
-/// - `Ok(PyObject)`: 変換されたPythonオブジェクト
+/// - `Ok(Py<PyAny>)`: 変換されたPythonオブジェクト
 /// - `Err(PyErr)`: 変換エラー（無効な数値など）
 ///
 /// # 変換ルール
@@ -396,7 +396,7 @@ fn pyobject_to_json_value(obj: PyObject, py: Python) -> PyResult<serde_json::Val
 /// - string -> str
 /// - array -> list
 /// - object -> dict
-fn json_value_to_pyobject(value: serde_json::Value, py: Python) -> PyResult<PyObject> {
+fn json_value_to_pyobject(value: serde_json::Value, py: Python) -> PyResult<Py<PyAny>> {
     use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 
     match value {
@@ -1006,7 +1006,7 @@ impl DictSQLiteV4 {
     /// - 暗号化されたデータでパスワードなしの場合: ValueError
     /// - 復号化に失敗した場合: ValueError
     #[pyo3(signature = (key, default=None))]
-    fn get(&self, key: String, default: Option<Vec<u8>>, py: Python) -> PyResult<PyObject> {
+    fn get(&self, key: String, default: Option<Vec<u8>>, py: Python) -> PyResult<Py<PyAny>> {
         // v4.2.4最適化: LRU追跡は必要な場合のみ実行（Memory/Lazyモードではスキップ）
         // WriteThroughモードまたはキャパシティ超過時のみLRU追跡
         let current_size = self.hot_tier.len();
@@ -1395,7 +1395,7 @@ impl DictSQLiteV4 {
     }
 
     /// Get all items as (key, value) tuples (dict-compatible)
-    fn items(&self, py: Python) -> PyResult<Vec<(String, PyObject)>> {
+    fn items(&self, py: Python) -> PyResult<Vec<(String, Py<PyAny>)>> {
         use std::collections::HashMap;
 
         // First, get all items from storage
@@ -1420,7 +1420,7 @@ impl DictSQLiteV4 {
         }
 
         // Convert to Python objects
-        let items: Vec<(String, PyObject)> = all_items
+        let items: Vec<(String, Py<PyAny>)> = all_items
             .into_iter()
             .map(|(key, value)| {
                 let data = if let Some(ref crypto) = self.crypto {
@@ -1435,7 +1435,7 @@ impl DictSQLiteV4 {
     }
 
     /// Get all values (dict-compatible)
-    fn values(&self, py: Python) -> PyResult<Vec<PyObject>> {
+    fn values(&self, py: Python) -> PyResult<Vec<Py<PyAny>>> {
         use std::collections::HashMap;
 
         // First, get all items from storage
@@ -1460,7 +1460,7 @@ impl DictSQLiteV4 {
         }
 
         // Convert to Python objects
-        let values: Vec<PyObject> = all_items
+        let values: Vec<Py<PyAny>> = all_items
             .into_values()
             .map(|value| {
                 let data = if let Some(ref crypto) = self.crypto {
@@ -1481,7 +1481,7 @@ impl DictSQLiteV4 {
 
     /// Pop with optional default (dict-compatible)
     #[pyo3(signature = (key, default=None))]
-    fn pop(&self, key: String, default: Option<Vec<u8>>, py: Python) -> PyResult<PyObject> {
+    fn pop(&self, key: String, default: Option<Vec<u8>>, py: Python) -> PyResult<Py<PyAny>> {
         // Track that we're removing this
         self.access_tracker.lock().unwrap().pop(&key);
 
@@ -1521,7 +1521,7 @@ impl DictSQLiteV4 {
     }
 
     /// Setdefault - get value or set and return default (dict-compatible)
-    fn setdefault(&self, key: String, default: Vec<u8>, py: Python) -> PyResult<PyObject> {
+    fn setdefault(&self, key: String, default: Vec<u8>, py: Python) -> PyResult<Py<PyAny>> {
         // Check if key exists
         if let Some(value) = self.hot_tier.get(&key) {
             let data = if let Some(ref crypto) = self.crypto {
@@ -1677,7 +1677,7 @@ impl DictSQLiteV4 {
     }
 
     /// Get performance stats
-    fn stats(&self, py: Python) -> PyResult<PyObject> {
+    fn stats(&self, py: Python) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("hot_tier_size", self.hot_tier.len())?;
         dict.set_item("hot_tier_capacity", self.config.hot_tier_capacity)?;
@@ -1689,7 +1689,7 @@ impl DictSQLiteV4 {
     }
 
     /// Dict-like access: db[key]
-    fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
+    fn __getitem__(&self, key: String, py: Python) -> PyResult<Py<PyAny>> {
         // Add table prefix if default table is not "main" or empty
         let full_key = if !self.config.table_name.is_empty() && self.config.table_name != "main" {
             format!("{}:{}", self.config.table_name, key)
@@ -1760,7 +1760,7 @@ impl DictSQLiteV4 {
     }
 
     /// Dict-like access: db[key] = value
-    fn __setitem__(&self, key: String, value: PyObject, py: Python) -> PyResult<()> {
+    fn __setitem__(&self, key: String, value: Py<PyAny>, py: Python) -> PyResult<()> {
         // Add table prefix if default table is not "main" or empty
         let full_key = if !self.config.table_name.is_empty() && self.config.table_name != "main" {
             format!("{}:{}", self.config.table_name, key)
@@ -1904,7 +1904,7 @@ pub struct TableProxy {
 #[pymethods]
 impl TableProxy {
     /// Dict-like access: table[key]
-    fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
+    fn __getitem__(&self, key: String, py: Python) -> PyResult<Py<PyAny>> {
         let db = self.db.borrow(py);
 
         // Get raw data based on table mode
@@ -2006,7 +2006,7 @@ impl TableProxy {
     }
 
     /// Dict-like access: table[key] = value
-    fn __setitem__(&self, key: String, value: PyObject, py: Python) -> PyResult<()> {
+    fn __setitem__(&self, key: String, value: Py<PyAny>, py: Python) -> PyResult<()> {
         let db = self.db.borrow(py);
 
         // Serialize based on storage mode
@@ -2190,7 +2190,7 @@ impl TableProxy {
     }
 
     /// Get all values in this table
-    fn values(&self, py: Python) -> PyResult<Vec<PyObject>> {
+    fn values(&self, py: Python) -> PyResult<Vec<Py<PyAny>>> {
         let keys = self.keys(py)?;
         let mut values = Vec::new();
         for key in keys {
@@ -2200,7 +2200,7 @@ impl TableProxy {
     }
 
     /// Get all items as (key, value) tuples
-    fn items(&self, py: Python) -> PyResult<Vec<(String, PyObject)>> {
+    fn items(&self, py: Python) -> PyResult<Vec<(String, Py<PyAny>)>> {
         let keys = self.keys(py)?;
         let mut items = Vec::new();
         for key in keys {
@@ -2211,7 +2211,7 @@ impl TableProxy {
 
     /// Get value with default
     #[pyo3(signature = (key, default=None))]
-    fn get(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+    fn get(&self, key: String, default: Option<Py<PyAny>>, py: Python) -> PyResult<Py<PyAny>> {
         match self.__getitem__(key, py) {
             Ok(value) => Ok(value),
             Err(_) => Ok(default.unwrap_or_else(|| py.None())),
@@ -2220,7 +2220,7 @@ impl TableProxy {
 
     /// Pop: Remove key and return value (dict.pop())
     #[pyo3(signature = (key, default=None))]
-    fn pop(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+    fn pop(&self, key: String, default: Option<Py<PyAny>>, py: Python) -> PyResult<Py<PyAny>> {
         match self.__getitem__(key.clone(), py) {
             Ok(value) => {
                 self.__delitem__(key, py)?;
@@ -2238,7 +2238,7 @@ impl TableProxy {
 
     /// Setdefault: Set key if not exists, return value (dict.setdefault())
     #[pyo3(signature = (key, default=None))]
-    fn setdefault(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+    fn setdefault(&self, key: String, default: Option<Py<PyAny>>, py: Python) -> PyResult<Py<PyAny>> {
         match self.__getitem__(key.clone(), py) {
             Ok(value) => Ok(value),
             Err(_) => {
@@ -2346,13 +2346,13 @@ impl TableProxy {
     ///
     /// Compares the TableProxy with a Python dict or another TableProxy.
     /// Returns True if all keys and values match.
-    fn __eq__(&self, other: PyObject, py: Python) -> PyResult<bool> {
+    fn __eq__(&self, other: Py<PyAny>, py: Python) -> PyResult<bool> {
         // Get items from this table (we need them for comparison)
         let self_items = self.items(py)?;
         let self_len = self_items.len();
 
         // Check if other is a dict
-        if let Ok(other_dict) = other.downcast_bound::<PyDict>(py) {
+        if let Ok(other_dict) = other.cast_bound::<PyDict>(py) {
             // Compare with dict - check size first for early exit
             if self_len != other_dict.len() {
                 return Ok(false);
@@ -2381,7 +2381,7 @@ impl TableProxy {
             }
 
             // Create a HashMap only for the other table to enable O(1) lookup
-            let other_map: std::collections::HashMap<&String, &PyObject> =
+            let other_map: std::collections::HashMap<&String, &Py<PyAny>> =
                 other_items.iter().map(|(k, v)| (k, v)).collect();
 
             // Compare each item
