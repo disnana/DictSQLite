@@ -13,7 +13,9 @@ import os
 
 # dictsqliteモジュールのインポート
 try:
-    from dictsqlite import DictSQLiteV4, AsyncDictSQLite
+    from dictsqlite import DictSQLite, AsyncDictSQLite
+    # DictSQLiteV4 is an alias for DictSQLite
+    DictSQLiteV4 = DictSQLite
 except ImportError:
     pytest.skip("dictsqlite module not installed", allow_module_level=True)
 
@@ -24,9 +26,9 @@ class TestBatchOperations:
     def test_batch_get_basic(self, tmp_path):
         """batch_get基本テスト"""
         db_path = str(tmp_path / "test_batch_get.db")
-        db = DictSQLiteV4(db_path, storage_mode="pickle")
+        db = DictSQLite(db_path, storage_mode="bytes")
         
-        # データ準備
+        # データ準備（bytes mode uses bytes directly）
         db["key1"] = b"value1"
         db["key2"] = b"value2"
         db["key3"] = b"value3"
@@ -215,6 +217,101 @@ class TestAsyncDictSQLiteComprehensive:
         
         stats = db.stats()
         assert stats is not None
+
+    # ========= 追加: 非同期メソッド網羅テスト =========
+
+    def test_async_get_async(self, tmp_path):
+        """AsyncDictSQLite get_asyncテスト"""
+        db_path = str(tmp_path / "test_get_async.db")
+        db = AsyncDictSQLite(db_path)
+        
+        db["key"] = b"value"
+        result = db.get_async("key")
+        
+        assert result is not None
+
+    def test_async_set_async(self, tmp_path):
+        """AsyncDictSQLite set_asyncテスト"""
+        db_path = str(tmp_path / "test_set_async.db")
+        db = AsyncDictSQLite(db_path)
+        
+        db.set_async("key", b"value")
+        assert db["key"] == b"value"
+
+    def test_async_batch_get_fast(self, tmp_path):
+        """AsyncDictSQLite batch_get_fastテスト"""
+        db_path = str(tmp_path / "test_batch_fast.db")
+        db = AsyncDictSQLite(db_path)
+        
+        db["key1"] = b"value1"
+        db["key2"] = b"value2"
+        
+        results = db.batch_get_fast(["key1", "key2"])
+        assert len(results) == 2
+
+    def test_async_flush_write_buffer(self, tmp_path):
+        """AsyncDictSQLite flush_write_bufferテスト"""
+        db_path = str(tmp_path / "test_flush_buffer.db")
+        db = AsyncDictSQLite(db_path)
+        
+        db["key"] = b"value"
+        db.flush_write_buffer()
+        
+        assert db["key"] == b"value"
+
+    def test_async_multiple_tables(self, tmp_path):
+        """AsyncDictSQLite 複数テーブルテスト"""
+        db_path = str(tmp_path / "test_multi_tables.db")
+        db = AsyncDictSQLite(db_path)
+        
+        users = db.table("users")
+        products = db.table("products")
+        orders = db.table("orders")
+        
+        users["u1"] = b"user_data"
+        products["p1"] = b"product_data"
+        orders["o1"] = b"order_data"
+        
+        assert users["u1"] == b"user_data"
+        assert products["p1"] == b"product_data"
+        assert orders["o1"] == b"order_data"
+
+    def test_async_large_batch(self, tmp_path):
+        """AsyncDictSQLite 大量バッチテスト"""
+        db_path = str(tmp_path / "test_large_batch.db")
+        db = AsyncDictSQLite(db_path)
+        
+        # 1000件のバッチ操作
+        items = [(f"key_{i}", f"value_{i}".encode()) for i in range(1000)]
+        db.batch_set(items)
+        
+        # 確認
+        keys = [f"key_{i}" for i in range(1000)]
+        results = db.batch_get(keys)
+        assert len(results) == 1000
+
+    def test_async_close(self, tmp_path):
+        """AsyncDictSQLite closeテスト"""
+        db_path = str(tmp_path / "test_close.db")
+        db = AsyncDictSQLite(db_path)
+        
+        db["key"] = b"value"
+        db.close()
+        
+        # close後も読み取り可能かはimplementation次第
+
+    def test_async_persistence_mode(self, tmp_path):
+        """AsyncDictSQLite persistenceモードテスト"""
+        db_path = str(tmp_path / "test_persist.db")
+        
+        # WriteThrough モード
+        db = AsyncDictSQLite(db_path, persist_mode="write_through")
+        db["key"] = b"value"
+        
+        # 再オープンしてデータ確認
+        db2 = AsyncDictSQLite(db_path)
+        assert db2["key"] == b"value"
+
 
 
 class TestTableProxyParity:

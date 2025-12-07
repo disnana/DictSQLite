@@ -302,6 +302,37 @@ class DictSQLite:
         """Flush hot tier to storage"""
         self._db.flush()
 
+    def batch_get(self, keys):
+        """Batch get multiple keys at once
+        
+        Args:
+            keys: List of keys to retrieve
+            
+        Returns:
+            Dict mapping keys to values (missing keys are omitted)
+        """
+        return self._db.batch_get([str(k) for k in keys])
+
+    def batch_set(self, items):
+        """Batch set multiple key-value pairs at once
+        
+        Args:
+            items: List of (key, value) tuples or dict
+        """
+        if isinstance(items, dict):
+            items = items.items()
+        
+        prepared = []
+        for key, value in items:
+            if isinstance(value, str):
+                value = value.encode('utf-8')
+            elif not isinstance(value, bytes):
+                import pickle
+                value = pickle.dumps(value)
+            prepared.append((str(key), value))
+        
+        self._db.batch_set(prepared)
+
     def close(self):
         """Close database and flush all data"""
         if not self._closed:
