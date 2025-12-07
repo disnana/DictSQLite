@@ -125,7 +125,7 @@ class TestAsyncDictSQLiteComprehensive:
     def test_async_batch_get(self, tmp_path):
         """AsyncDictSQLite batch_getテスト"""
         db_path = str(tmp_path / "test_async_batch.db")
-        db = AsyncDictSQLite(db_path)
+        db = AsyncDictSQLite(db_path, storage_mode="bytes")
         
         # データ準備
         db["key1"] = b"value1"
@@ -139,7 +139,7 @@ class TestAsyncDictSQLiteComprehensive:
     def test_async_batch_set(self, tmp_path):
         """AsyncDictSQLite batch_setテスト"""
         db_path = str(tmp_path / "test_async_batch_set.db")
-        db = AsyncDictSQLite(db_path)
+        db = AsyncDictSQLite(db_path, storage_mode="bytes")
         
         items = [
             ("key1", b"value1"),
@@ -154,7 +154,7 @@ class TestAsyncDictSQLiteComprehensive:
     def test_async_table_proxy(self, tmp_path):
         """AsyncDictSQLite TableProxyテスト"""
         db_path = str(tmp_path / "test_async_table.db")
-        db = AsyncDictSQLite(db_path)
+        db = AsyncDictSQLite(db_path, storage_mode="bytes")
         
         users = db.table("users")
         users["user1"] = b"data1"
@@ -165,7 +165,7 @@ class TestAsyncDictSQLiteComprehensive:
     def test_async_table_proxy_operations(self, tmp_path):
         """AsyncTableProxy各種操作テスト"""
         db_path = str(tmp_path / "test_async_table_ops.db")
-        db = AsyncDictSQLite(db_path)
+        db = AsyncDictSQLite(db_path, storage_mode="bytes")
         
         table = db.table("test")
         
