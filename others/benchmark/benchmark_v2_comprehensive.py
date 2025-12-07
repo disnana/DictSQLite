@@ -156,10 +156,29 @@ def test_dictsqlite_v2() -> List[TestResult]:
     print("🦀 DictSQLite V2 (Rust拡張)")
     print("=" * 60)
     
+    # V2はRust拡張で、DictSQLiteとAsyncDictSQLiteをエクスポート
+    DictSQLiteV2 = None
+    AsyncDictSQLiteV2 = None
+    
     try:
-        from dictsqlite import DictSQLite, AsyncDictSQLite
-    except ImportError:
-        print("  ⚠️ dictsqlite_v2がインポートできません (スキップ)")
+        # dictsqlite パッケージから直接インポート（wheelインストール時）
+        from dictsqlite import DictSQLite as DictSQLiteV2
+        from dictsqlite import AsyncDictSQLite as AsyncDictSQLiteV2
+        print("  ✅ dictsqlite からインポート成功")
+        
+        # DictSQLiteV4 があるか確認（これがV2の証拠）
+        try:
+            from dictsqlite import DictSQLiteV4
+            print("  ✅ DictSQLiteV4 確認 (V2 Rust拡張)")
+        except ImportError:
+            print("  ⚠️ DictSQLiteV4 なし (Originalかも？)")
+            # Original版の可能性がある場合はスキップ
+            if not hasattr(DictSQLiteV2, 'batch_set'):
+                print("  ⚠️ batch_set なし - これはOriginal版です。V2スキップ。")
+                return results
+    
+    except ImportError as e:
+        print(f"  ⚠️ dictsqlite インポートエラー: {e}")
         return results
     
     persist_modes = ["memory", "lazy", "writethrough"]
@@ -171,7 +190,7 @@ def test_dictsqlite_v2() -> List[TestResult]:
             
             try:
                 db_path = f"/tmp/bench_v2_{persist}_{storage}.db"
-                db = DictSQLite(db_path, persist_mode=persist, storage_mode=storage)
+                db = DictSQLiteV2(db_path, persist_mode=persist, storage_mode=storage)
                 
                 for size in DATA_SIZES:
                     value = b"x" * size
@@ -246,7 +265,7 @@ def test_dictsqlite_v2() -> List[TestResult]:
             # ASYNC
             try:
                 async_db_path = f"/tmp/bench_v2_async_{persist}_{storage}.db"
-                async_db = AsyncDictSQLite(async_db_path, persist_mode=persist, storage_mode=storage)
+                async_db = AsyncDictSQLiteV2(async_db_path, persist_mode=persist, storage_mode=storage)
                 
                 for size in DATA_SIZES:
                     value = b"x" * size
