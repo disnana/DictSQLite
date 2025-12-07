@@ -1,3 +1,8 @@
+// v5.1: PyO3 0.27 deprecation warnings suppressed pending full migration
+// TODO: Migrate PyObject -> Py<PyAny>, with_gil -> attach, downcast -> cast
+#![allow(deprecated)]
+#![allow(clippy::doc_lazy_continuation)]
+
 //! # DictSQLite v4.2 - 高性能辞書型SQLiteライブラリ
 //!
 //! このモジュールは、Pythonの辞書のようなインターフェースでSQLiteデータベースを

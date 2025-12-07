@@ -1,3 +1,7 @@
+// v5.1: PyO3 0.27 deprecation warnings suppressed pending full migration
+#![allow(deprecated)]
+#![allow(noop_method_call)]
+
 use dashmap::DashMap;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
