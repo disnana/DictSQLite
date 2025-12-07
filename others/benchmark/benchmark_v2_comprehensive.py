@@ -94,14 +94,16 @@ def test_original_dictsqlite() -> List[TestResult]:
     # Original版はリポジトリルートのdictsqlite/フォルダにある
     # sys.pathに追加してインポート
     import importlib
+    import importlib.util
+    
+    # リポジトリルートを探す（others/benchmarkから2つ上）
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(os.path.dirname(script_dir))
+    original_path = os.path.join(repo_root, "dictsqlite")
     
     try:
-        # リポジトリルートを探す（others/benchmarkから2つ上）
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        repo_root = os.path.dirname(os.path.dirname(script_dir))
-        original_path = os.path.join(repo_root, "dictsqlite")
-        
         if os.path.exists(original_path):
+            # Temporarily add repo_root to sys.path for import
             sys.path.insert(0, repo_root)
             print(f"  📂 Original path: {original_path}")
         
@@ -110,6 +112,23 @@ def test_original_dictsqlite() -> List[TestResult]:
     except ImportError as e:
         print(f"  ⚠️ Original版がインポートできません: {e}")
         return results
+    finally:
+        # IMPORTANT: Clean up sys.path and sys.modules to prevent shadowing V2 wheel
+        # V2 wheel installs as 'dictsqlite' package, and we need to ensure
+        # subsequent imports get the wheel version, not the original from repo
+        if repo_root in sys.path:
+            sys.path.remove(repo_root)
+            print("  🧹 Cleaned up sys.path to prevent shadowing V2 wheel")
+        
+        # Also clear the 'dictsqlite' package from sys.modules so V2 can import fresh
+        # We keep references to specific imports (OriginalDictSQLite), but clear the package cache
+        # This ensures that when V2 tries to import 'dictsqlite', it gets the wheel version
+        # Use list() to avoid RuntimeError if sys.modules is modified during iteration
+        modules_to_clear = [key for key in list(sys.modules.keys()) if key == 'dictsqlite' or key.startswith('dictsqlite.')]
+        for mod in modules_to_clear:
+            if mod in sys.modules:  # Double-check as another thread might have removed it
+                del sys.modules[mod]
+                print(f"  🧹 Cleared {mod} from sys.modules")
     
     try:
         db_path = "/tmp/bench_original.db"

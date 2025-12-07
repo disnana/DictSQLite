@@ -131,7 +131,9 @@ jobs:
         pip install apsw zstandard
         # v2用の依存関係（aiosqlite）
         pip install aiosqlite
-        pip install -e .
+        # Note: Do NOT install original dictsqlite with "pip install -e ." here
+        # as it shadows the V2 wheel. Benchmark scripts access original version
+        # directly via sys.path manipulation (see benchmark_v2_comprehensive.py:105-106)
         # dictsqlite-fastest の依存関係をインストール（パッケージとしてではなく）
         if [ -f "others/beta-versions/dictsqlite-fastest/requirements.txt" ]; then
           pip install -r others/beta-versions/dictsqlite-fastest/requirements.txt
