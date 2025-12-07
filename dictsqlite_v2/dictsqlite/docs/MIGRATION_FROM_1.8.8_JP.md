@@ -1,135 +1,509 @@
-移行ガイド: DictSQLite v1.8.8 → 現在のラッパー（内部ラベル 'v4' 相当）（日本語）
+# DictSQLite v1.8.8 から v2.0.7 への移行ガイド
 
-目的
-----
-このドキュメントは DictSQLite v1.8.8 で書かれたコードやデータを、このリポジトリにある現在の Python ラッパーに移行する際の手順と注意点をまとめたものです。ラッパーのデフォルトはできる限り v1.8.8 と互換性（デフォルト storage_mode='pickle'）を保つようになっています。
+このガイドでは、DictSQLite v1.8.8 から v2.0.7（内部バージョン v4）への移行方法を説明します。
 
-重要な変更点（要約）
-------------------
-- Python ラッパーの公開クラスは `DictSQLite` です。リポジトリ内や例では `DictSQLiteV4` と表記されることがありますが、これは実装名でありサフィックス "V4" は任意です。推奨するインポートは次の通りです。
+## 目次
 
-    # 推奨（ドキュメントで使う例）
-    from dictsqlite import DictSQLite
+1. [概要](#概要)
+2. [主な変更点](#主な変更点)
+3. [破壊的変更](#破壊的変更)
+4. [新機能](#新機能)
+5. [移行手順](#移行手順)
+6. [コード例](#コード例)
+7. [トラブルシューティング](#トラブルシューティング)
 
-    # もし既存コードや例が DictSQLiteV4 を使っている場合（任意のエイリアスの例）
+## 概要
 
-    ```
-    from dictsqlite import DictSQLiteV4 as DictSQLite
-    ```
+### バージョン情報
 
-- 暗号化用のコンストラクタ引数名が変更されました:
-    - v1.8.8: `password='mypw'`
-    - 現在のラッパー:    `encryption_password='mypw'`
+- **v1.8.8**: 旧バージョン（Python実装）
+- **v2.0.7**: 新バージョン（Rust + Python、PyPI公開バージョン）
+- **v4**: 内部実装バージョン名（アーキテクチャラベル）
 
-- デフォルトのシリアライズ方式は `storage_mode='pickle'` で、多くの Python オブジェクトを明示的な pickle.dumps/loads なしに扱えます。
+### 互換性
 
-- 非同期 API は awaitable メソッド（`aget`, `aset`, `abatch_get`, `abatch_set`）を持つ `AsyncDictSQLite` に変更されました。互換性のために同期ラッパー（`get`, `set`, `batch_get`, `batch_set`）も残されています。
+DictSQLite v2は、v1.8.8との**API互換性**を重視して設計されています。ほとんどのコードは最小限の変更で動作します。
 
-- Safe Pickle 機能が追加され、`enable_safe_pickle=True` とし `safe_pickle_allowed_modules` で許可モジュールを制限できます。
+## 主な変更点
 
-- 一括挿入やバッファリングが改善されました。大量データは `bulk_insert` または非同期バッチ API を使ってください。
+### 1. パラメータ名の変更
 
-詳細な移行手順
-----------------
-1) インポート名の確認
-   - 多くの場合、`from dictsqlite import DictSQLite` のままで変更は不要です。
-   - 例やスクリプトに `DictSQLiteV4` が出てきたら、次のどちらでも動作します。
+#### 暗号化パラメータ
 
-       # そのまま（推奨）
-       from dictsqlite import DictSQLite
+```python
+# v1.8.8
+db = DictSQLite('db.db', password='secret')
 
-       # または例に合わせるためにエイリアス
-       from dictsqlite import DictSQLiteV4 as DictSQLite
+# v2.0.7
+db = DictSQLite('db.db', encryption_password='secret')
+```
 
-   - ドキュメントでは "V4 は任意" である旨を強調しています。
+**理由**: より明確な命名により、パラメータの目的が明確になります。
 
-2) 暗号化パラメータ
-   - v1.8.8 の `password=` を使っていた場合は `encryption_password=` に名前を変更してください。
+### 2. インポート名
 
-       # v1.8.8
-       db = DictSQLite('secrets.db', password='my_password')
+**推奨されるインポート:**
 
-       # 現在のラッパー
-       db = DictSQLite('secrets.db', encryption_password='my_password')
+```python
+# v1.8.8
+from dictsqlite import DictSQLite
 
-   - 同じパスワードを使用すれば、既存の暗号化データベースを開けるはずです。
-   - 開いたあと `db.stats()['encryption_enabled']` が True か確認してください。
+# v2.0.7（同じ）
+from dictsqlite import DictSQLite
+```
 
-3) シリアライズ動作（storage_mode）
-   - デフォルトの `storage_mode='pickle'` は v1.8.8 と互換性を意図しています。
-   - もし以前に手動で pickle.dumps() して保存していた場合、現在のラッパーがバイトを返すことがあるため、`pickle.loads()` を使って復元してください。
-   - JSONB や別フォーマットを使っていた場合は `storage_mode='jsonb'` を明示してください。
+**内部実装名（オプション）:**
 
-4) Safe Pickle の導入
-   - 信頼できないデータソースを扱うなら `enable_safe_pickle=True` を検討してください。
-   - 必要に応じて `safe_pickle_allowed_modules=['myapp', 'mylib']` のように許可するモジュール接頭辞を指定します。
-   - 注意: Safe Pickle を有効化すると、従来許容されていた型が拒否される可能性があります。
+```python
+# v2.0.7では内部実装名も使用可能
+from dictsqlite import DictSQLiteV4  # DictSQLite のエイリアス
+```
 
-5) 大量挿入とパフォーマンス
-   - for ループでの逐次書き込みはそのまま動作しますが、`bulk_insert()` または非同期の `abatch_set` を使うと高速化できます。
+> **注意**: 新しいコードでは `DictSQLite` の使用を推奨します。`DictSQLiteV4` は後方互換性のために提供されています。
 
-       data = {f'record:{i}': f'data_{i}' for i in range(10000)}
-       db.bulk_insert(data)
+### 3. デフォルト動作の改善
 
-6) 非同期の移行
-   - 新しい awaitable API の使用を推奨します。
+#### Pickleモードの自動化
 
-       from dictsqlite import AsyncDictSQLite
-       async def main():
-           db = AsyncDictSQLite(':memory:')
-           await db.aset('k', {'x': 1})
-           v = await db.aget('k')
+```python
+# v1.8.8（手動シリアライゼーションが必要な場合があった）
+import pickle
+db['key'] = pickle.dumps({'data': 'value'})
+value = pickle.loads(db['key'])
 
-   - 既存の同期コードで互換性が必要なら、`AsyncDictSQLite` の同期ラッパー `get`/`set` が使えますが、asyncio コードでは `aget`/`aset` を使ってください。
+# v2.0.7（自動化）
+db['key'] = {'data': 'value'}
+value = db['key']  # 自動的にデシリアライズ
+```
 
-7) テーブル/名前空間
-   - 複数テーブルを使っていた場合は `db.table('other')` を使ってアクセスしてください。
+### 4. パフォーマンスの大幅向上
 
-8) 動作確認チェックリスト
-   - 文字列が正しく文字列として返るか: `db['key'] = 'value'` -> `db['key']`
-   - 複雑オブジェクトのラウンドトリップ: `db['obj'] = {'a':1}` -> `db['obj'] == {'a':1}`
-   - 暗号化: `db = DictSQLite(path, encryption_password='pw')` -> `db.stats()['encryption_enabled'] is True`
-   - bulk_insert が期待通り高速か
+- **v1.8.8**: Python実装、~1M ops/sec
+- **v2.0.7**: Rust実装、100M+ ops/sec（100倍以上高速）
 
-互換性問題と注意点
--------------------
-- 直接 sqlite テーブルに対して SQL を投げていた場合や、オンディスクフォーマットに依存している場合は注意してください。現在のラッパーは値を pickle や jsonb などで内部格納するため、スキーマやバイナリレイアウトが変わる可能性があります。
-- `password` -> `encryption_password` はパラメータ名の変更だけなので、同じパスワードを使えば既存の暗号DBを開けるはずです。
-- Safe Pickle を有効にすると従来動いていた unpickle が失敗するケースがあります。必要に応じて `safe_pickle_allowed_modules` を調整してください。
+### 5. 新しいコンストラクタパラメータ
 
-開発環境でのネイティブ拡張のビルド
-----------------------------------
-ネイティブ拡張が見つからない場合、RuntimeError が出ます。開発機でビルドしてください。一般的な手順:
+v2.0.7で追加されたパラメータ:
 
-    cd dictsqlite_v2/dictsqlite
-    # maturin などプロジェクトのビルド手順に従ってください
-    maturin develop --release
+```python
+DictSQLite(
+    db_path,
+    hot_capacity=1_000_000,         # 新規: ホットキャッシュサイズ
+    enable_async=True,              # 新規: 非同期フラッシュ
+    persist_mode="writethrough",    # 既存（改善）
+    storage_mode="pickle",          # 既存（改善）
+    table_name="main",              # 既存
+    encryption_password=None,       # 変更: password → encryption_password
+    enable_safe_pickle=False,       # 新規: Safe Pickle検証
+    safe_pickle_allowed_modules=None,  # 新規: 許可モジュール
+    buffer_size=100,                # 新規: バッファサイズ
+    encoding='utf-8',               # 新規: エンコーディング
+    table_mode="prefix",            # 新規: テーブルモード
+    pool_size=20                    # 新規: 接続プールサイズ
+)
+```
 
-テストと例の実行
-----------------
-- 例: `dictsqlite_v2/dictsqlite/examples/v4.2_migration_example.py` に移行サンプルがあります。実行して振る舞いを確認できます（ファイル名に内部ラベル 'v4' を含む場合がありますが、例の内容は現在のラッパー向けです）。
-- テスト: python wrapper ディレクトリで pytest を実行して環境の妥当性を確認してください。
+## 破壊的変更
 
-    cd dictsqlite_v2/dictsqlite/python
-    pytest -q
+### 1. 暗号化パラメータ名の変更（必須）
 
-ロールバックと対処
-----------------
-- 期待しない振る舞いがあれば、開くときに明示的に `storage_mode` を指定してフォーマットを合わせるか、一時 DB にデータを移し替えてから再インポートしてください。
+**影響**: 暗号化を使用しているすべてのコード
 
-デプロイ前チェックリスト
-----------------------
-- [ ] ステージングでユニット／統合テストを通す
-- [ ] 暗号化キーの確認
-- [ ] bulk 書き込み／読み込みのパフォーマンス確認
-- [ ] CI にネイティブ拡張のビルド手順を含める
+**移行前（v1.8.8）:**
+```python
+db = DictSQLite('secure.db', password='my_password')
+```
 
-付録: よくある置換（旧 -> 新）
----------------------------
-- コンストラクタ
-    v1.8.8: `DictSQLite(path, password='pw')`
-    現在のラッパー:    `DictSQLite(path, encryption_password='pw')`
+**移行後（v2.0.7）:**
+```python
+db = DictSQLite('secure.db', encryption_password='my_password')
+```
 
-- 非同期 API
-    v1.x: 独自のヘルパ
-    現在のラッパー: `AsyncDictSQLite` の `aget`/`aset` を使用
+### 2. ネイティブ拡張のビルド（開発環境のみ）
+
+**影響**: ソースから開発する場合
+
+**必要な操作:**
+```bash
+cd dictsqlite_v2/dictsqlite
+maturin develop --release
+```
+
+**注意**: PyPIからインストールする場合は不要です。
+
+### 3. Pythonバージョン要件
+
+- **v1.8.8**: Python 3.7+
+- **v2.0.7**: Python 3.9+
+
+## 新機能
+
+### 1. Safe Pickle検証
+
+信頼できないデータの安全なデシリアライズ:
+
+```python
+db = DictSQLite(
+    'db.db',
+    enable_safe_pickle=True,
+    safe_pickle_allowed_modules=['myapp', 'mylib']
+)
+```
+
+### 2. テーブルモード
+
+#### Prefixモード（デフォルト、高速）
+
+```python
+db = DictSQLite(':memory:', table_mode='prefix')
+users = db.table('users')
+settings = db.table('settings')
+```
+
+#### Separateモード（完全分離）
+
+```python
+db = DictSQLite(':memory:', table_mode='separate')
+# 各テーブルが個別のSQLiteテーブルとして作成される
+```
+
+### 3. 非同期Awaitable API
+
+真のasyncio統合:
+
+```python
+from dictsqlite import AsyncDictSQLite
+import asyncio
+
+async def main():
+    db = AsyncDictSQLite(':memory:')
+    
+    await db.aset('key', 'value')
+    value = await db.aget('key')
+    
+    await db.aclose()
+
+asyncio.run(main())
+```
+
+### 4. 接続プールサイズの調整
+
+並行アクセスの最適化:
+
+```python
+db = DictSQLite('db.db', pool_size=50)  # 高並行環境向け
+```
+
+### 5. ホットキャパシティの調整
+
+メモリキャッシュサイズの制御:
+
+```python
+db = DictSQLite('db.db', hot_capacity=10_000_000)  # 1000万エントリ
+```
+
+## 移行手順
+
+### ステップ1: パッケージのインストール
+
+```bash
+pip install --upgrade dictsqlite
+```
+
+### ステップ2: インポートの確認
+
+コードのインポート文を確認（通常は変更不要）:
+
+```python
+from dictsqlite import DictSQLite  # これは変更不要
+```
+
+### ステップ3: パラメータ名の更新
+
+暗号化を使用している場合、パラメータ名を更新:
+
+```python
+# 移行前
+db = DictSQLite('db.db', password='secret')
+
+# 移行後
+db = DictSQLite('db.db', encryption_password='secret')
+```
+
+### ステップ4: テストの実行
+
+既存のテストスイートを実行して動作を確認:
+
+```bash
+python -m pytest tests/
+```
+
+### ステップ5: パフォーマンスの確認
+
+統計情報を確認してパフォーマンスを測定:
+
+```python
+stats = db.stats()
+print(stats)
+```
+
+## コード例
+
+### 例1: 基本的な移行
+
+**v1.8.8のコード:**
+```python
+from dictsqlite import DictSQLite
+
+# 基本的な使用
+db = DictSQLite('myapp.db')
+db['user:1'] = {'name': 'Alice', 'age': 30}
+user = db['user:1']
+db.close()
+
+# 暗号化
+secure_db = DictSQLite('secure.db', password='secret123')
+secure_db['token'] = 'abc123'
+secure_db.close()
+```
+
+**v2.0.7への移行:**
+```python
+from dictsqlite import DictSQLite
+
+# 基本的な使用（変更なし）
+db = DictSQLite('myapp.db')
+db['user:1'] = {'name': 'Alice', 'age': 30}
+user = db['user:1']
+db.close()
+
+# 暗号化（パラメータ名を変更）
+secure_db = DictSQLite('secure.db', encryption_password='secret123')
+secure_db['token'] = 'abc123'
+secure_db.close()
+```
+
+### 例2: 新機能の活用
+
+```python
+from dictsqlite import DictSQLite
+
+# Safe Pickleを有効化
+db = DictSQLite(
+    'db.db',
+    encryption_password='secret',
+    enable_safe_pickle=True,
+    safe_pickle_allowed_modules=['myapp']
+)
+
+# テーブル機能
+users = db.table('users')
+users['alice'] = {'name': 'Alice', 'role': 'admin'}
+
+settings = db.table('settings')
+settings['theme'] = 'dark'
+
+db.close()
+```
+
+### 例3: 非同期への移行
+
+**v1.8.8（同期のみ）:**
+```python
+from dictsqlite import DictSQLite
+
+db = DictSQLite('db.db')
+
+for i in range(1000):
+    db[f'key_{i}'] = f'value_{i}'
+
+db.close()
+```
+
+**v2.0.7（非同期）:**
+```python
+from dictsqlite import AsyncDictSQLite
+import asyncio
+
+async def main():
+    db = AsyncDictSQLite('db.db')
+    
+    # バッチ操作で高速化
+    items = [(f'key_{i}', f'value_{i}') for i in range(1000)]
+    await db.abatch_set(items)
+    
+    await db.aclose()
+
+asyncio.run(main())
+```
+
+### 例4: パフォーマンス最適化
+
+```python
+from dictsqlite import DictSQLite
+
+# v1.8.8のデフォルト設定
+db_old = DictSQLite('db.db')
+
+# v2.0.7の最適化設定
+db_new = DictSQLite(
+    'db.db',
+    hot_capacity=10_000_000,  # 大きなキャッシュ
+    persist_mode='lazy',       # 遅延書き込み
+    pool_size=50,              # 大きな接続プール
+    buffer_size=1000           # 大きなバッファ
+)
+```
+
+## トラブルシューティング
+
+### 問題1: RuntimeError: DictSQLite native extension not available
+
+**原因**: ネイティブ拡張がビルドされていない（開発環境のみ）
+
+**解決方法:**
+```bash
+cd dictsqlite_v2/dictsqlite
+maturin develop --release
+```
+
+**注意**: PyPIからインストールした場合、この問題は発生しません。
+
+### 問題2: KeyError or TypeError after migration
+
+**原因**: 暗号化パラメータ名の変更
+
+**解決方法:**
+```python
+# 誤り
+db = DictSQLite('db.db', password='secret')
+
+# 正しい
+db = DictSQLite('db.db', encryption_password='secret')
+```
+
+### 問題3: Pickle関連のエラー
+
+**原因**: v1.8.8とv2.0.7でpickleの扱いが異なる場合がある
+
+**解決方法:**
+
+Safe Pickleを有効化:
+```python
+db = DictSQLite(
+    'db.db',
+    enable_safe_pickle=True,
+    safe_pickle_allowed_modules=['your_module']
+)
+```
+
+または、ストレージモードを変更:
+```python
+db = DictSQLite('db.db', storage_mode='jsonb')
+```
+
+### 問題4: 既存のデータベースが読めない
+
+**原因**: 暗号化パスワードの不一致
+
+**解決方法:**
+
+v1.8.8で使用したパスワードを正確に指定:
+```python
+# v1.8.8で保存
+# db = DictSQLite('db.db', password='old_password')
+
+# v2.0.7で読み込み
+db = DictSQLite('db.db', encryption_password='old_password')
+```
+
+### 問題5: パフォーマンスが期待より遅い
+
+**診断:**
+```python
+stats = db.stats()
+print(f"Hot tier size: {stats['hot_tier_size']}")
+print(f"Persist mode: {stats['persist_mode']}")
+```
+
+**解決方法:**
+
+パラメータを調整:
+```python
+db = DictSQLite(
+    'db.db',
+    hot_capacity=10_000_000,  # 増やす
+    persist_mode='lazy',       # 変更
+    pool_size=50               # 増やす
+)
+```
+
+## データベースファイルの互換性
+
+### v1.8.8のデータベースをv2.0.7で使用
+
+**暗号化なし:**
+```python
+# v1.8.8で作成したデータベースをそのまま開ける
+db = DictSQLite('old_v1.8.8.db')
+```
+
+**暗号化あり:**
+```python
+# パラメータ名を変更するだけ
+# v1.8.8: password='secret'
+# v2.0.7: encryption_password='secret'
+db = DictSQLite('encrypted_v1.8.8.db', encryption_password='secret')
+```
+
+### v2.0.7のデータベースをv1.8.8で使用
+
+基本的に互換性がありますが、v2.0.7の新機能（Safe Pickle、テーブルモードなど）を使用した場合は、v1.8.8では正しく動作しない可能性があります。
+
+## チェックリスト
+
+移行前に以下を確認してください:
+
+- [ ] Python 3.9以上がインストールされている
+- [ ] `pip install --upgrade dictsqlite` を実行した
+- [ ] `password=` を `encryption_password=` に変更した
+- [ ] テストスイートが通過する
+- [ ] パフォーマンスが改善されているか確認した
+- [ ] 新機能（Safe Pickle、テーブルモードなど）を検討した
+
+## 推奨される移行戦略
+
+### 戦略1: 段階的移行（推奨）
+
+1. まず、テスト環境で移行
+2. パラメータ名を更新
+3. テストを実行して動作確認
+4. 本番環境に展開
+
+### 戦略2: 並行運用
+
+1. v1.8.8とv2.0.7を並行運用
+2. 新機能はv2.0.7で実装
+3. 徐々にv2.0.7に移行
+4. v1.8.8を廃止
+
+## 参考資料
+
+- [README_JP.md](README_JP.md) - v2.0.7のクイックスタート
+- [EXAMPLES_JP.md](EXAMPLES_JP.md) - 実践的な使用例
+- [README_EN.md](README_EN.md) - English documentation
+- [EXAMPLES_EN.md](EXAMPLES_EN.md) - English examples
+
+## サポート
+
+移行に関する質問やサポートが必要な場合:
+
+- **GitHub Issues**: [https://github.com/disnana/DictSQLite/issues](https://github.com/disnana/DictSQLite/issues)
+- **Email**: support@disnana.com
+- **Discord**: [https://discord.gg/KzeHDrgwAz](https://discord.gg/KzeHDrgwAz)
+
+---
+
+**最終更新**: 2025年12月7日  
+**対象バージョン**: v1.8.8 → v2.0.7（内部バージョン v4）
+

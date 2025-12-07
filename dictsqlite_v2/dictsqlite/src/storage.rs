@@ -12,15 +12,65 @@
 //! - 準備済みステートメントのキャッシング
 //! - バルクインサート用のトランザクション最適化
 //! - コネクションプールによる並行アクセスの最適化
+//! - v5.1: オプションのZstd圧縮
 
 use anyhow::Result;
+use dashmap::{DashMap, DashSet};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::params;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::Config;
+
+// v5.1圧縮機能: マジックバイトで圧縮データを識別
+// 非圧縮データとの後方互換性を維持
+const ZSTD_MAGIC_BYTES: &[u8] = b"ZSTD";
+
+/// データを圧縮（圧縮有効時のみ）
+/// マジックバイトをプレフィックスとして付与し、後方互換性を維持
+fn compress_data(data: &[u8], config: &Config) -> Vec<u8> {
+    if !config.enable_compression {
+        return data.to_vec();
+    }
+
+    // 小さいデータ（128バイト未満）は圧縮しない（オーバーヘッドが大きい）
+    if data.len() < 128 {
+        return data.to_vec();
+    }
+
+    match zstd::encode_all(data, config.compression_level) {
+        Ok(compressed) => {
+            // 圧縮が効果的な場合のみ使用（オリジナルより小さい場合）
+            if compressed.len() < data.len() {
+                let mut result = Vec::with_capacity(ZSTD_MAGIC_BYTES.len() + compressed.len());
+                result.extend_from_slice(ZSTD_MAGIC_BYTES);
+                result.extend_from_slice(&compressed);
+                result
+            } else {
+                data.to_vec()
+            }
+        }
+        Err(_) => data.to_vec(), // 圧縮失敗時は非圧縮で保存
+    }
+}
+
+/// データを展開（圧縮されている場合のみ）
+/// マジックバイトをチェックして圧縮データを識別
+fn decompress_data(data: &[u8]) -> Vec<u8> {
+    // マジックバイトをチェック
+    if data.len() > ZSTD_MAGIC_BYTES.len() && data.starts_with(ZSTD_MAGIC_BYTES) {
+        let compressed = &data[ZSTD_MAGIC_BYTES.len()..];
+        match zstd::decode_all(compressed) {
+            Ok(decompressed) => decompressed,
+            Err(_) => data.to_vec(), // 展開失敗時は元データ返却
+        }
+    } else {
+        data.to_vec() // 非圧縮データはそのまま返却
+    }
+}
+
 
 /// メモリtierの種類
 ///
@@ -64,7 +114,16 @@ pub struct StorageEngine {
     cold_pool: Pool<SqliteConnectionManager>,
 
     /// Warm tier: 頻繁にアクセスされるデータのインメモリキャッシュ
-    warm_cache: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    /// v5最適化: DashMapによるロックフリーアクセス
+    warm_cache: Arc<DashMap<String, Vec<u8>>>,
+
+    /// アクセスカウントバッファ（v5最適化）
+    /// getでの書き込みを回避し、バッチでフラッシュする
+    access_count_buffer: Arc<DashMap<String, u64>>,
+
+    /// 既知のテーブルキャッシュ（v5最適化）
+    /// CREATE TABLE IF NOT EXISTSの重複実行を防ぐ
+    known_tables: Arc<DashSet<String>>,
 
     /// 設定
     config: Config,
@@ -96,37 +155,50 @@ impl StorageEngine {
     /// - `mmap_size=30GB`: メモリマッピングで大規模データアクセスを高速化
     ///
     /// # コネクションプール
-    /// - プールサイズ: ユーザー指定可能（デフォルト: 20）
-    /// - 並行アクセスのパフォーマンスを最適化
+    /// - プールサイズ: ユーザー指定可能（デフォルト: 32）
+    /// - v7.0: min_idle, idle_timeout, connection_timeout追加
     pub fn new(db_path: &str, config: &Config) -> Result<Self> {
         // コネクションプールマネージャーの作成
         let manager = SqliteConnectionManager::file(db_path).with_init(|conn| {
             // SQLiteのパフォーマンス最適化
-            // これらのPRAGMAは読み書きの速度を大幅に向上させます
+            // v7.0: APSW同等性能を目指した最適化PRAGMA
             //
-            // ⚠️ 注意: synchronous=OFFは最大パフォーマンスを優先します
-            // システムクラッシュやデータ損失時にデータベース破損のリスクがあります
-            // この設定はベンチマークとテスト用途に最適化されています
-            // プロダクション環境では synchronous=NORMAL を推奨し、設定を調整可能にすることを検討してください
+            // WALモード: 読み書き並行性を最大化
+            // synchronous=NORMAL: データ安全性とパフォーマンスのバランス
+            // busy_timeout: ロック競合時の待機（エラー削減）
+            // read_uncommitted: 読み取りロックを取得しない（WAL前提）
             conn.execute_batch(
                 "
                     PRAGMA journal_mode=WAL;
-                    PRAGMA synchronous=OFF;
+                    PRAGMA synchronous=NORMAL;
                     PRAGMA cache_size=-128000;
                     PRAGMA temp_store=MEMORY;
                     PRAGMA mmap_size=30000000000;
                     PRAGMA page_size=4096;
                     PRAGMA wal_autocheckpoint=10000;
+                    PRAGMA busy_timeout=5000;
+                    PRAGMA read_uncommitted=1;
+                    PRAGMA journal_size_limit=67108864;
                 ",
             )?;
             Ok(())
         });
 
-        // コネクションプールの作成
-        // プールサイズはユーザー指定またはデフォルト値（20）を使用
+        // v7.0: コネクションプールの最適化設定
+        // max_size=32: 高負荷環境で十分な並行性（WAL推奨上限）
+        // min_idle: 最小接続数（pool_sizeに応じて調整、max_sizeを超えないように）
+        // idle_timeout=30s: アイドル接続を30秒後に回収（メモリ効率）
+        // connection_timeout=5s: 接続取得タイムアウト（デッドロック防止）
         let pool_size = config.pool_size;
+        // min_idleはpool_sizeを超えてはならない（r2d2の制約）
+        let min_idle = std::cmp::min(2, pool_size) as u32;
 
-        let cold_pool = Pool::builder().max_size(pool_size as u32).build(manager)?;
+        let cold_pool = Pool::builder()
+            .max_size(pool_size as u32)
+            .min_idle(Some(min_idle))
+            .idle_timeout(Some(std::time::Duration::from_secs(30)))
+            .connection_timeout(std::time::Duration::from_secs(5))
+            .build(manager)?;
 
         // 初期接続を取得してテーブルとインデックスを作成
         let conn = cold_pool.get()?;
@@ -157,15 +229,24 @@ impl StorageEngine {
         // 接続を解放（プールに返却）
         drop(conn);
 
-        // Warm tierキャッシュの初期化
-        // warm_tier_sizeをKBで割って概算のエントリ数とする
-        let warm_cache = Arc::new(Mutex::new(HashMap::with_capacity(
+        // Warm tierキャッシュの初期化（v5最適化: DashMap）
+        let warm_cache = Arc::new(DashMap::with_capacity(
             config.warm_tier_size / 1024,
-        )));
+        ));
+
+        // v5最適化: アクセスカウントバッファ
+        let access_count_buffer = Arc::new(DashMap::new());
+
+        // v5最適化: 既知テーブルキャッシュ
+        let known_tables = Arc::new(DashSet::new());
+        // デフォルトテーブルを既知として登録
+        known_tables.insert("kv_store".to_string());
 
         Ok(StorageEngine {
             cold_pool,
             warm_cache,
+            access_count_buffer,
+            known_tables,
             config: config.clone(),
             db_path: db_path.to_string(),
         })
@@ -186,12 +267,9 @@ impl StorageEngine {
     /// - `Ok(None)`: キーが存在しない場合
     /// - `Err(...)`: データベースエラー
     pub fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
-        // まずWarm tierをチェック（最速）
-        {
-            let warm = self.warm_cache.lock().unwrap();
-            if let Some(value) = warm.get(key) {
-                return Ok(Some(value.clone()));
-            }
+        // まずWarm tierをチェック（最速、v5最適化: ロックフリー）
+        if let Some(value) = self.warm_cache.get(key) {
+            return Ok(Some(value.clone()));
         }
 
         // Cold tier（SQLite）をチェック - プールから接続を取得
@@ -210,20 +288,19 @@ impl StorageEngine {
         };
 
         if let Some(value) = value_opt {
-            // アクセスカウントを更新（tier判定用）- プールから接続を取得
-            {
-                let conn = self.cold_pool.get()?;
-                conn.execute(
-                    "UPDATE kv_store SET access_count = access_count + 1, 
-                     last_access = strftime('%s', 'now') WHERE key = ?1",
-                    params![key],
-                )?;
-            }
+            // v5.1: 圧縮データを透過的に展開
+            let decompressed = decompress_data(&value);
 
-            // 頻繁にアクセスされる場合はWarm tierにプロモート
-            self.promote_to_warm(key, &value)?;
+            // v5最適化: アクセスカウントをバッファに記録（DB書き込みなし）
+            self.access_count_buffer
+                .entry(key.to_string())
+                .and_modify(|count| *count += 1)
+                .or_insert(1);
 
-            Ok(Some(value))
+            // 頻繁にアクセスされる場合はWarm tierにプロモート（展開済みデータをキャッシュ）
+            self.promote_to_warm(key, &decompressed)?;
+
+            Ok(Some(decompressed))
         } else {
             Ok(None)
         }
@@ -241,12 +318,17 @@ impl StorageEngine {
     /// # 戻り値
     /// - `Ok(())`: 成功
     /// - `Err(...)`: SQLiteエラー
-    pub fn set(&mut self, key: &str, value: &[u8]) -> Result<()> {
+    /// v5最適化: &selfに変更（コネクションプールは内部でスレッドセーフ）
+    /// v5.1: オプションでZstd圧縮を適用
+    pub fn set(&self, key: &str, value: &[u8]) -> Result<()> {
+        // v5.1: 圧縮が有効な場合はデータを圧縮
+        let data_to_store = compress_data(value, &self.config);
+
         let conn = self.cold_pool.get()?;
         conn.execute(
             "INSERT OR REPLACE INTO kv_store (key, value, tier, last_access) 
              VALUES (?1, ?2, 2, strftime('%s', 'now'))",
-            params![key, value],
+            params![key, data_to_store],
         )?;
         Ok(())
     }
@@ -262,7 +344,8 @@ impl StorageEngine {
     /// # 戻り値
     /// - `Ok(())`: 成功
     /// - `Err(...)`: トランザクションまたはSQLiteエラー
-    pub fn bulk_insert(&mut self, items: &HashMap<String, Vec<u8>>) -> Result<()> {
+    /// v5最適化: &selfに変更
+    pub fn bulk_insert(&self, items: &HashMap<String, Vec<u8>>) -> Result<()> {
         let mut conn = self.cold_pool.get()?;
         // トランザクションを開始
         let tx = conn.transaction()?;
@@ -293,13 +376,12 @@ impl StorageEngine {
     /// # 引数
     /// * `key` - プロモートするキー
     /// * `value` - 値（バイト列）
+    /// v5最適化: DashMapを使用（ロックフリー）
     fn promote_to_warm(&self, key: &str, value: &[u8]) -> Result<()> {
-        let mut warm = self.warm_cache.lock().unwrap();
-
         // Warm tierのサイズ制限をチェック
-        let current_size: usize = warm.values().map(|v| v.len()).sum();
+        let current_size: usize = self.warm_cache.iter().map(|r| r.value().len()).sum();
         if current_size + value.len() < self.config.warm_tier_size {
-            warm.insert(key.to_string(), value.to_vec());
+            self.warm_cache.insert(key.to_string(), value.to_vec());
         }
 
         Ok(())
@@ -316,21 +398,66 @@ impl StorageEngine {
     /// # 戻り値
     /// - `Ok(usize)`: 退避したアイテム数
     /// - `Err(...)`: SQLiteエラー
-    pub fn evict_warm_tier(&mut self) -> Result<usize> {
+    /// v5最適化: &selfに変更、DashMapを使用
+    pub fn evict_warm_tier(&self) -> Result<usize> {
         // Warm tierから全アイテムを取得
-        let items = {
-            let mut warm = self.warm_cache.lock().unwrap();
-            let items: HashMap<String, Vec<u8>> = warm.drain().collect();
-            items
-        };
+        let items: HashMap<String, Vec<u8>> = self.warm_cache
+            .iter()
+            .map(|r| (r.key().clone(), r.value().clone()))
+            .collect();
 
         let count = items.len();
+
+        // クリア
+        self.warm_cache.clear();
 
         // v4.2.1最適化: bulk_insert()で一括書き込み（単一トランザクション）
         if !items.is_empty() {
             self.bulk_insert(&items)?;
         }
 
+        Ok(count)
+    }
+
+    /// v5最適化: アクセスカウントバッファをDBにフラッシュ
+    ///
+    /// バッファリングされたアクセスカウントをまとめてDBに書き込みます。
+    /// close時または定期的に呼び出されます。
+    ///
+    /// # 戻り値
+    /// - `Ok(usize)`: フラッシュしたエントリ数
+    /// - `Err(...)`: SQLiteエラー
+    pub fn flush_access_counts(&self) -> Result<usize> {
+        // バッファが空なら何もしない
+        if self.access_count_buffer.is_empty() {
+            return Ok(0);
+        }
+
+        // バッファからデータを取得してクリア
+        let counts: Vec<(String, u64)> = self.access_count_buffer
+            .iter()
+            .map(|r| (r.key().clone(), *r.value()))
+            .collect();
+        self.access_count_buffer.clear();
+
+        let count = counts.len();
+
+        // トランザクションで一抬更新
+        let mut conn = self.cold_pool.get()?;
+        let tx = conn.transaction()?;
+
+        {
+            let mut stmt = tx.prepare_cached(
+                "UPDATE kv_store SET access_count = access_count + ?1, 
+                 last_access = strftime('%s', 'now') WHERE key = ?2",
+            )?;
+
+            for (key, increment) in counts {
+                let _ = stmt.execute(params![increment, key]);
+            }
+        }
+
+        tx.commit()?;
         Ok(count)
     }
 
@@ -356,9 +483,10 @@ impl StorageEngine {
     /// # 戻り値
     /// - `Ok(())`: 成功
     /// - `Err(...)`: SQLiteエラー
-    pub fn delete(&mut self, key: &str) -> Result<()> {
+    /// v5最適化: &selfに変更、DashMapを使用
+    pub fn delete(&self, key: &str) -> Result<()> {
         // Warm tierから削除
-        self.warm_cache.lock().unwrap().remove(key);
+        self.warm_cache.remove(key);
 
         // Cold tierから削除
         let conn = self.cold_pool.get()?;
@@ -375,8 +503,10 @@ impl StorageEngine {
     /// # 戻り値
     /// - `Ok(())`: 成功
     /// - `Err(...)`: SQLiteエラー
-    pub fn clear(&mut self) -> Result<()> {
-        self.warm_cache.lock().unwrap().clear();
+    /// v5最適化: &selfに変更、DashMapを使用
+    pub fn clear(&self) -> Result<()> {
+        self.warm_cache.clear();
+        self.access_count_buffer.clear();
         let conn = self.cold_pool.get()?;
         conn.execute("DELETE FROM kv_store", [])?;
         Ok(())
@@ -389,9 +519,9 @@ impl StorageEngine {
     ///
     /// # 戻り値
     /// StorageStats構造体（エントリ数、バイトサイズなど）
+    /// v5最適化: DashMapを使用
     pub fn stats(&self) -> StorageStats {
-        let warm = self.warm_cache.lock().unwrap();
-        let warm_size: usize = warm.values().map(|v| v.len()).sum();
+        let warm_size: usize = self.warm_cache.iter().map(|r| r.value().len()).sum();
 
         let cold_tier_entries = if let Ok(conn) = self.cold_pool.get() {
             conn.query_row("SELECT COUNT(*) FROM kv_store", [], |row| row.get(0))
@@ -401,7 +531,7 @@ impl StorageEngine {
         };
 
         StorageStats {
-            warm_tier_entries: warm.len(),
+            warm_tier_entries: self.warm_cache.len(),
             warm_tier_bytes: warm_size,
             cold_tier_entries,
         }
@@ -440,8 +570,15 @@ impl StorageEngine {
     /// # 戻り値
     /// - `Ok(())`: 成功
     /// - `Err(...)`: SQLiteエラー
+    /// v5最適化: テーブルキャッシュを使用
     pub fn ensure_table_exists(&self, table_name: &str) -> Result<()> {
         let safe_table_name = Self::sanitize_table_name(table_name);
+
+        // v5最適化: 既知テーブルならSQLスキップ
+        if self.known_tables.contains(&safe_table_name) {
+            return Ok(());
+        }
+
         let conn = self.cold_pool.get()?;
 
         // テーブルを作成（存在しない場合のみ）
@@ -469,6 +606,9 @@ impl StorageEngine {
             [],
         )?;
 
+        // キャッシュに登録
+        self.known_tables.insert(safe_table_name);
+
         Ok(())
     }
 
@@ -482,14 +622,12 @@ impl StorageEngine {
     /// - `Ok(Some(Vec<u8>))`: 値が見つかった場合
     /// - `Ok(None)`: キーが存在しない場合
     /// - `Err(...)`: データベースエラー
+    /// v5最適化: DashMapを使用、アクセスカウントはバッファリング
     pub fn get_with_table(&self, table_name: &str, key: &str) -> Result<Option<Vec<u8>>> {
-        // まずWarm tierをチェック（テーブル名:キー形式でキャッシュ）
+        // まずWarm tierをチェック（v5最適化: ロックフリー）
         let cache_key = format!("{}:{}", table_name, key);
-        {
-            let warm = self.warm_cache.lock().unwrap();
-            if let Some(value) = warm.get(&cache_key) {
-                return Ok(Some(value.clone()));
-            }
+        if let Some(value) = self.warm_cache.get(&cache_key) {
+            return Ok(Some(value.clone()));
         }
 
         let safe_table_name = Self::sanitize_table_name(table_name);
@@ -513,18 +651,13 @@ impl StorageEngine {
         };
 
         if let Some(value) = value_opt {
-            // アクセスカウントを更新
-            {
-                let conn = self.cold_pool.get()?;
-                let update_query = format!(
-                    "UPDATE {} SET access_count = access_count + 1, 
-                     last_access = strftime('%s', 'now') WHERE key = ?1",
-                    safe_table_name
-                );
-                conn.execute(&update_query, params![key])?;
-            }
+            // v5最適化: アクセスカウントをバッファに記録（DB書き込みなし）
+            self.access_count_buffer
+                .entry(cache_key.clone())
+                .and_modify(|count| *count += 1)
+                .or_insert(1);
 
-            // Warm tierにプロモート（テーブル名:キー形式でキャッシュ）
+            // Warm tierにプロモート
             self.promote_to_warm(&cache_key, &value)?;
 
             Ok(Some(value))
@@ -543,7 +676,8 @@ impl StorageEngine {
     /// # 戻り値
     /// - `Ok(())`: 成功
     /// - `Err(...)`: SQLiteエラー
-    pub fn set_with_table(&mut self, table_name: &str, key: &str, value: &[u8]) -> Result<()> {
+    /// v5最適化: &selfに変更
+    pub fn set_with_table(&self, table_name: &str, key: &str, value: &[u8]) -> Result<()> {
         let safe_table_name = Self::sanitize_table_name(table_name);
 
         // テーブルが存在することを確認
@@ -568,10 +702,11 @@ impl StorageEngine {
     /// # 戻り値
     /// - `Ok(())`: 成功
     /// - `Err(...)`: SQLiteエラー
-    pub fn delete_with_table(&mut self, table_name: &str, key: &str) -> Result<()> {
+    /// v5最適化: &selfに変更、DashMapを使用
+    pub fn delete_with_table(&self, table_name: &str, key: &str) -> Result<()> {
         // Warm tierから削除
         let cache_key = format!("{}:{}", table_name, key);
-        self.warm_cache.lock().unwrap().remove(&cache_key);
+        self.warm_cache.remove(&cache_key);
 
         let safe_table_name = Self::sanitize_table_name(table_name);
 
@@ -612,13 +747,11 @@ impl StorageEngine {
     /// # 戻り値
     /// - `Ok(())`: 成功
     /// - `Err(...)`: SQLiteエラー
-    pub fn clear_table(&mut self, table_name: &str) -> Result<()> {
+    /// v5最適化: &selfに変更、DashMapを使用
+    pub fn clear_table(&self, table_name: &str) -> Result<()> {
         // Warm tierから該当テーブルのエントリを削除
         let prefix = format!("{}:", table_name);
-        {
-            let mut warm = self.warm_cache.lock().unwrap();
-            warm.retain(|k, _| !k.starts_with(&prefix));
-        }
+        self.warm_cache.retain(|k, _| !k.starts_with(&prefix));
 
         let safe_table_name = Self::sanitize_table_name(table_name);
 

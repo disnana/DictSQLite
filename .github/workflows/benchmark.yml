@@ -105,7 +105,8 @@ jobs:
         python-version: ["3.11"]
     
     env:
-      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta:${{ github.workspace }}/dictsqlite_v2/dictsqlite/python
+      # Note: Do NOT include ${{ github.workspace }} directly as it shadows V2 wheel with Original dictsqlite/
+      PYTHONPATH: ${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta
 
     steps:
     - name: Checkout repository
@@ -238,32 +239,33 @@ jobs:
         mkdir -p results/v2_modes
         
         if [ "$BETA_VERSION" == "all" ]; then
-          echo "🔬 全バージョン (Original版, dictsqlite_v2版, Beta v2版) の比較ベンチマークを実行..."
-          python run_benchmark.py --beta all || {
+          echo "🔬 dictsqlite_v2 包括的パフォーマンスベンチマークを実行..."
+          echo ""
+          echo "📊 テスト内容:"
+          echo "  - 3つの永続化モード: memory, lazy, writethrough"
+          echo "  - 2つのストレージモード: pickle, bytes"
+          echo "  - 同期/非同期テスト: set, get, batch_set, batch_get"
+          echo "  - TableProxy操作"
+          echo "  - スコアリングとランキング"
+          echo ""
+          
+          # メイン包括的ベンチマーク (v2)
+          python benchmark_v2_comprehensive.py || {
             echo "❌ ベンチマーク実行エラー"
-            echo "エラーログを確認してください"
             exit 1
           }
           
           echo ""
-          echo "🔬 dictsqlite_v2 全モード(memory, lazy, writethrough) vs fastest詳細比較を実行..."
+          echo "🔬 追加比較テストを実行..."
+          
+          # v2 vs fastest 比較（オプショナル）
           python comprehensive_v2_vs_fastest.py > results/v2_modes/comprehensive_comparison.log 2>&1 || {
-            echo "⚠️ v2全モードベンチマーク実行エラー（継続）"
-            cat results/v2_modes/comprehensive_comparison.log
+            echo "⚠️ v2 vs fastest比較スキップ（継続）"
           }
           
-          echo ""
-          echo "🔬 dictsqlite_v2 全モード総合ベンチマーク(同期・非同期)を実行..."
+          # 全モード総合テスト（オプショナル）
           python comprehensive_v2_all_modes.py > results/v2_modes/comprehensive_all_modes.log 2>&1 || {
-            echo "⚠️ v2全モード総合ベンチマーク実行エラー（継続）"
-            cat results/v2_modes/comprehensive_all_modes.log
-          }
-          
-          echo ""
-          echo "🔬 dictsqlite_v2 非同期ベンチマークを実行..."
-          python test_async_dictsqlite_v2.py > results/v2_modes/async_benchmark.log 2>&1 || {
-            echo "⚠️ v2非同期ベンチマーク実行エラー（継続）"
-            cat results/v2_modes/async_benchmark.log
+            echo "⚠️ 全モード総合テストスキップ（継続）"
           }
         elif [ "$BETA_VERSION" == "v2" ]; then
           echo "🔄 dictsqlite-fastest Beta v2 をテスト中..."
@@ -418,44 +420,129 @@ jobs:
           others/benchmark/results/versions/**/*
           others/benchmark/results/comparisons/**/*
           others/benchmark/results/v2_modes/**/*
+          others/benchmark/results/v2_comprehensive/**/*
+          others/benchmark/results/v2_comprehensive/images/**/*
         retention-days: 90
 
     - name: Create benchmark summary
       run: |
-        SUMMARY_FILE="others/benchmark/results/BENCHMARK_SUMMARY.md"
-        echo "## 📊 Benchmark Results" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
+        # サマリーファイルを作成
+        SUMMARY_TMP="/tmp/benchmark_summary.md"
         
-        if [ -f "$SUMMARY_FILE" ]; then
-          echo "### Main Benchmark Summary" >> $GITHUB_STEP_SUMMARY
-          cat "$SUMMARY_FILE" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+        cat > $SUMMARY_TMP << 'HEADER'
+        # 📊 DictSQLite 全バージョン ベンチマーク結果
+        
+        HEADER
+        
+        echo "> 実行日時: $(date '+%Y-%m-%d %H:%M:%S')" >> $SUMMARY_TMP
+        echo "" >> $SUMMARY_TMP
+        
+        # ====== スコアランキング ======
+        SCORES_CSV="others/benchmark/results/v2_comprehensive/benchmark_scores.csv"
+        if [ -f "$SCORES_CSV" ]; then
+          cat >> $SUMMARY_TMP << 'RANK_HEADER'
+        ## 🏆 パフォーマンスランキング
+        
+        | Rank | バージョン / モード | Score | Tests |
+        |-----:|---------------------|------:|------:|
+        RANK_HEADER
+          
+          # 全結果を表示（最大30件）
+          tail -n +2 "$SCORES_CSV" | head -30 | awk -F, '{
+            rank=$1; name=$2; score=$3; tests=$4;
+            if(rank==1) printf "| **#%s 🥇** | **%s** | **%s** | %s |\n", rank, name, score, tests;
+            else if(rank==2) printf "| **#%s 🥈** | %s | %s | %s |\n", rank, name, score, tests;
+            else if(rank==3) printf "| **#%s 🥉** | %s | %s | %s |\n", rank, name, score, tests;
+            else printf "| #%s | %s | %s | %s |\n", rank, name, score, tests;
+          }' >> $SUMMARY_TMP
+          echo "" >> $SUMMARY_TMP
         fi
         
-        # Add v2 comprehensive results to summary
-        V2_LOG="others/benchmark/results/v2_modes/comprehensive_comparison.log"
-        if [ -f "$V2_LOG" ]; then
-          echo "### 🔬 dictsqlite_v2 Comprehensive Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          tail -50 "$V2_LOG" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+        # ====== 詳細結果テーブル ======
+        DETAIL_CSV="others/benchmark/results/v2_comprehensive/benchmark_all_versions.csv"
+        if [ -f "$DETAIL_CSV" ]; then
+          cat >> $SUMMARY_TMP << 'DETAIL_HEADER'
+        ## 📈 全テスト結果（Top 20）
+        
+        | Version | Category | Test | Mode/Storage | Size | Ops/sec | Score |
+        |---------|----------|------|--------------|-----:|--------:|------:|
+        DETAIL_HEADER
+          
+          # ops/sec でソートして全結果表示
+          tail -n +2 "$DETAIL_CSV" | sort -t, -k8 -nr | head -20 | awk -F, '{
+            printf "| %s | %s | %s | %s/%s | %s | %s | %s |\n", $1, $2, $3, $4, $5, $7, $8, $10
+          }' >> $SUMMARY_TMP
+          echo "" >> $SUMMARY_TMP
+          
+          # バージョン別統計
+          cat >> $SUMMARY_TMP << 'VER_HEADER'
+        ## 📊 バージョン別 統計
+        
+        | Version | テスト数 | 平均スコア | 最大 Ops/sec |
+        |---------|-------:|----------:|-------------:|
+        VER_HEADER
+          
+          for version in "Original" "V2" "Fastest"; do
+            result=$(tail -n +2 "$DETAIL_CSV" | grep "^$version," | awk -F, '
+              BEGIN{sum=0; n=0; max=0}
+              {sum+=$10; n++; if($8>max) max=$8}
+              END{if(n>0) printf "%d | %.1f | %.0f", n, sum/n, max; else print "0 | 0 | 0"}
+            ')
+            if [ -n "$result" ]; then
+              echo "| $version | $result |" >> $SUMMARY_TMP
+            fi
+          done
+          echo "" >> $SUMMARY_TMP
+          
+          # 全操作一覧
+          cat >> $SUMMARY_TMP << 'OPS_HEADER'
+        ## ⚡ 操作別 最速結果
+        
+        | 操作 | 最速バージョン | Ops/sec |
+        |------|---------------|--------:|
+        OPS_HEADER
+          
+          for op in "set" "get" "batch_set_100" "batch_get_100" "keys"; do
+            result=$(tail -n +2 "$DETAIL_CSV" | grep ",$op," | sort -t, -k8 -nr | head -1 | awk -F, '{
+              printf "%s (%s/%s) | %.0f", $1, $4, $5, $8
+            }')
+            if [ -n "$result" ]; then
+              echo "| $op | $result |" >> $SUMMARY_TMP
+            fi
+          done
+          echo "" >> $SUMMARY_TMP
         fi
         
-        # Add all modes results to summary
-        ALL_MODES_LOG="others/benchmark/results/v2_modes/comprehensive_all_modes.log"
-        if [ -f "$ALL_MODES_LOG" ]; then
-          echo "### 📊 dictsqlite_v2 All Modes (Sync/Async)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          tail -80 "$ALL_MODES_LOG" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-        fi
+        # ====== グラフ一覧 ======
+        cat >> $SUMMARY_TMP << 'GRAPH_HEADER'
+        ## 📉 生成グラフ（Artifacts内）
         
-        echo "---" >> $GITHUB_STEP_SUMMARY
-        echo "*ベンチマーク実行 - $(date)*" >> $GITHUB_STEP_SUMMARY
+        GRAPH_HEADER
+        
+        if [ -d "others/benchmark/results/v2_comprehensive/images" ]; then
+          ls -1 others/benchmark/results/v2_comprehensive/images/*.png 2>/dev/null | while read img; do
+            name=$(basename "$img")
+            echo "- \`$name\`" >> $SUMMARY_TMP
+          done
+        fi
+        echo "" >> $SUMMARY_TMP
+        
+        # フッター
+        cat >> $SUMMARY_TMP << 'FOOTER'
+        ---
+        
+        📦 **Artifacts**: 詳細CSV、グラフPNGをダウンロード可能
+        
+        FOOTER
+        
+        echo "*Benchmark completed at $(date '+%Y-%m-%d %H:%M:%S')*" >> $SUMMARY_TMP
+        
+        # サマリーに追加
+        cat $SUMMARY_TMP >> $GITHUB_STEP_SUMMARY
+        
+        # デバッグ出力
+        echo "=== SUMMARY CONTENT ==="
+        cat $SUMMARY_TMP
 
     - name: Display benchmark info
       run: |

@@ -11,21 +11,21 @@ name = "dictsqlite"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# Python bindings (Security fix: RUSTSEC-2025-0020 - buffer overflow vulnerability)
-pyo3 = { version = "0.24.1", features = ["extension-module", "abi3-py39", "experimental-async"] }
+# Python bindings (v5.1 update: PyO3 0.27 with improved FromPyObject performance)
+pyo3 = { version = "0.27.2", features = ["extension-module", "abi3-py39", "experimental-async"] }
 
-# High-performance concurrent data structures
-dashmap = "5.5"          # Lock-free concurrent HashMap
+# High-performance concurrent data structures (v5.1 update: dashmap 6.1 for better perf)
+dashmap = "6.1"          # Lock-free concurrent HashMap
 papaya = "0.1"          # Ultra-low latency concurrent hashmap
 lru = "0.12"            # LRU cache implementation
 
-# SQLite backend
+# SQLite backend (keeping 0.31 for r2d2_sqlite compatibility)
 rusqlite = { version = "0.31", features = ["bundled", "backup", "blob", "hooks"] }
 r2d2 = "0.8"             # Generic connection pool
 r2d2_sqlite = "0.24"     # SQLite connection pool adapter
 
-# Async runtime
-tokio = { version = "1.35", features = ["full"] }
+# Async runtime (v5.1 update: tokio 1.42)
+tokio = { version = "1.42", features = ["full"] }
 async-trait = "0.1"
 
 # Serialization
@@ -33,6 +33,13 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 bincode = "1.3"
 rmp-serde = "1.1"  # MessagePack for JSONB mode
+pythonize = "0.27"       # Fast Python <-> Rust JSON conversion (v5.1: pyo3 0.27 compat)
+
+# Compression (v5 optimization)
+zstd = "0.13"            # High-speed compression
+
+# Lazy initialization (v5 optimization - shared runtime)
+once_cell = "1.19"       # Thread-safe lazy static
 
 # Memory management
 crossbeam = "0.8"       # Lock-free data structures
