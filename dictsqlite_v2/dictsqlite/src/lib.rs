@@ -1386,6 +1386,94 @@ impl DictSQLiteV4 {
         Ok(())
     }
 
+    /// v7.0: 複数キーの一括取得（バッチ読み込み最適化）
+    ///
+    /// N回の個別クエリの代わりに、可能な限りまとめて処理します。
+    /// Hot tierにないキーはストレージから一括取得します。
+    ///
+    /// # 引数
+    /// * `keys` - 取得するキーのリスト
+    ///
+    /// # 戻り値
+    /// キーと値のペアの辞書。見つからないキーは含まれません。
+    fn batch_get(&self, keys: Vec<String>, py: Python) -> PyResult<std::collections::HashMap<String, Py<PyAny>>> {
+        let mut results = std::collections::HashMap::new();
+        let mut cache_misses = Vec::new();
+
+        // 1. Hot tierから取得
+        for key in &keys {
+            if let Some(value) = self.hot_tier.get(key) {
+                let data = if let Some(ref crypto) = self.crypto {
+                    crypto.decrypt(&value).map_err(|e| {
+                        PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+                    })?
+                } else {
+                    value.clone()
+                };
+                results.insert(key.clone(), PyBytes::new(py, &data).into());
+            } else {
+                cache_misses.push(key.clone());
+            }
+        }
+
+        // 2. Memoryモードの場合、Hot tierが唯一のソース
+        if self.config.persist_mode == PersistMode::Memory || cache_misses.is_empty() {
+            return Ok(results);
+        }
+
+        // 3. ストレージからキャッシュミスを取得
+        let storage_guard = self.storage.lock().unwrap();
+        if let Some(ref storage) = *storage_guard {
+            for key in cache_misses {
+                if let Ok(Some(value)) = storage.get(&key) {
+                    let data = if let Some(ref crypto) = self.crypto {
+                        crypto.decrypt(&value).map_err(|e| {
+                            PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+                        })?
+                    } else {
+                        value.clone()
+                    };
+                    results.insert(key, PyBytes::new(py, &data).into());
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// v7.0: 複数キー-値ペアの一括設定（バッチ書き込み最適化）
+    ///
+    /// # 引数
+    /// * `items` - (キー, 値)のタプルのリスト
+    fn batch_set(&self, items: Vec<(String, Vec<u8>)>) -> PyResult<()> {
+        for (key, value) in items {
+            // 暗号化が有効な場合
+            let data = if let Some(ref crypto) = self.crypto {
+                crypto.encrypt(&value).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+                })?
+            } else {
+                value
+            };
+
+            // Hot tierに挿入
+            self.hot_tier.insert(key.clone(), data.clone());
+
+            // WriteThroughモードではバッファに追加
+            if self.config.persist_mode == PersistMode::WriteThrough {
+                let mut buffer = self.write_buffer.lock().unwrap();
+                buffer.push((key, data));
+            }
+        }
+
+        // WriteThroughモードではバッファをフラッシュ
+        if self.config.persist_mode == PersistMode::WriteThrough {
+            self.flush_write_buffer()?;
+        }
+
+        Ok(())
+    }
+
     /// Get all keys
     fn keys(&self, _py: Python) -> PyResult<Vec<String>> {
         use std::collections::HashSet;
