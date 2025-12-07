@@ -3,12 +3,11 @@
 Tests for connection pool size configuration
 """
 
-import tempfile
-import os
 import threading
 import time
 import pytest
 from dictsqlite import DictSQLiteV4
+from .conftest import windows_safe_temp_db
 
 
 class TestPoolSizeConfiguration:
@@ -16,26 +15,17 @@ class TestPoolSizeConfiguration:
     
     def test_default_pool_size(self):
         """Test that default pool size is 20"""
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
-            db_path = tmp.name
-        
-        try:
+        with windows_safe_temp_db() as db_path:
             db = DictSQLiteV4(db_path)
             # The pool size is internal to storage, but we can verify
             # it works by checking basic operations
             db["key"] = {"value": "test"}
             assert db["key"]["value"] == "test"
             db.close()
-        finally:
-            if os.path.exists(db_path):
-                os.unlink(db_path)
     
     def test_custom_pool_size(self):
         """Test setting custom pool size"""
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
-            db_path = tmp.name
-        
-        try:
+        with windows_safe_temp_db() as db_path:
             # Test with custom pool size
             db = DictSQLiteV4(db_path, pool_size=10)
             db["key1"] = {"value": 1}
@@ -43,16 +33,10 @@ class TestPoolSizeConfiguration:
             assert db["key1"]["value"] == 1
             assert db["key2"]["value"] == 2
             db.close()
-        finally:
-            if os.path.exists(db_path):
-                os.unlink(db_path)
     
     def test_large_pool_size(self):
         """Test with large pool size"""
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
-            db_path = tmp.name
-        
-        try:
+        with windows_safe_temp_db() as db_path:
             # Test with larger pool size
             db = DictSQLiteV4(db_path, pool_size=50)
             
@@ -65,16 +49,10 @@ class TestPoolSizeConfiguration:
                 assert db[f"key_{i}"]["value"] == i
             
             db.close()
-        finally:
-            if os.path.exists(db_path):
-                os.unlink(db_path)
     
     def test_concurrent_access_with_custom_pool_size(self):
         """Test concurrent access with custom pool size"""
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
-            db_path = tmp.name
-        
-        try:
+        with windows_safe_temp_db() as db_path:
             # Use pool size of 15 for this test
             db = DictSQLiteV4(db_path, storage_mode='jsonb', pool_size=15)
             
@@ -113,16 +91,10 @@ class TestPoolSizeConfiguration:
             assert actual_count == expected_count, f"Expected {expected_count}, got {actual_count}"
             
             db.close()
-        finally:
-            if os.path.exists(db_path):
-                os.unlink(db_path)
     
     def test_small_pool_size(self):
         """Test with small pool size (should still work)"""
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
-            db_path = tmp.name
-        
-        try:
+        with windows_safe_temp_db() as db_path:
             # Test with small pool size
             db = DictSQLiteV4(db_path, pool_size=2)
             
@@ -134,16 +106,10 @@ class TestPoolSizeConfiguration:
                 assert db[f"key_{i}"]["value"] == i
             
             db.close()
-        finally:
-            if os.path.exists(db_path):
-                os.unlink(db_path)
     
     def test_pool_size_with_different_modes(self):
         """Test pool size with different persist and storage modes"""
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
-            db_path = tmp.name
-        
-        try:
+        with windows_safe_temp_db() as db_path:
             # Test with lazy mode and custom pool size
             db = DictSQLiteV4(
                 db_path, 
@@ -162,10 +128,8 @@ class TestPoolSizeConfiguration:
                 assert db[f"key_{i}"]["value"] == i
             
             db.close()
-        finally:
-            if os.path.exists(db_path):
-                os.unlink(db_path)
 
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
