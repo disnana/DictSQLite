@@ -222,7 +222,7 @@ class TestAsyncDictSQLiteComprehensive:
     def test_async_get_async(self, tmp_path):
         """AsyncDictSQLite get_asyncテスト"""
         db_path = str(tmp_path / "test_get_async.db")
-        db = AsyncDictSQLite(db_path)
+        db = AsyncDictSQLite(db_path, storage_mode="bytes")
         
         db["key"] = b"value"
         result = db.get_async("key")
@@ -232,7 +232,7 @@ class TestAsyncDictSQLiteComprehensive:
     def test_async_set_async(self, tmp_path):
         """AsyncDictSQLite set_asyncテスト"""
         db_path = str(tmp_path / "test_set_async.db")
-        db = AsyncDictSQLite(db_path)
+        db = AsyncDictSQLite(db_path, storage_mode="bytes")
         
         db.set_async("key", b"value")
         assert db["key"] == b"value"
@@ -240,7 +240,7 @@ class TestAsyncDictSQLiteComprehensive:
     def test_async_batch_get_fast(self, tmp_path):
         """AsyncDictSQLite batch_get_fastテスト"""
         db_path = str(tmp_path / "test_batch_fast.db")
-        db = AsyncDictSQLite(db_path)
+        db = AsyncDictSQLite(db_path, storage_mode="bytes")
         
         db["key1"] = b"value1"
         db["key2"] = b"value2"
@@ -251,7 +251,7 @@ class TestAsyncDictSQLiteComprehensive:
     def test_async_flush_write_buffer(self, tmp_path):
         """AsyncDictSQLite flush_write_bufferテスト"""
         db_path = str(tmp_path / "test_flush_buffer.db")
-        db = AsyncDictSQLite(db_path)
+        db = AsyncDictSQLite(db_path, storage_mode="bytes")
         
         db["key"] = b"value"
         db.flush_write_buffer()
@@ -261,7 +261,7 @@ class TestAsyncDictSQLiteComprehensive:
     def test_async_multiple_tables(self, tmp_path):
         """AsyncDictSQLite 複数テーブルテスト"""
         db_path = str(tmp_path / "test_multi_tables.db")
-        db = AsyncDictSQLite(db_path)
+        db = AsyncDictSQLite(db_path, storage_mode="bytes")
         
         users = db.table("users")
         products = db.table("products")
@@ -278,7 +278,7 @@ class TestAsyncDictSQLiteComprehensive:
     def test_async_large_batch(self, tmp_path):
         """AsyncDictSQLite 大量バッチテスト"""
         db_path = str(tmp_path / "test_large_batch.db")
-        db = AsyncDictSQLite(db_path)
+        db = AsyncDictSQLite(db_path, storage_mode="bytes")
         
         # 1000件のバッチ操作
         items = [(f"key_{i}", f"value_{i}".encode()) for i in range(1000)]
@@ -292,7 +292,7 @@ class TestAsyncDictSQLiteComprehensive:
     def test_async_close(self, tmp_path):
         """AsyncDictSQLite closeテスト"""
         db_path = str(tmp_path / "test_close.db")
-        db = AsyncDictSQLite(db_path)
+        db = AsyncDictSQLite(db_path, storage_mode="bytes")
         
         db["key"] = b"value"
         db.close()
@@ -304,11 +304,11 @@ class TestAsyncDictSQLiteComprehensive:
         db_path = str(tmp_path / "test_persist.db")
         
         # WriteThrough モード
-        db = AsyncDictSQLite(db_path, persist_mode="write_through")
+        db = AsyncDictSQLite(db_path, persist_mode="write_through", storage_mode="bytes")
         db["key"] = b"value"
         
         # 再オープンしてデータ確認
-        db2 = AsyncDictSQLite(db_path)
+        db2 = AsyncDictSQLite(db_path, storage_mode="bytes")
         assert db2["key"] == b"value"
 
 
