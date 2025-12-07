@@ -205,7 +205,7 @@ def test_dictsqlite_v2() -> List[TestResult]:
     
     try:
         # Remove any paths that could lead to the original dictsqlite folder
-        paths_to_remove = set([repo_root])  # Repository root is sufficient
+        paths_to_remove = {repo_root}  # Repository root is sufficient
         
         # Also check for paths that might contain the original dictsqlite
         # Only check paths that could realistically be repository paths
@@ -231,8 +231,7 @@ def test_dictsqlite_v2() -> List[TestResult]:
         
         # Verify we imported the correct version by checking the already-imported module
         # Use the reference from sys.modules to avoid re-importing
-        import sys as sys_module
-        dictsqlite_module = sys_module.modules.get('dictsqlite')
+        dictsqlite_module = sys.modules.get('dictsqlite')
         if dictsqlite_module:
             module_file = getattr(dictsqlite_module, '__file__', None)
             if module_file:
