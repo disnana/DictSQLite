@@ -1,8 +1,8 @@
 version,category,test_name,mode,storage,is_async,data_size,ops_per_sec,avg_ms,score
-Original,DictSQLite,set,default,pickle,False,100,253394.3,0.0039,100.0
-Original,DictSQLite,get,default,pickle,False,100,12867.0,0.0777,100.0
-Original,DictSQLite,set,default,pickle,False,1000,165628.6,0.0060,100.0
-Original,DictSQLite,get,default,pickle,False,1000,12646.5,0.0791,100.0
-Original,DictSQLite,set,default,pickle,False,5000,85298.2,0.0117,100.0
-Original,DictSQLite,get,default,pickle,False,5000,11327.6,0.0883,100.0
-Original,DictSQLite,keys,default,pickle,False,0,4139.4,0.2416,100.0
+Original,DictSQLite,set,default,pickle,False,100,259001.2,0.0039,100.0
+Original,DictSQLite,get,default,pickle,False,100,11444.8,0.0874,100.0
+Original,DictSQLite,set,default,pickle,False,1000,164390.2,0.0061,100.0
+Original,DictSQLite,get,default,pickle,False,1000,9820.4,0.1018,100.0
+Original,DictSQLite,set,default,pickle,False,5000,80262.4,0.0125,100.0
+Original,DictSQLite,get,default,pickle,False,5000,11307.3,0.0884,100.0
+Original,DictSQLite,keys,default,pickle,False,0,4081.1,0.2450,100.0
