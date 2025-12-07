@@ -88,6 +88,9 @@ mod tests_jsonb;
 mod tests_lru;
 #[cfg(test)]
 mod tests_storage;
+#[cfg(test)]
+mod tests_compression; // v5.1: 圧縮機能テスト
+
 
 // 公開APIのエクスポート
 // AsyncDictSQLite: 非同期版のDictSQLite（高並行シナリオ向け）
@@ -792,6 +795,20 @@ pub struct Config {
     /// 並行アクセスのパフォーマンスに影響します。
     /// デフォルト: 20
     pub pool_size: usize,
+
+    /// Zstd圧縮の有効化（v5.1新機能）
+    ///
+    /// trueの場合、ストレージに保存する前にデータを圧縮します。
+    /// CPU負荷は増加しますが、ディスクI/Oと使用量を削減できます。
+    /// デフォルト: false（後方互換性のため無効）
+    pub enable_compression: bool,
+
+    /// 圧縮レベル（v5.1新機能）
+    ///
+    /// Zstd圧縮レベル（1-22）。高い値ほど圧縮率が高くなるがCPU負荷が増加。
+    /// 推奨値: 3（速度重視）、9（バランス）、19（圧縮率重視）
+    /// デフォルト: 3
+    pub compression_level: i32,
 }
 
 impl Default for Config {
@@ -813,6 +830,8 @@ impl Default for Config {
             table_name: "main".to_string(),                  // メインテーブル
             table_mode: TableMode::Prefix,                   // プレフィックスモード
             pool_size: 20,                                   // コネクションプールサイズ
+            enable_compression: false,                       // 圧縮無効（後方互換性）
+            compression_level: 3,                            // 速度重視のレベル
         }
     }
 }

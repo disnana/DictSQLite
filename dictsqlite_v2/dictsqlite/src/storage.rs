@@ -12,6 +12,7 @@
 //! - 準備済みステートメントのキャッシング
 //! - バルクインサート用のトランザクション最適化
 //! - コネクションプールによる並行アクセスの最適化
+//! - v5.1: オプションのZstd圧縮
 
 use anyhow::Result;
 use dashmap::{DashMap, DashSet};
@@ -22,6 +23,54 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::Config;
+
+// v5.1圧縮機能: マジックバイトで圧縮データを識別
+// 非圧縮データとの後方互換性を維持
+const ZSTD_MAGIC_BYTES: &[u8] = b"ZSTD";
+
+/// データを圧縮（圧縮有効時のみ）
+/// マジックバイトをプレフィックスとして付与し、後方互換性を維持
+fn compress_data(data: &[u8], config: &Config) -> Vec<u8> {
+    if !config.enable_compression {
+        return data.to_vec();
+    }
+
+    // 小さいデータ（128バイト未満）は圧縮しない（オーバーヘッドが大きい）
+    if data.len() < 128 {
+        return data.to_vec();
+    }
+
+    match zstd::encode_all(data, config.compression_level) {
+        Ok(compressed) => {
+            // 圧縮が効果的な場合のみ使用（オリジナルより小さい場合）
+            if compressed.len() < data.len() {
+                let mut result = Vec::with_capacity(ZSTD_MAGIC_BYTES.len() + compressed.len());
+                result.extend_from_slice(ZSTD_MAGIC_BYTES);
+                result.extend_from_slice(&compressed);
+                result
+            } else {
+                data.to_vec()
+            }
+        }
+        Err(_) => data.to_vec(), // 圧縮失敗時は非圧縮で保存
+    }
+}
+
+/// データを展開（圧縮されている場合のみ）
+/// マジックバイトをチェックして圧縮データを識別
+fn decompress_data(data: &[u8]) -> Vec<u8> {
+    // マジックバイトをチェック
+    if data.len() > ZSTD_MAGIC_BYTES.len() && data.starts_with(ZSTD_MAGIC_BYTES) {
+        let compressed = &data[ZSTD_MAGIC_BYTES.len()..];
+        match zstd::decode_all(compressed) {
+            Ok(decompressed) => decompressed,
+            Err(_) => data.to_vec(), // 展開失敗時は元データ返却
+        }
+    } else {
+        data.to_vec() // 非圧縮データはそのまま返却
+    }
+}
+
 
 /// メモリtierの種類
 ///
@@ -227,16 +276,19 @@ impl StorageEngine {
         };
 
         if let Some(value) = value_opt {
+            // v5.1: 圧縮データを透過的に展開
+            let decompressed = decompress_data(&value);
+
             // v5最適化: アクセスカウントをバッファに記録（DB書き込みなし）
             self.access_count_buffer
                 .entry(key.to_string())
                 .and_modify(|count| *count += 1)
                 .or_insert(1);
 
-            // 頻繁にアクセスされる場合はWarm tierにプロモート
-            self.promote_to_warm(key, &value)?;
+            // 頻繁にアクセスされる場合はWarm tierにプロモート（展開済みデータをキャッシュ）
+            self.promote_to_warm(key, &decompressed)?;
 
-            Ok(Some(value))
+            Ok(Some(decompressed))
         } else {
             Ok(None)
         }
@@ -255,12 +307,16 @@ impl StorageEngine {
     /// - `Ok(())`: 成功
     /// - `Err(...)`: SQLiteエラー
     /// v5最適化: &selfに変更（コネクションプールは内部でスレッドセーフ）
+    /// v5.1: オプションでZstd圧縮を適用
     pub fn set(&self, key: &str, value: &[u8]) -> Result<()> {
+        // v5.1: 圧縮が有効な場合はデータを圧縮
+        let data_to_store = compress_data(value, &self.config);
+
         let conn = self.cold_pool.get()?;
         conn.execute(
             "INSERT OR REPLACE INTO kv_store (key, value, tier, last_access) 
              VALUES (?1, ?2, 2, strftime('%s', 'now'))",
-            params![key, value],
+            params![key, data_to_store],
         )?;
         Ok(())
     }

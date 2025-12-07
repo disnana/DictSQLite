@@ -3,13 +3,24 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use rayon::prelude::*;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use tokio::runtime::Runtime;
 
 use crate::{
     json_value_to_pyobject, pyobject_to_json_value, Config, PersistMode, StorageEngine,
     StorageMode, TableMode,
 };
+
+// v5.1最適化: プロセス全体で共有されるTokio Runtime
+// インスタンスごとにRuntimeを作成する代わりに、グローバルで1つを共有
+static GLOBAL_RUNTIME: OnceLock<Runtime> = OnceLock::new();
+
+/// グローバルTokio Runtimeを取得または初期化
+fn get_global_runtime() -> &'static Runtime {
+    GLOBAL_RUNTIME.get_or_init(|| {
+        Runtime::new().expect("Failed to create global Tokio runtime")
+    })
+}
 
 /// Async version of DictSQLite v4.2 for high-concurrency scenarios
 ///
@@ -41,8 +52,8 @@ pub struct AsyncDictSQLite {
     /// Buffer size threshold for auto-flush
     buffer_size: usize,
 
-    /// Tokio runtime for async operations (v5: shared via Lazy)
-    runtime: Arc<Runtime>,
+    /// Tokio runtime for async operations (v5.1: shared via OnceLock)
+    runtime: &'static Runtime,
 }
 
 #[pymethods]
@@ -98,11 +109,10 @@ impl AsyncDictSQLite {
         // Initialize write buffer (v4.2 optimization)
         let write_buffer = Arc::new(Mutex::new(HashMap::with_capacity(buffer_size)));
 
-        // Create Tokio runtime for async operations
-        let runtime = Arc::new(
-            Runtime::new()
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?,
-        );
+        // v5.1最適化: グローバル共有Runtimeを使用
+        // インスタンスごとに新しいRuntimeを作成する代わりに、プロセス全体で1つのRuntimeを共有
+        // これによりメモリ使用量とスレッド生成コストを削減
+        let runtime = get_global_runtime();
 
         Ok(AsyncDictSQLite {
             cache,
