@@ -74,6 +74,11 @@ def create_graphs(results: List[BenchmarkResult]):
     # 日本語フォント設定
     plt.rcParams['font.family'] = ['DejaVu Sans', 'sans-serif']
     
+    # 画像保存先フォルダを作成
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    images_dir = os.path.join(script_dir, "images")
+    os.makedirs(images_dir, exist_ok=True)
+    
     # ============================================================
     # 1. 操作/秒比較（棒グラフ）
     # ============================================================
@@ -106,9 +111,10 @@ def create_graphs(results: List[BenchmarkResult]):
     ax.grid(axis='y', alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig("benchmark_ops_per_sec.png", dpi=150)
+    img_path = os.path.join(images_dir, "benchmark_ops_per_sec.png")
+    plt.savefig(img_path, dpi=150)
     plt.close()
-    print("保存: benchmark_ops_per_sec.png")
+    print(f"保存: {img_path}")
     
     # ============================================================
     # 2. 平均レイテンシ比較
@@ -137,9 +143,10 @@ def create_graphs(results: List[BenchmarkResult]):
     ax.grid(axis='y', alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig("benchmark_avg_latency.png", dpi=150)
+    img_path = os.path.join(images_dir, "benchmark_avg_latency.png")
+    plt.savefig(img_path, dpi=150)
     plt.close()
-    print("保存: benchmark_avg_latency.png")
+    print(f"保存: {img_path}")
     
     # ============================================================
     # 3. データサイズ別性能（get/set操作）
@@ -168,9 +175,10 @@ def create_graphs(results: List[BenchmarkResult]):
         ax.set_xscale('log')
     
     plt.tight_layout()
-    plt.savefig("benchmark_by_data_size.png", dpi=150)
+    img_path = os.path.join(images_dir, "benchmark_by_data_size.png")
+    plt.savefig(img_path, dpi=150)
     plt.close()
-    print("保存: benchmark_by_data_size.png")
+    print(f"保存: {img_path}")
     
     # ============================================================
     # 4. カテゴリ別総合比較（レーダーチャート風）
@@ -198,11 +206,12 @@ def create_graphs(results: List[BenchmarkResult]):
                 f'{avg:.0f}', va='center')
     
     plt.tight_layout()
-    plt.savefig("benchmark_category_comparison.png", dpi=150)
+    img_path = os.path.join(images_dir, "benchmark_category_comparison.png")
+    plt.savefig(img_path, dpi=150)
     plt.close()
-    print("保存: benchmark_category_comparison.png")
+    print(f"保存: {img_path}")
     
-    print("\n全グラフの生成が完了しました。")
+    print(f"\n全グラフの生成が完了しました。保存先: {images_dir}")
 
 
 def create_text_report(results: List[BenchmarkResult]):

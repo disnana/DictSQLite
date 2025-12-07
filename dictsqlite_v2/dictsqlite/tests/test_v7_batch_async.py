@@ -237,24 +237,26 @@ class TestAsyncDictSQLiteComprehensive:
         db.set_async("key", b"value")
         assert db["key"] == b"value"
 
-    def test_async_batch_get_fast(self, tmp_path):
-        """AsyncDictSQLite batch_get_fastテスト"""
-        db_path = str(tmp_path / "test_batch_fast.db")
+    def test_async_batch_operations_roundtrip(self, tmp_path):
+        """AsyncDictSQLite batch操作ラウンドトリップテスト"""
+        db_path = str(tmp_path / "test_batch_roundtrip.db")
         db = AsyncDictSQLite(db_path, storage_mode="bytes")
         
-        db["key1"] = b"value1"
-        db["key2"] = b"value2"
+        # batch_setしてbatch_getで取得
+        items = [(f"key_{i}", f"value_{i}".encode()) for i in range(10)]
+        db.batch_set(items)
         
-        results = db.batch_get_fast(["key1", "key2"])
-        assert len(results) == 2
+        keys = [f"key_{i}" for i in range(10)]
+        results = db.batch_get(keys)
+        assert len(results) == 10
 
-    def test_async_flush_write_buffer(self, tmp_path):
-        """AsyncDictSQLite flush_write_bufferテスト"""
-        db_path = str(tmp_path / "test_flush_buffer.db")
+    def test_async_flush_and_verify(self, tmp_path):
+        """AsyncDictSQLite flush後のデータ永続化テスト"""
+        db_path = str(tmp_path / "test_flush_verify.db")
         db = AsyncDictSQLite(db_path, storage_mode="bytes")
         
         db["key"] = b"value"
-        db.flush_write_buffer()
+        db.flush()  # flush() は存在する
         
         assert db["key"] == b"value"
 
