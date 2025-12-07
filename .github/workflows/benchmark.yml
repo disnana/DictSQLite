@@ -425,94 +425,123 @@ jobs:
 
     - name: Create benchmark summary
       run: |
-        echo "# 📊 DictSQLite 全バージョン ベンチマーク結果" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "> 実行日時: $(date '+%Y-%m-%d %H:%M:%S')" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
+        # サマリーファイルを作成
+        SUMMARY_TMP="/tmp/benchmark_summary.md"
         
-        # ====== スコアランキング (Top 15) ======
+        cat > $SUMMARY_TMP << 'HEADER'
+        # 📊 DictSQLite 全バージョン ベンチマーク結果
+        
+        HEADER
+        
+        echo "> 実行日時: $(date '+%Y-%m-%d %H:%M:%S')" >> $SUMMARY_TMP
+        echo "" >> $SUMMARY_TMP
+        
+        # ====== スコアランキング ======
         SCORES_CSV="others/benchmark/results/v2_comprehensive/benchmark_scores.csv"
         if [ -f "$SCORES_CSV" ]; then
-          echo "## 🏆 パフォーマンスランキング" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| 🥇 Rank | バージョン / モード | Score | Tests |" >> $GITHUB_STEP_SUMMARY
-          echo "|:-------:|---------------------|------:|------:|" >> $GITHUB_STEP_SUMMARY
-          tail -n +2 "$SCORES_CSV" | head -15 | while IFS=, read -r rank name score tests; do
-            if [ "$rank" -eq 1 ]; then
-              echo "| **#$rank** 🥇 | **$name** | **$score** | $tests |" >> $GITHUB_STEP_SUMMARY
-            elif [ "$rank" -eq 2 ]; then
-              echo "| **#$rank** 🥈 | $name | $score | $tests |" >> $GITHUB_STEP_SUMMARY
-            elif [ "$rank" -eq 3 ]; then
-              echo "| **#$rank** 🥉 | $name | $score | $tests |" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "| #$rank | $name | $score | $tests |" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-          echo "" >> $GITHUB_STEP_SUMMARY
+          cat >> $SUMMARY_TMP << 'RANK_HEADER'
+        ## 🏆 パフォーマンスランキング
+        
+        | Rank | バージョン / モード | Score | Tests |
+        |-----:|---------------------|------:|------:|
+        RANK_HEADER
+          
+          # 全結果を表示（最大30件）
+          tail -n +2 "$SCORES_CSV" | head -30 | awk -F, '{
+            rank=$1; name=$2; score=$3; tests=$4;
+            if(rank==1) printf "| **#%s 🥇** | **%s** | **%s** | %s |\n", rank, name, score, tests;
+            else if(rank==2) printf "| **#%s 🥈** | %s | %s | %s |\n", rank, name, score, tests;
+            else if(rank==3) printf "| **#%s 🥉** | %s | %s | %s |\n", rank, name, score, tests;
+            else printf "| #%s | %s | %s | %s |\n", rank, name, score, tests;
+          }' >> $SUMMARY_TMP
+          echo "" >> $SUMMARY_TMP
         fi
         
         # ====== 詳細結果テーブル ======
         DETAIL_CSV="others/benchmark/results/v2_comprehensive/benchmark_all_versions.csv"
         if [ -f "$DETAIL_CSV" ]; then
-          echo "## 📈 Top 10 高速操作" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Version | Operation | Mode | Ops/sec | Avg (ms) | Score |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|-----------|------|--------:|----------|------:|" >> $GITHUB_STEP_SUMMARY
-          tail -n +2 "$DETAIL_CSV" | sort -t, -k8 -nr | head -10 | while IFS=, read -r ver cat test mode storage async size ops avg score; do
-            printf "| %s | %s | %s/%s | %s | %s | %s |\n" "$ver" "$test" "$mode" "$storage" "$ops" "$avg" "$score" >> $GITHUB_STEP_SUMMARY
-          done
-          echo "" >> $GITHUB_STEP_SUMMARY
+          cat >> $SUMMARY_TMP << 'DETAIL_HEADER'
+        ## 📈 全テスト結果（Top 20）
+        
+        | Version | Category | Test | Mode/Storage | Size | Ops/sec | Score |
+        |---------|----------|------|--------------|-----:|--------:|------:|
+        DETAIL_HEADER
           
-          # バージョン別サマリー
-          echo "## 📊 バージョン別 平均スコア" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Version | Avg Score | Max Ops/sec | Tests |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|----------:|------------:|------:|" >> $GITHUB_STEP_SUMMARY
+          # ops/sec でソートして全結果表示
+          tail -n +2 "$DETAIL_CSV" | sort -t, -k8 -nr | head -20 | awk -F, '{
+            printf "| %s | %s | %s | %s/%s | %s | %s | %s |\n", $1, $2, $3, $4, $5, $7, $8, $10
+          }' >> $SUMMARY_TMP
+          echo "" >> $SUMMARY_TMP
+          
+          # バージョン別統計
+          cat >> $SUMMARY_TMP << 'VER_HEADER'
+        ## 📊 バージョン別 統計
+        
+        | Version | テスト数 | 平均スコア | 最大 Ops/sec |
+        |---------|-------:|----------:|-------------:|
+        VER_HEADER
+          
           for version in "Original" "V2" "Fastest"; do
-            count=$(tail -n +2 "$DETAIL_CSV" | grep "^$version," | wc -l)
-            if [ "$count" -gt 0 ]; then
-              avg_score=$(tail -n +2 "$DETAIL_CSV" | grep "^$version," | awk -F, '{sum+=$10; n++} END {if(n>0) printf "%.1f", sum/n; else print "0"}')
-              max_ops=$(tail -n +2 "$DETAIL_CSV" | grep "^$version," | awk -F, 'BEGIN{max=0} {if($8>max) max=$8} END {printf "%.0f", max}')
-              echo "| $version | $avg_score | $max_ops | $count |" >> $GITHUB_STEP_SUMMARY
+            result=$(tail -n +2 "$DETAIL_CSV" | grep "^$version," | awk -F, '
+              BEGIN{sum=0; n=0; max=0}
+              {sum+=$10; n++; if($8>max) max=$8}
+              END{if(n>0) printf "%d | %.1f | %.0f", n, sum/n, max; else print "0 | 0 | 0"}
+            ')
+            if [ -n "$result" ]; then
+              echo "| $version | $result |" >> $SUMMARY_TMP
             fi
           done
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $SUMMARY_TMP
           
-          # SET/GET 比較
-          echo "## ⚡ SET/GET 性能比較 (1KB)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Version | Mode | SET (ops/s) | GET (ops/s) |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|------|------------:|------------:|" >> $GITHUB_STEP_SUMMARY
-          tail -n +2 "$DETAIL_CSV" | grep ",1000," | awk -F, '
-            {key=$1"_"$4"_"$5} 
-            $3=="set" {set[key]=$8} 
-            $3=="get" {get[key]=$8; ver[key]=$1; mode[key]=$4"/"$5}
-            END {for(k in ver) printf "| %s | %s | %s | %s |\n", ver[k], mode[k], set[k], get[k]}
-          ' | head -12 >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-        fi
+          # 全操作一覧
+          cat >> $SUMMARY_TMP << 'OPS_HEADER'
+        ## ⚡ 操作別 最速結果
         
-        # ====== グラフファイル ======
-        echo "## 📉 生成グラフ" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        if [ -d "others/benchmark/results/v2_comprehensive/images" ]; then
-          for img in others/benchmark/results/v2_comprehensive/images/*.png; do
-            if [ -f "$img" ]; then
-              name=$(basename "$img")
-              echo "- \`$name\` - Artifactsからダウンロード可能" >> $GITHUB_STEP_SUMMARY
+        | 操作 | 最速バージョン | Ops/sec |
+        |------|---------------|--------:|
+        OPS_HEADER
+          
+          for op in "set" "get" "batch_set_100" "batch_get_100" "keys"; do
+            result=$(tail -n +2 "$DETAIL_CSV" | grep ",$op," | sort -t, -k8 -nr | head -1 | awk -F, '{
+              printf "%s (%s/%s) | %.0f", $1, $4, $5, $8
+            }')
+            if [ -n "$result" ]; then
+              echo "| $op | $result |" >> $SUMMARY_TMP
             fi
           done
-        else
-          echo "- グラフは Artifacts から確認できます" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $SUMMARY_TMP
         fi
-        echo "" >> $GITHUB_STEP_SUMMARY
         
-        # ====== フッター ======
-        echo "---" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "📦 **Artifacts**: 詳細CSV、グラフPNGをダウンロード可能" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "*Benchmark completed at $(date '+%Y-%m-%d %H:%M:%S')*" >> $GITHUB_STEP_SUMMARY
+        # ====== グラフ一覧 ======
+        cat >> $SUMMARY_TMP << 'GRAPH_HEADER'
+        ## 📉 生成グラフ（Artifacts内）
+        
+        GRAPH_HEADER
+        
+        if [ -d "others/benchmark/results/v2_comprehensive/images" ]; then
+          ls -1 others/benchmark/results/v2_comprehensive/images/*.png 2>/dev/null | while read img; do
+            name=$(basename "$img")
+            echo "- \`$name\`" >> $SUMMARY_TMP
+          done
+        fi
+        echo "" >> $SUMMARY_TMP
+        
+        # フッター
+        cat >> $SUMMARY_TMP << 'FOOTER'
+        ---
+        
+        📦 **Artifacts**: 詳細CSV、グラフPNGをダウンロード可能
+        
+        FOOTER
+        
+        echo "*Benchmark completed at $(date '+%Y-%m-%d %H:%M:%S')*" >> $SUMMARY_TMP
+        
+        # サマリーに追加
+        cat $SUMMARY_TMP >> $GITHUB_STEP_SUMMARY
+        
+        # デバッグ出力
+        echo "=== SUMMARY CONTENT ==="
+        cat $SUMMARY_TMP
 
     - name: Display benchmark info
       run: |
