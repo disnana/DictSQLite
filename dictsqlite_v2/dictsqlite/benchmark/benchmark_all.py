@@ -11,12 +11,11 @@ DictSQLite 性能ベンチマーク
 """
 
 import time
-import tempfile
 import csv
 import os
 import sys
-from dataclasses import dataclass, field
-from typing import List, Dict, Any
+from dataclasses import dataclass
+from typing import List, Dict
 import statistics
 
 # 結果ファイル名（固定）
@@ -69,209 +68,45 @@ def run_benchmarks():
 
     results: List[BenchmarkResult] = []
     
-    # 一時ディレクトリを使用
-    with tempfile.TemporaryDirectory() as tmpdir:
-        print("=" * 60)
-        print("DictSQLite ベンチマーク開始")
-        print("=" * 60)
+    # Windows対応: 固定ディレクトリを使用
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    tmpdir = os.path.join(script_dir, "_bench_data")
+    os.makedirs(tmpdir, exist_ok=True)
+    
+    # 既存のDBファイルを削除（エラーは無視）
+    for f in os.listdir(tmpdir):
+        try:
+            os.remove(os.path.join(tmpdir, f))
+        except Exception:
+            pass
+    
+    print("=" * 60)
+    print("DictSQLite ベンチマーク開始")
+    print("=" * 60)
+    
+    # ============================================================
+    # DictSQLiteV4 ベンチマーク
+    # ============================================================
+    print("\n### DictSQLiteV4 (同期) ###")
+    
+    db_path = os.path.join(tmpdir, "sync_bench.db")
+    db = DictSQLiteV4(db_path, storage_mode="pickle")
+    
+    data_sizes = [100, 1000, 10000]
+    
+    for size in data_sizes:
+        value = b"x" * size
         
-        # ============================================================
-        # DictSQLiteV4 ベンチマーク
-        # ============================================================
-        print("\n### DictSQLiteV4 (同期) ###")
-        
-        db_path = os.path.join(tmpdir, "sync_bench.db")
-        db = DictSQLiteV4(db_path, storage_mode="pickle")
-        
-        data_sizes = [100, 1000, 10000]
-        
-        for size in data_sizes:
-            value = b"x" * size
-            
-            # set操作
-            print(f"  [set] data_size={size}...")
-            res = benchmark_operation(
-                lambda v=value: db.__setitem__(f"key_{time.perf_counter_ns()}", v),
-                iterations=1000
-            )
-            results.append(BenchmarkResult(
-                category="DictSQLiteV4",
-                operation="set",
-                data_size=size,
-                iterations=1000,
-                total_time_ms=res["total_ms"],
-                avg_time_ms=res["avg_ms"],
-                ops_per_sec=res["ops_per_sec"],
-                min_time_ms=res["min_ms"],
-                max_time_ms=res["max_ms"],
-                std_dev_ms=res["std_dev_ms"],
-            ))
-            
-            # get操作（事前にデータ投入）
-            db["bench_key"] = value
-            print(f"  [get] data_size={size}...")
-            res = benchmark_operation(
-                lambda: db.__getitem__("bench_key"),
-                iterations=1000
-            )
-            results.append(BenchmarkResult(
-                category="DictSQLiteV4",
-                operation="get",
-                data_size=size,
-                iterations=1000,
-                total_time_ms=res["total_ms"],
-                avg_time_ms=res["avg_ms"],
-                ops_per_sec=res["ops_per_sec"],
-                min_time_ms=res["min_ms"],
-                max_time_ms=res["max_ms"],
-                std_dev_ms=res["std_dev_ms"],
-            ))
-        
-        # batch操作
-        print("  [batch_set] 100 items...")
-        items = [(f"batch_key_{i}", b"value" * 10) for i in range(100)]
+        # set操作
+        print(f"  [set] data_size={size}...")
         res = benchmark_operation(
-            lambda: db.batch_set(items),
-            iterations=100
-        )
-        results.append(BenchmarkResult(
-            category="DictSQLiteV4",
-            operation="batch_set_100",
-            data_size=50,
-            iterations=100,
-            total_time_ms=res["total_ms"],
-            avg_time_ms=res["avg_ms"],
-            ops_per_sec=res["ops_per_sec"],
-            min_time_ms=res["min_ms"],
-            max_time_ms=res["max_ms"],
-            std_dev_ms=res["std_dev_ms"],
-        ))
-        
-        print("  [batch_get] 100 keys...")
-        keys = [f"batch_key_{i}" for i in range(100)]
-        res = benchmark_operation(
-            lambda: db.batch_get(keys),
-            iterations=100
-        )
-        results.append(BenchmarkResult(
-            category="DictSQLiteV4",
-            operation="batch_get_100",
-            data_size=50,
-            iterations=100,
-            total_time_ms=res["total_ms"],
-            avg_time_ms=res["avg_ms"],
-            ops_per_sec=res["ops_per_sec"],
-            min_time_ms=res["min_ms"],
-            max_time_ms=res["max_ms"],
-            std_dev_ms=res["std_dev_ms"],
-        ))
-        
-        # ============================================================
-        # AsyncDictSQLite ベンチマーク
-        # ============================================================
-        print("\n### AsyncDictSQLite (非同期) ###")
-        
-        async_db_path = os.path.join(tmpdir, "async_bench.db")
-        async_db = AsyncDictSQLite(async_db_path)
-        
-        for size in data_sizes:
-            value = b"x" * size
-            
-            # set操作
-            print(f"  [set] data_size={size}...")
-            res = benchmark_operation(
-                lambda v=value: async_db.__setitem__(f"key_{time.perf_counter_ns()}", v),
-                iterations=1000
-            )
-            results.append(BenchmarkResult(
-                category="AsyncDictSQLite",
-                operation="set",
-                data_size=size,
-                iterations=1000,
-                total_time_ms=res["total_ms"],
-                avg_time_ms=res["avg_ms"],
-                ops_per_sec=res["ops_per_sec"],
-                min_time_ms=res["min_ms"],
-                max_time_ms=res["max_ms"],
-                std_dev_ms=res["std_dev_ms"],
-            ))
-            
-            # get操作
-            async_db["bench_key"] = value
-            print(f"  [get] data_size={size}...")
-            res = benchmark_operation(
-                lambda: async_db.__getitem__("bench_key"),
-                iterations=1000
-            )
-            results.append(BenchmarkResult(
-                category="AsyncDictSQLite",
-                operation="get",
-                data_size=size,
-                iterations=1000,
-                total_time_ms=res["total_ms"],
-                avg_time_ms=res["avg_ms"],
-                ops_per_sec=res["ops_per_sec"],
-                min_time_ms=res["min_ms"],
-                max_time_ms=res["max_ms"],
-                std_dev_ms=res["std_dev_ms"],
-            ))
-        
-        # batch操作
-        print("  [batch_set] 100 items...")
-        items = [(f"batch_key_{i}", b"value" * 10) for i in range(100)]
-        res = benchmark_operation(
-            lambda: async_db.batch_set(items),
-            iterations=100
-        )
-        results.append(BenchmarkResult(
-            category="AsyncDictSQLite",
-            operation="batch_set_100",
-            data_size=50,
-            iterations=100,
-            total_time_ms=res["total_ms"],
-            avg_time_ms=res["avg_ms"],
-            ops_per_sec=res["ops_per_sec"],
-            min_time_ms=res["min_ms"],
-            max_time_ms=res["max_ms"],
-            std_dev_ms=res["std_dev_ms"],
-        ))
-        
-        print("  [batch_get] 100 keys...")
-        keys = [f"batch_key_{i}" for i in range(100)]
-        res = benchmark_operation(
-            lambda: async_db.batch_get(keys),
-            iterations=100
-        )
-        results.append(BenchmarkResult(
-            category="AsyncDictSQLite",
-            operation="batch_get_100",
-            data_size=50,
-            iterations=100,
-            total_time_ms=res["total_ms"],
-            avg_time_ms=res["avg_ms"],
-            ops_per_sec=res["ops_per_sec"],
-            min_time_ms=res["min_ms"],
-            max_time_ms=res["max_ms"],
-            std_dev_ms=res["std_dev_ms"],
-        ))
-        
-        # ============================================================
-        # TableProxy ベンチマーク
-        # ============================================================
-        print("\n### TableProxy ###")
-        
-        table = db.table("bench_table")
-        table["init"] = b"init"
-        
-        print("  [table set]...")
-        res = benchmark_operation(
-            lambda: table.__setitem__(f"key_{time.perf_counter_ns()}", b"value_data"),
+            lambda v=value: db.__setitem__(f"key_{time.perf_counter_ns()}", v),
             iterations=1000
         )
         results.append(BenchmarkResult(
-            category="TableProxy",
+            category="DictSQLiteV4",
             operation="set",
-            data_size=10,
+            data_size=size,
             iterations=1000,
             total_time_ms=res["total_ms"],
             avg_time_ms=res["avg_ms"],
@@ -281,16 +116,17 @@ def run_benchmarks():
             std_dev_ms=res["std_dev_ms"],
         ))
         
-        table["get_key"] = b"value_for_get"
-        print("  [table get]...")
+        # get操作
+        db["bench_key"] = value
+        print(f"  [get] data_size={size}...")
         res = benchmark_operation(
-            lambda: table.__getitem__("get_key"),
+            lambda: db.__getitem__("bench_key"),
             iterations=1000
         )
         results.append(BenchmarkResult(
-            category="TableProxy",
+            category="DictSQLiteV4",
             operation="get",
-            data_size=13,
+            data_size=size,
             iterations=1000,
             total_time_ms=res["total_ms"],
             avg_time_ms=res["avg_ms"],
@@ -299,6 +135,183 @@ def run_benchmarks():
             max_time_ms=res["max_ms"],
             std_dev_ms=res["std_dev_ms"],
         ))
+    
+    # batch操作
+    print("  [batch_set] 100 items...")
+    items = [(f"batch_key_{i}", b"value" * 10) for i in range(100)]
+    res = benchmark_operation(
+        lambda: db.batch_set(items),
+        iterations=100
+    )
+    results.append(BenchmarkResult(
+        category="DictSQLiteV4",
+        operation="batch_set_100",
+        data_size=50,
+        iterations=100,
+        total_time_ms=res["total_ms"],
+        avg_time_ms=res["avg_ms"],
+        ops_per_sec=res["ops_per_sec"],
+        min_time_ms=res["min_ms"],
+        max_time_ms=res["max_ms"],
+        std_dev_ms=res["std_dev_ms"],
+    ))
+    
+    print("  [batch_get] 100 keys...")
+    keys = [f"batch_key_{i}" for i in range(100)]
+    res = benchmark_operation(
+        lambda: db.batch_get(keys),
+        iterations=100
+    )
+    results.append(BenchmarkResult(
+        category="DictSQLiteV4",
+        operation="batch_get_100",
+        data_size=50,
+        iterations=100,
+        total_time_ms=res["total_ms"],
+        avg_time_ms=res["avg_ms"],
+        ops_per_sec=res["ops_per_sec"],
+        min_time_ms=res["min_ms"],
+        max_time_ms=res["max_ms"],
+        std_dev_ms=res["std_dev_ms"],
+    ))
+    
+    # ============================================================
+    # AsyncDictSQLite ベンチマーク
+    # ============================================================
+    print("\n### AsyncDictSQLite (非同期) ###")
+    
+    async_db_path = os.path.join(tmpdir, "async_bench.db")
+    async_db = AsyncDictSQLite(async_db_path)
+    
+    for size in data_sizes:
+        value = b"x" * size
+        
+        # set操作
+        print(f"  [set] data_size={size}...")
+        res = benchmark_operation(
+            lambda v=value: async_db.__setitem__(f"key_{time.perf_counter_ns()}", v),
+            iterations=1000
+        )
+        results.append(BenchmarkResult(
+            category="AsyncDictSQLite",
+            operation="set",
+            data_size=size,
+            iterations=1000,
+            total_time_ms=res["total_ms"],
+            avg_time_ms=res["avg_ms"],
+            ops_per_sec=res["ops_per_sec"],
+            min_time_ms=res["min_ms"],
+            max_time_ms=res["max_ms"],
+            std_dev_ms=res["std_dev_ms"],
+        ))
+        
+        # get操作
+        async_db["bench_key"] = value
+        print(f"  [get] data_size={size}...")
+        res = benchmark_operation(
+            lambda: async_db.__getitem__("bench_key"),
+            iterations=1000
+        )
+        results.append(BenchmarkResult(
+            category="AsyncDictSQLite",
+            operation="get",
+            data_size=size,
+            iterations=1000,
+            total_time_ms=res["total_ms"],
+            avg_time_ms=res["avg_ms"],
+            ops_per_sec=res["ops_per_sec"],
+            min_time_ms=res["min_ms"],
+            max_time_ms=res["max_ms"],
+            std_dev_ms=res["std_dev_ms"],
+        ))
+    
+    # batch操作
+    print("  [batch_set] 100 items...")
+    items = [(f"batch_key_{i}", b"value" * 10) for i in range(100)]
+    res = benchmark_operation(
+        lambda: async_db.batch_set(items),
+        iterations=100
+    )
+    results.append(BenchmarkResult(
+        category="AsyncDictSQLite",
+        operation="batch_set_100",
+        data_size=50,
+        iterations=100,
+        total_time_ms=res["total_ms"],
+        avg_time_ms=res["avg_ms"],
+        ops_per_sec=res["ops_per_sec"],
+        min_time_ms=res["min_ms"],
+        max_time_ms=res["max_ms"],
+        std_dev_ms=res["std_dev_ms"],
+    ))
+    
+    print("  [batch_get] 100 keys...")
+    keys = [f"batch_key_{i}" for i in range(100)]
+    res = benchmark_operation(
+        lambda: async_db.batch_get(keys),
+        iterations=100
+    )
+    results.append(BenchmarkResult(
+        category="AsyncDictSQLite",
+        operation="batch_get_100",
+        data_size=50,
+        iterations=100,
+        total_time_ms=res["total_ms"],
+        avg_time_ms=res["avg_ms"],
+        ops_per_sec=res["ops_per_sec"],
+        min_time_ms=res["min_ms"],
+        max_time_ms=res["max_ms"],
+        std_dev_ms=res["std_dev_ms"],
+    ))
+    
+    # ============================================================
+    # TableProxy ベンチマーク
+    # ============================================================
+    print("\n### TableProxy ###")
+    
+    table = db.table("bench_table")
+    table["init"] = b"init"
+    
+    print("  [table set]...")
+    res = benchmark_operation(
+        lambda: table.__setitem__(f"key_{time.perf_counter_ns()}", b"value_data"),
+        iterations=1000
+    )
+    results.append(BenchmarkResult(
+        category="TableProxy",
+        operation="set",
+        data_size=10,
+        iterations=1000,
+        total_time_ms=res["total_ms"],
+        avg_time_ms=res["avg_ms"],
+        ops_per_sec=res["ops_per_sec"],
+        min_time_ms=res["min_ms"],
+        max_time_ms=res["max_ms"],
+        std_dev_ms=res["std_dev_ms"],
+    ))
+    
+    table["get_key"] = b"value_for_get"
+    print("  [table get]...")
+    res = benchmark_operation(
+        lambda: table.__getitem__("get_key"),
+        iterations=1000
+    )
+    results.append(BenchmarkResult(
+        category="TableProxy",
+        operation="get",
+        data_size=13,
+        iterations=1000,
+        total_time_ms=res["total_ms"],
+        avg_time_ms=res["avg_ms"],
+        ops_per_sec=res["ops_per_sec"],
+        min_time_ms=res["min_ms"],
+        max_time_ms=res["max_ms"],
+        std_dev_ms=res["std_dev_ms"],
+    ))
+    
+    # Windows: 明示的にclose（ファイルロック解放）
+    db.close()
+    async_db.close()
     
     return results
 
