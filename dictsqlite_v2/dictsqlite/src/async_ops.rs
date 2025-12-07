@@ -26,7 +26,8 @@ pub struct AsyncDictSQLite {
     cache: Arc<DashMap<String, Vec<u8>>>,
 
     /// Storage engine for persistence (optional)
-    storage: Arc<Mutex<Option<StorageEngine>>>,
+    /// v5最適化: Mutexを削除、StorageEngineは内部でスレッドセーフ
+    storage: Arc<Option<StorageEngine>>,
 
     /// Configuration
     config: Config,
@@ -40,7 +41,7 @@ pub struct AsyncDictSQLite {
     /// Buffer size threshold for auto-flush
     buffer_size: usize,
 
-    /// Tokio runtime for async operations
+    /// Tokio runtime for async operations (v5: shared via Lazy)
     runtime: Arc<Runtime>,
 }
 
@@ -84,14 +85,14 @@ impl AsyncDictSQLite {
             ..Default::default()
         };
 
-        // Initialize storage engine
+        // v5最適化: Mutexを削除、StorageEngineは内部でスレッドセーフ
         let storage = if config.persist_mode == PersistMode::Memory {
-            Arc::new(Mutex::new(None))
+            Arc::new(None)
         } else {
-            Arc::new(Mutex::new(Some(
+            Arc::new(Some(
                 StorageEngine::new(&db_path, &config)
                     .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?,
-            )))
+            ))
         };
 
         // Initialize write buffer (v4.2 optimization)
@@ -128,12 +129,11 @@ impl AsyncDictSQLite {
         }
 
         // Fallback to storage if not in memory mode
+        // v5最適化: Mutex削除、直接アクセス
         if self.config.persist_mode != PersistMode::Memory {
-            let storage_guard = self.storage.lock().unwrap();
-            if let Some(ref storage) = *storage_guard {
+            if let Some(ref storage) = *self.storage {
                 if let Ok(Some(value)) = storage.get(&key) {
                     // Promote to cache for future access
-                    drop(storage_guard);
                     self.cache.insert(key, value.clone());
                     return Ok(Some(PyBytes::new(py, &value).into()));
                 }
@@ -174,9 +174,8 @@ impl AsyncDictSQLite {
             return Ok(());
         }
 
-        // Get storage handle
-        let mut storage_guard = self.storage.lock().unwrap();
-        if let Some(ref mut storage) = *storage_guard {
+        // v5最適化: Mutex削除、直接アクセス
+        if let Some(ref storage) = *self.storage {
             // Batch write all buffered items in a single transaction
             for (key, value) in buffer.drain() {
                 storage
@@ -220,8 +219,8 @@ impl AsyncDictSQLite {
         // If there are cache misses and we have storage, batch fetch them
         let mut final_results = cached_results;
         if !cache_misses.is_empty() && self.config.persist_mode != PersistMode::Memory {
-            let storage_guard = self.storage.lock().unwrap();
-            if let Some(ref storage) = *storage_guard {
+            // v5最適化: Mutex削除、直接アクセス
+            if let Some(ref storage) = *self.storage {
                 // v4.2 Optimization: Batch read from storage (reduces SQL queries)
                 for (idx, key) in cache_misses {
                     if let Ok(Some(value)) = storage.get(&key) {
@@ -283,9 +282,9 @@ impl AsyncDictSQLite {
         self.flush_write_buffer()?;
 
         // Then flush the cache (for Lazy mode)
+        // v5最適化: Mutex削除、直接アクセス
         if self.config.persist_mode == PersistMode::Lazy {
-            let mut storage_guard = self.storage.lock().unwrap();
-            if let Some(ref mut storage) = *storage_guard {
+            if let Some(ref storage) = *self.storage {
                 for entry in self.cache.iter() {
                     storage
                         .set(entry.key(), entry.value())
@@ -322,12 +321,12 @@ impl AsyncDictSQLite {
         }
 
         // Fallback to storage if not in memory mode
+        // v5最適化: Mutex削除、直接アクセス
         if config.persist_mode != PersistMode::Memory {
             let key_clone = key.clone();
             let value = runtime
                 .spawn_blocking(move || {
-                    let storage_guard = storage.lock().unwrap();
-                    if let Some(ref storage_engine) = *storage_guard {
+                    if let Some(ref storage_engine) = *storage {
                         storage_engine.get(&key_clone).ok().flatten()
                     } else {
                         None
@@ -361,13 +360,12 @@ impl AsyncDictSQLite {
         cache.insert(key.clone(), value.clone());
 
         // Handle persistence based on mode
+        // v5最適化: Mutex削除、直接アクセス
         if config.persist_mode == PersistMode::WriteThrough {
             // Add to write buffer
             let should_flush = {
                 let mut buffer = write_buffer.lock().unwrap();
                 buffer.insert(key, value);
-                // Flush when buffer reaches size threshold
-                // For buffer_size of 1, this provides immediate flush behavior
                 buffer.len() >= buffer_size
             };
 
@@ -381,8 +379,7 @@ impl AsyncDictSQLite {
                         }
 
                         // Get storage handle and write
-                        let mut storage_guard = storage.lock().unwrap();
-                        if let Some(ref mut storage_engine) = *storage_guard {
+                        if let Some(ref storage_engine) = *storage {
                             for (k, v) in buffer.drain() {
                                 storage_engine.set(&k, &v).map_err(|e| {
                                     pyo3::exceptions::PyIOError::new_err(e.to_string())
@@ -420,14 +417,13 @@ impl AsyncDictSQLite {
             }
         }
 
-        // Fetch cache misses from storage
+        // v5最適化: Mutex削除、直接アクセス
         if !cache_misses.is_empty() && config.persist_mode != PersistMode::Memory {
             let fetched = runtime
                 .spawn_blocking(move || {
-                    let storage_guard = storage.lock().unwrap();
                     let mut fetched_values = Vec::new();
 
-                    if let Some(ref storage_engine) = *storage_guard {
+                    if let Some(ref storage_engine) = *storage {
                         for (idx, key) in cache_misses {
                             if let Ok(Some(value)) = storage_engine.get(&key) {
                                 fetched_values.push((idx, key, value));
@@ -479,6 +475,7 @@ impl AsyncDictSQLite {
             };
 
             // Flush if buffer is full
+            // v5最適化: Mutex削除、直接アクセス
             if should_flush {
                 runtime
                     .spawn_blocking(move || {
@@ -488,8 +485,7 @@ impl AsyncDictSQLite {
                         }
 
                         // Get storage handle and write
-                        let mut storage_guard = storage.lock().unwrap();
-                        if let Some(ref mut storage_engine) = *storage_guard {
+                        if let Some(ref storage_engine) = *storage {
                             for (k, v) in buffer.drain() {
                                 storage_engine.set(&k, &v).map_err(|e| {
                                     pyo3::exceptions::PyIOError::new_err(e.to_string())
@@ -520,9 +516,9 @@ impl AsyncDictSQLite {
         }
 
         // If not in cache and we have storage, check storage
+        // v5最適化: Mutex削除、直接アクセス
         if config.persist_mode != PersistMode::Memory {
-            let storage_guard = storage.lock().unwrap();
-            if let Some(ref storage_engine) = *storage_guard {
+            if let Some(ref storage_engine) = *storage {
                 match storage_engine.get(&key) {
                     Ok(Some(_)) => return Ok(true),
                     Ok(None) => return Ok(false),
@@ -547,11 +543,11 @@ impl AsyncDictSQLite {
         cache.remove(&key);
 
         // Remove from storage if persistence is enabled
+        // v5最適化: Mutex削除、直接アクセス
         if config.persist_mode != PersistMode::Memory {
             runtime
                 .spawn_blocking(move || {
-                    let mut storage_guard = storage.lock().unwrap();
-                    if let Some(ref mut storage_engine) = *storage_guard {
+                    if let Some(ref storage_engine) = *storage {
                         storage_engine
                             .delete(&key)
                             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
@@ -578,13 +574,13 @@ impl AsyncDictSQLite {
             return Ok(());
         }
 
+        // v5最適化: Mutex削除、直接アクセス
         runtime
             .spawn_blocking(move || {
                 // First, flush any pending writes in the buffer
                 let mut buffer = write_buffer.lock().unwrap();
                 if !buffer.is_empty() {
-                    let mut storage_guard = storage.lock().unwrap();
-                    if let Some(ref mut storage_engine) = *storage_guard {
+                    if let Some(ref storage_engine) = *storage {
                         for (k, v) in buffer.drain() {
                             storage_engine
                                 .set(&k, &v)
@@ -596,8 +592,7 @@ impl AsyncDictSQLite {
 
                 // Then flush the cache (for Lazy mode)
                 if config.persist_mode == PersistMode::Lazy {
-                    let mut storage_guard = storage.lock().unwrap();
-                    if let Some(ref mut storage_engine) = *storage_guard {
+                    if let Some(ref storage_engine) = *storage {
                         for entry in cache.iter() {
                             storage_engine
                                 .set(entry.key(), entry.value())
@@ -731,9 +726,9 @@ impl AsyncDictSQLite {
         }
 
         // Check storage if persistence is enabled
+        // v5最適化: Mutex削除、直接アクセス
         if self.config.persist_mode != PersistMode::Memory {
-            let storage_guard = self.storage.lock().unwrap();
-            if let Some(ref storage_engine) = *storage_guard {
+            if let Some(ref storage_engine) = *self.storage {
                 match storage_engine.get(&full_key) {
                     Ok(Some(_)) => return Ok(true),
                     Ok(None) => return Ok(false),
@@ -772,9 +767,9 @@ impl AsyncDictSQLite {
         }
 
         // Remove from storage if persistence is enabled
+        // v5最適化: Mutex削除、直接アクセス
         if self.config.persist_mode != PersistMode::Memory {
-            let mut storage_guard = self.storage.lock().unwrap();
-            if let Some(ref mut storage_engine) = *storage_guard {
+            if let Some(ref storage_engine) = *self.storage {
                 storage_engine
                     .delete(&full_key)
                     .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
@@ -829,12 +824,11 @@ impl AsyncTableProxy {
                     value.clone()
                 } else {
                     // Check storage
-                    let storage_guard = db.storage.lock().unwrap();
-                    if let Some(ref storage) = *storage_guard {
+                    // v5最適化: Mutex削除、直接アクセス
+                    if let Some(ref storage) = *db.storage {
                         match storage.get_with_table(&self.table_name, &key) {
                             Ok(Some(value)) => {
                                 // Promote to cache
-                                drop(storage_guard);
                                 db.cache.insert(cache_key, value.clone());
                                 value
                             }
@@ -934,9 +928,9 @@ impl AsyncTableProxy {
                 db.cache.insert(cache_key, data.clone());
 
                 // Write to storage in WriteThrough mode
+                // v5最適化: Mutex削除、直接アクセス
                 if db.config.persist_mode == PersistMode::WriteThrough {
-                    let mut storage_guard = db.storage.lock().unwrap();
-                    if let Some(ref mut storage) = *storage_guard {
+                    if let Some(ref storage) = *db.storage {
                         storage
                             .set_with_table(&self.table_name, &key, &data)
                             .map_err(|e| {
@@ -969,9 +963,9 @@ impl AsyncTableProxy {
                 }
 
                 // Check storage
+                // v5最適化: Mutex削除、直接アクセス
                 if db.config.persist_mode != PersistMode::Memory {
-                    let storage_guard = db.storage.lock().unwrap();
-                    if let Some(ref storage) = *storage_guard {
+                    if let Some(ref storage) = *db.storage {
                         if let Ok(Some(_)) = storage.get_with_table(&self.table_name, &key) {
                             return Ok(true);
                         }
@@ -999,9 +993,9 @@ impl AsyncTableProxy {
                     .collect();
 
                 // Also get keys from storage if not in memory mode
+                // v5最適化: Mutex削除、直接アクセス
                 if db.config.persist_mode != PersistMode::Memory {
-                    let storage_guard = db.storage.lock().unwrap();
-                    if let Some(ref storage) = *storage_guard {
+                    if let Some(ref storage) = *db.storage {
                         if let Ok(storage_keys) = storage.keys() {
                             for key in storage_keys {
                                 if key.starts_with(&prefix) {
@@ -1035,9 +1029,9 @@ impl AsyncTableProxy {
                     .collect();
 
                 // Get keys from storage
+                // v5最適化: Mutex削除、直接アクセス
                 if db.config.persist_mode != PersistMode::Memory {
-                    let storage_guard = db.storage.lock().unwrap();
-                    if let Some(ref storage) = *storage_guard {
+                    if let Some(ref storage) = *db.storage {
                         if let Ok(storage_keys) = storage.keys_with_table(&self.table_name) {
                             all_keys.extend(storage_keys);
                         }
@@ -1088,9 +1082,10 @@ impl AsyncTableProxy {
                 // Remove from cache
                 db.cache.remove(&full_key);
                 // Remove from storage
+                // Remove from storage
+                // v5最適化: Mutex削除、直接アクセス
                 if db.config.persist_mode != PersistMode::Memory {
-                    let mut storage_guard = db.storage.lock().unwrap();
-                    if let Some(ref mut storage) = *storage_guard {
+                    if let Some(ref storage) = *db.storage {
                         let _ = storage.delete(&full_key);
                     }
                 }
@@ -1103,9 +1098,9 @@ impl AsyncTableProxy {
                 db.cache.remove(&cache_key);
 
                 // Remove from storage
+                // v5最適化: Mutex削除、直接アクセス
                 if db.config.persist_mode != PersistMode::Memory {
-                    let mut storage_guard = db.storage.lock().unwrap();
-                    if let Some(ref mut storage) = *storage_guard {
+                    if let Some(ref storage) = *db.storage {
                         let _ = storage.delete_with_table(&self.table_name, &key);
                     }
                 }
@@ -1188,9 +1183,9 @@ impl AsyncTableProxy {
                 }
 
                 // Clear storage table
+                // v5最適化: Mutex削除、直接アクセス
                 if db.config.persist_mode != PersistMode::Memory {
-                    let mut storage_guard = db.storage.lock().unwrap();
-                    if let Some(ref mut storage) = *storage_guard {
+                    if let Some(ref storage) = *db.storage {
                         storage.clear_table(&self.table_name).map_err(|e| {
                             PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string())
                         })?;
