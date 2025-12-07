@@ -91,10 +91,24 @@ def test_original_dictsqlite() -> List[TestResult]:
     print("📦 Original DictSQLite (sqlite3ベース)")
     print("=" * 60)
     
+    # Original版はリポジトリルートのdictsqlite/フォルダにある
+    # sys.pathに追加してインポート
+    import importlib
+    
     try:
+        # リポジトリルートを探す（others/benchmarkから2つ上）
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        repo_root = os.path.dirname(os.path.dirname(script_dir))
+        original_path = os.path.join(repo_root, "dictsqlite")
+        
+        if os.path.exists(original_path):
+            sys.path.insert(0, repo_root)
+            print(f"  📂 Original path: {original_path}")
+        
         from dictsqlite.main import DictSQLite as OriginalDictSQLite
-    except ImportError:
-        print("  ⚠️ Original版がインポートできません (スキップ)")
+        print("  ✅ Original DictSQLite インポート成功")
+    except ImportError as e:
+        print(f"  ⚠️ Original版がインポートできません: {e}")
         return results
     
     try:
