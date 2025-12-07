@@ -105,7 +105,8 @@ jobs:
         python-version: ["3.11"]
     
     env:
-      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta:${{ github.workspace }}/dictsqlite_v2/dictsqlite/python
+      # Note: Do NOT include ${{ github.workspace }} directly as it shadows V2 wheel with Original dictsqlite/
+      PYTHONPATH: ${{ github.workspace }}/others/beta-versions/dictsqlite-fastest:${{ github.workspace }}/others/beta-versions/dictsqlite-fastest/beta
 
     steps:
     - name: Checkout repository
