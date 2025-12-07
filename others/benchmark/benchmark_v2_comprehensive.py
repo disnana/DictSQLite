@@ -94,6 +94,7 @@ def test_original_dictsqlite() -> List[TestResult]:
     # Original版はリポジトリルートのdictsqlite/フォルダにある
     # sys.pathに追加してインポート
     import importlib
+    import importlib.util
     
     try:
         # リポジトリルートを探す（others/benchmarkから2つ上）
@@ -102,13 +103,32 @@ def test_original_dictsqlite() -> List[TestResult]:
         original_path = os.path.join(repo_root, "dictsqlite")
         
         if os.path.exists(original_path):
+            # Temporarily add repo_root to sys.path for import
             sys.path.insert(0, repo_root)
             print(f"  📂 Original path: {original_path}")
         
         from dictsqlite.main import DictSQLite as OriginalDictSQLite
         print("  ✅ Original DictSQLite インポート成功")
+        
+        # IMPORTANT: Remove repo_root from sys.path to prevent shadowing V2 wheel
+        # V2 wheel installs as 'dictsqlite' package, and we need to ensure
+        # subsequent imports get the wheel version, not the original from repo
+        if repo_root in sys.path:
+            sys.path.remove(repo_root)
+            print("  🧹 Cleaned up sys.path to prevent shadowing V2 wheel")
+        
+        # Also clear the 'dictsqlite' package from sys.modules so V2 can import fresh
+        # We keep references to specific imports (OriginalDictSQLite), but clear the package cache
+        # This ensures that when V2 tries to import 'dictsqlite', it gets the wheel version
+        modules_to_clear = [key for key in sys.modules.keys() if key == 'dictsqlite' or key.startswith('dictsqlite.')]
+        for mod in modules_to_clear:
+            del sys.modules[mod]
+            print(f"  🧹 Cleared {mod} from sys.modules")
     except ImportError as e:
         print(f"  ⚠️ Original版がインポートできません: {e}")
+        # Clean up sys.path even on error
+        if 'repo_root' in locals() and repo_root in sys.path:
+            sys.path.remove(repo_root)
         return results
     
     try:
