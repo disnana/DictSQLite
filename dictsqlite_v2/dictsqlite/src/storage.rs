@@ -155,19 +155,18 @@ impl StorageEngine {
     /// - `mmap_size=30GB`: メモリマッピングで大規模データアクセスを高速化
     ///
     /// # コネクションプール
-    /// - プールサイズ: ユーザー指定可能（デフォルト: 20）
-    /// - 並行アクセスのパフォーマンスを最適化
+    /// - プールサイズ: ユーザー指定可能（デフォルト: 32）
+    /// - v7.0: min_idle, idle_timeout, connection_timeout追加
     pub fn new(db_path: &str, config: &Config) -> Result<Self> {
         // コネクションプールマネージャーの作成
         let manager = SqliteConnectionManager::file(db_path).with_init(|conn| {
             // SQLiteのパフォーマンス最適化
-            // これらのPRAGMAは読み書きの速度を大幅に向上させます
+            // v7.0: APSW同等性能を目指した最適化PRAGMA
             //
-            // ⚠️ 注意: synchronous=OFFは最大パフォーマンスを優先します
-            // システムクラッシュやデータ損失時にデータベース破損のリスクがあります
-            // この設定はベンチマークとテスト用途に最適化されています
-            // プロダクション環境では synchronous=NORMAL を推奨し、設定を調整可能にすることを検討してください
-            // v5最適化: synchronous=NORMALはOFFより安全で、WALモードでは十分高速
+            // WALモード: 読み書き並行性を最大化
+            // synchronous=NORMAL: データ安全性とパフォーマンスのバランス
+            // busy_timeout: ロック競合時の待機（エラー削減）
+            // read_uncommitted: 読み取りロックを取得しない（WAL前提）
             conn.execute_batch(
                 "
                     PRAGMA journal_mode=WAL;
@@ -177,16 +176,27 @@ impl StorageEngine {
                     PRAGMA mmap_size=30000000000;
                     PRAGMA page_size=4096;
                     PRAGMA wal_autocheckpoint=10000;
+                    PRAGMA busy_timeout=5000;
+                    PRAGMA read_uncommitted=1;
+                    PRAGMA journal_size_limit=67108864;
                 ",
             )?;
             Ok(())
         });
 
-        // コネクションプールの作成
-        // プールサイズはユーザー指定またはデフォルト値（20）を使用
+        // v7.0: コネクションプールの最適化設定
+        // max_size=32: 高負荷環境で十分な並行性（WAL推奨上限）
+        // min_idle=2: 最小2接続を維持（接続遅延回避）
+        // idle_timeout=30s: アイドル接続を30秒後に回収（メモリ効率）
+        // connection_timeout=5s: 接続取得タイムアウト（デッドロック防止）
         let pool_size = config.pool_size;
 
-        let cold_pool = Pool::builder().max_size(pool_size as u32).build(manager)?;
+        let cold_pool = Pool::builder()
+            .max_size(pool_size as u32)
+            .min_idle(Some(2))
+            .idle_timeout(Some(std::time::Duration::from_secs(30)))
+            .connection_timeout(std::time::Duration::from_secs(5))
+            .build(manager)?;
 
         // 初期接続を取得してテーブルとインデックスを作成
         let conn = cold_pool.get()?;

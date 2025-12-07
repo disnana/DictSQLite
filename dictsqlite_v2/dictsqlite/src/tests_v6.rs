@@ -14,7 +14,7 @@ fn test_config_defaults() {
     let config = Config::default();
     
     assert_eq!(config.hot_tier_capacity, 1_000_000);
-    assert_eq!(config.pool_size, 20);
+    assert_eq!(config.pool_size, 32); // v7.0: 高負荷対応
     assert!(!config.enable_compression);
     assert_eq!(config.compression_level, 3);
 }

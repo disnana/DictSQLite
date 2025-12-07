@@ -850,7 +850,7 @@ impl Default for Config {
             storage_mode: StorageMode::Pickle,               // Pickle形式
             table_name: "main".to_string(),                  // メインテーブル
             table_mode: TableMode::Prefix,                   // プレフィックスモード
-            pool_size: 20,                                   // コネクションプールサイズ
+            pool_size: 32,                                   // v7.0: 高負荷対応
             enable_compression: false,                       // 圧縮無効（後方互換性）
             compression_level: 3,                            // 速度重視のレベル
         }
