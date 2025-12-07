@@ -205,10 +205,10 @@ def test_dictsqlite_v2() -> List[TestResult]:
     
     try:
         # Remove any paths that could lead to the original dictsqlite folder
-        paths_to_remove = {repo_root}  # Repository root is sufficient
+        paths_to_remove = {repo_root}
         
         # Also check for paths that might contain the original dictsqlite
-        # Only check paths that could realistically be repository paths
+        # Only check paths that could realistically be repository paths (not system paths)
         for path in sys.path[:]:
             # Skip if path is clearly a system path
             if 'site-packages' in path or 'dist-packages' in path:
