@@ -96,12 +96,12 @@ def test_original_dictsqlite() -> List[TestResult]:
     import importlib
     import importlib.util
     
+    # リポジトリルートを探す（others/benchmarkから2つ上）
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(os.path.dirname(script_dir))
+    original_path = os.path.join(repo_root, "dictsqlite")
+    
     try:
-        # リポジトリルートを探す（others/benchmarkから2つ上）
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        repo_root = os.path.dirname(os.path.dirname(script_dir))
-        original_path = os.path.join(repo_root, "dictsqlite")
-        
         if os.path.exists(original_path):
             # Temporarily add repo_root to sys.path for import
             sys.path.insert(0, repo_root)
@@ -109,8 +109,11 @@ def test_original_dictsqlite() -> List[TestResult]:
         
         from dictsqlite.main import DictSQLite as OriginalDictSQLite
         print("  ✅ Original DictSQLite インポート成功")
-        
-        # IMPORTANT: Remove repo_root from sys.path to prevent shadowing V2 wheel
+    except ImportError as e:
+        print(f"  ⚠️ Original版がインポートできません: {e}")
+        return results
+    finally:
+        # IMPORTANT: Clean up sys.path and sys.modules to prevent shadowing V2 wheel
         # V2 wheel installs as 'dictsqlite' package, and we need to ensure
         # subsequent imports get the wheel version, not the original from repo
         if repo_root in sys.path:
@@ -120,16 +123,12 @@ def test_original_dictsqlite() -> List[TestResult]:
         # Also clear the 'dictsqlite' package from sys.modules so V2 can import fresh
         # We keep references to specific imports (OriginalDictSQLite), but clear the package cache
         # This ensures that when V2 tries to import 'dictsqlite', it gets the wheel version
-        modules_to_clear = [key for key in sys.modules.keys() if key == 'dictsqlite' or key.startswith('dictsqlite.')]
+        # Use list() to avoid RuntimeError if sys.modules is modified during iteration
+        modules_to_clear = [key for key in list(sys.modules.keys()) if key == 'dictsqlite' or key.startswith('dictsqlite.')]
         for mod in modules_to_clear:
-            del sys.modules[mod]
-            print(f"  🧹 Cleared {mod} from sys.modules")
-    except ImportError as e:
-        print(f"  ⚠️ Original版がインポートできません: {e}")
-        # Clean up sys.path even on error
-        if 'repo_root' in locals() and repo_root in sys.path:
-            sys.path.remove(repo_root)
-        return results
+            if mod in sys.modules:  # Double-check as another thread might have removed it
+                del sys.modules[mod]
+                print(f"  🧹 Cleared {mod} from sys.modules")
     
     try:
         db_path = "/tmp/bench_original.db"
