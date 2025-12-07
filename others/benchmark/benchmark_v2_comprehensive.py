@@ -193,11 +193,53 @@ def test_dictsqlite_v2() -> List[TestResult]:
     DictSQLiteV2 = None
     AsyncDictSQLiteV2 = None
     
+    # CRITICAL FIX for issue #223:
+    # Ensure we import the V2 wheel from site-packages, NOT the original dictsqlite/ folder
+    # from the repository. We need to temporarily remove repo paths from sys.path.
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(os.path.dirname(script_dir))
+    
+    # Save original sys.path
+    original_sys_path = sys.path.copy()
+    
+    # Remove any paths that could lead to the original dictsqlite folder
+    paths_to_remove = [
+        repo_root,  # Repository root
+        os.path.join(repo_root, 'dictsqlite'),  # Direct dictsqlite path
+    ]
+    
+    # Also check for current directory and parent directories that might contain dictsqlite/
+    for path in sys.path[:]:
+        if os.path.exists(os.path.join(path, 'dictsqlite', '__init__.py')):
+            # Check if this is the original dictsqlite (has main.py) not the wheel
+            if os.path.exists(os.path.join(path, 'dictsqlite', 'main.py')):
+                if path not in paths_to_remove:
+                    paths_to_remove.append(path)
+    
+    # Temporarily remove these paths
+    for path in paths_to_remove:
+        while path in sys.path:
+            sys.path.remove(path)
+            print(f"  🧹 Removed {path} from sys.path to prevent shadowing")
+    
     try:
         # dictsqlite パッケージから直接インポート（wheelインストール時）
         from dictsqlite import DictSQLite as DictSQLiteV2
         from dictsqlite import AsyncDictSQLite as AsyncDictSQLiteV2
         print("  ✅ dictsqlite からインポート成功")
+        
+        # Verify we imported the correct version by checking the module location
+        import dictsqlite
+        module_file = getattr(dictsqlite, '__file__', None)
+        if module_file:
+            print(f"  📂 Imported from: {module_file}")
+            # Check if it's from site-packages (wheel) or from repo (wrong!)
+            if 'site-packages' in module_file or 'dist-packages' in module_file:
+                print("  ✅ Correctly imported from installed wheel")
+            elif repo_root in module_file:
+                print(f"  ❌ ERROR: Imported from repository folder, not wheel!")
+                print(f"  ❌ This is the original dictsqlite, not V2. Skipping V2 tests.")
+                return results
         
         # DictSQLiteV4 があるか確認（これがV2の証拠）
         try:
@@ -213,6 +255,11 @@ def test_dictsqlite_v2() -> List[TestResult]:
     except ImportError as e:
         print(f"  ⚠️ dictsqlite インポートエラー: {e}")
         return results
+    
+    finally:
+        # Restore original sys.path
+        sys.path[:] = original_sys_path
+        print("  🔄 Restored original sys.path")
     
     persist_modes = ["memory", "lazy", "writethrough"]
     storage_modes = ["pickle", "bytes"]
