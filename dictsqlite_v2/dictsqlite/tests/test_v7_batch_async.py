@@ -319,7 +319,7 @@ class TestTableProxyParity:
     def test_sync_table_proxy_full_api(self, tmp_path):
         """TableProxy完全APIテスト"""
         db_path = str(tmp_path / "test_sync_table.db")
-        db = DictSQLiteV4(db_path, storage_mode="pickle")
+        db = DictSQLite(db_path, storage_mode="bytes")
         
         table = db.table("test")
         
@@ -374,7 +374,7 @@ class TestTableProxyParity:
     def test_async_table_proxy_full_api(self, tmp_path):
         """AsyncTableProxy完全APIテスト"""
         db_path = str(tmp_path / "test_async_table_full.db")
-        db = AsyncDictSQLite(db_path)
+        db = AsyncDictSQLite(db_path, storage_mode="bytes")
         
         table = db.table("test")
         
