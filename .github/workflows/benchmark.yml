@@ -510,10 +510,13 @@ jobs:
             # 各バージョンで最も平均スコアが高い mode/storage 組み合わせを見つける
             best_config=$(tail -n +2 "$DETAIL_CSV" | grep "^$version," | awk -F, '
               {
-                key=$4"/"$5
-                score[key]+=$10
-                count[key]++
-                if($8>max_ops[key]) max_ops[key]=$8
+                if($8!="" && $10!="") {
+                  key=$4"/"$5
+                  score[key]+=$10
+                  count[key]++
+                  ops=$8+0
+                  if(ops>max_ops[key]) max_ops[key]=ops
+                }
               }
               END{
                 best_score=0

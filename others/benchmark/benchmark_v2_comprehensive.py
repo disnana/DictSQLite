@@ -551,7 +551,7 @@ def calculate_scores(results: List[TestResult]) -> List[TestResult]:
     # 全結果にスコアを付ける
     for r in results:
         key = f"{r.test_name}_{r.data_size}"
-        if key in max_ops and max_ops[key] > 0:
+        if max_ops.get(key, 0) > 0:
             r.score = (r.ops_per_sec / max_ops[key]) * 100
         else:
             r.score = 0.0
