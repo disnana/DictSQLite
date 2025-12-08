@@ -423,15 +423,32 @@ def test_fastest_beta() -> List[TestResult]:
     print("⚡ DictSQLite-Fastest Beta v2 (APSWベース)")
     print("=" * 60)
     
+    # Calculate absolute path to fastest beta directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(os.path.dirname(script_dir))
+    fastest_beta_path = os.path.join(repo_root, "others/beta-versions/dictsqlite-fastest/beta")
+    fastest_root_path = os.path.join(repo_root, "others/beta-versions/dictsqlite-fastest")
+    
+    # Save original sys.path
+    original_sys_path = sys.path.copy()
+    
     try:
+        # Add fastest paths if not already in sys.path
+        paths_to_add = [fastest_beta_path, fastest_root_path]
+        for path in paths_to_add:
+            if path not in sys.path:
+                sys.path.insert(0, path)
+                print(f"  📂 Added to sys.path: {path}")
+        
         from dictsqlite_fastest_beta_v2 import DictSQLite as FastestDict
-    except ImportError:
-        try:
-            sys.path.insert(0, "../../others/beta-versions/dictsqlite-fastest/beta")
-            from dictsqlite_fastest_beta_v2 import DictSQLite as FastestDict
-        except ImportError:
-            print("  ⚠️ dictsqlite-fastest beta v2がインポートできません (スキップ)")
-            return results
+        print("  ✅ dictsqlite-fastest beta v2 インポート成功")
+    except ImportError as e:
+        print(f"  ⚠️ dictsqlite-fastest beta v2がインポートできません: {e}")
+        print(f"  📂 Tried paths: {fastest_beta_path}, {fastest_root_path}")
+        return results
+    finally:
+        # Restore original sys.path to avoid affecting other tests
+        sys.path[:] = original_sys_path
     
     try:
         db_path = "/tmp/bench_fastest.db"
