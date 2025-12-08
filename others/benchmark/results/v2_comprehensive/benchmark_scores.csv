@@ -1,14 +1,14 @@
 rank,name,avg_score,tests
-1,V2 AsyncDictSQLite (lazy/bytes) [async],85.3,8
-2,V2 DictSQLite (lazy/bytes),82.1,9
-3,V2 DictSQLite (memory/bytes),80.6,9
-4,V2 AsyncDictSQLite (memory/bytes) [async],75.7,8
-5,V2 DictSQLite (memory/pickle),56.5,9
-6,V2 DictSQLite (lazy/pickle),55.3,9
-7,V2 DictSQLite (writethrough/bytes),45.9,9
-8,V2 AsyncDictSQLite (writethrough/bytes) [async],44.1,8
-9,V2 AsyncDictSQLite (lazy/pickle) [async],42.7,8
-10,V2 AsyncDictSQLite (memory/pickle) [async],38.4,8
-11,V2 DictSQLite (writethrough/pickle),30.4,9
-12,V2 AsyncDictSQLite (writethrough/pickle) [async],25.7,8
-13,Original DictSQLite (default/pickle),18.2,7
+1,V2 DictSQLite (memory/bytes),83.3,9
+2,V2 AsyncDictSQLite (lazy/bytes) [async],82.8,8
+3,V2 DictSQLite (lazy/bytes),82.8,9
+4,V2 AsyncDictSQLite (memory/bytes) [async],73.7,8
+5,V2 DictSQLite (lazy/pickle),56.6,9
+6,V2 DictSQLite (memory/pickle),55.5,9
+7,V2 DictSQLite (writethrough/bytes),49.1,9
+8,V2 AsyncDictSQLite (writethrough/bytes) [async],47.1,8
+9,V2 AsyncDictSQLite (lazy/pickle) [async],41.4,8
+10,V2 AsyncDictSQLite (memory/pickle) [async],38.3,8
+11,V2 DictSQLite (writethrough/pickle),32.5,9
+12,V2 AsyncDictSQLite (writethrough/pickle) [async],26.9,8
+13,Original DictSQLite (default/pickle),18.3,7
