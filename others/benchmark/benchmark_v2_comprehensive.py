@@ -31,7 +31,7 @@ import os
 import sys
 import gc
 from dataclasses import dataclass
-from typing import List, Dict, Optional
+from typing import List, Dict, Tuple, Union, Optional
 import statistics
 from datetime import datetime
 
@@ -535,7 +535,7 @@ def test_fastest_beta() -> List[TestResult]:
     return results
 
 
-def calculate_scores(results: List[TestResult]) -> tuple:
+def calculate_scores(results: List[TestResult]) -> Tuple[List[TestResult], Dict[str, Dict[str, int]]]:
     """ランキングベースのスコア計算 - 各テストで1位、2位、3位を決める
     
     各テスト(test_name + data_size)ごとに:
@@ -543,8 +543,13 @@ def calculate_scores(results: List[TestResult]) -> tuple:
     - 3バージョンを比較して順位を決定
     - 1位=1点、2位=2点、3位=3点を付与（少ない方が良い）
     
+    Args:
+        results: テスト結果のリスト
+    
     Returns:
-        tuple: (results, version_points) - 更新された結果リストとバージョン別ポイント辞書
+        Tuple[List[TestResult], Dict[str, Dict[str, int]]]: 
+            - 更新された結果リスト（スコア付き）
+            - バージョン別ポイント辞書 {"version": {"points": int, "tests": int}}
     """
     # ステップ1: 各バージョンの各テストでの最速結果を取得
     version_best = {}
@@ -593,11 +598,14 @@ def calculate_scores(results: List[TestResult]) -> tuple:
     return results, version_points
 
 
-def sort_versions_by_points(version_points: Dict) -> list:
+def sort_versions_by_points(version_points: Dict[str, Dict[str, int]]) -> List[Tuple[str, Dict[str, int]]]:
     """バージョンをポイント順にソート（少ない方が上位）
     
+    Args:
+        version_points: バージョン別ポイント辞書 {"version": {"points": int, "tests": int}}
+    
     Returns:
-        list: [(version, data), ...] のソート済みリスト
+        List[Tuple[str, Dict[str, int]]]: ソート済みの [(version, data), ...] リスト
     """
     return sorted(version_points.items(), key=lambda x: x[1]["points"])
 

@@ -431,8 +431,8 @@ jobs:
         # サマリーファイルを作成
         SUMMARY_TMP="/tmp/benchmark_summary.md"
         
-        # ランク表示のためのヘルパー関数
-        format_rank() {
+        # ランク表示のためのヘルパー関数（5列用）
+        format_rank_5col() {
           local rank=$1
           local name=$2
           local col3=$3
@@ -447,6 +447,24 @@ jobs:
             printf "| **#%d 🥉** | %s | %s | %s | %s |\n" $rank "$name" "$col3" "$col4" "$col5"
           else
             printf "| #%d | %s | %s | %s | %s |\n" $rank "$name" "$col3" "$col4" "$col5"
+          fi
+        }
+        
+        # ランク表示のためのヘルパー関数（4列用）
+        format_rank_4col() {
+          local rank=$1
+          local name=$2
+          local col3=$3
+          local col4=$4
+          
+          if [ $rank -eq 1 ]; then
+            printf "| **#%d 🥇** | **%s** | **%s** | **%s** |\n" $rank "$name" "$col3" "$col4"
+          elif [ $rank -eq 2 ]; then
+            printf "| **#%d 🥈** | %s | %s | %s |\n" $rank "$name" "$col3" "$col4"
+          elif [ $rank -eq 3 ]; then
+            printf "| **#%d 🥉** | %s | %s | %s |\n" $rank "$name" "$col3" "$col4"
+          else
+            printf "| #%d | %s | %s | %s |\n" $rank "$name" "$col3" "$col4"
           fi
         }
         
@@ -471,12 +489,12 @@ jobs:
         POINTS_HEADER
           
           tail -n +2 "$POINTS_CSV" | while IFS=, read -r rank version points tests avg; do
-            format_rank "$rank" "$version" "$points" "$tests" "$avg" >> $SUMMARY_TMP
+            format_rank_5col "$rank" "$version" "$points" "$tests" "$avg" >> $SUMMARY_TMP
           done
           echo "" >> $SUMMARY_TMP
         fi
         
-        # ====== スコアランキング ======
+        # ====== 構成別スコアランキング ======
         SCORES_CSV="others/benchmark/results/v2_comprehensive/benchmark_scores.csv"
         if [ -f "$SCORES_CSV" ]; then
           cat >> $SUMMARY_TMP << 'RANK_HEADER'
@@ -487,13 +505,9 @@ jobs:
         RANK_HEADER
           
           # 全結果を表示（最大30件）
-          tail -n +2 "$SCORES_CSV" | head -30 | awk -F, '{
-            rank=$1; name=$2; score=$3; tests=$4;
-            if(rank==1) printf "| **#%d 🥇** | **%s** | **%.1f** | %d |\n", rank, name, score, tests;
-            else if(rank==2) printf "| **#%d 🥈** | %s | %.1f | %d |\n", rank, name, score, tests;
-            else if(rank==3) printf "| **#%d 🥉** | %s | %.1f | %d |\n", rank, name, score, tests;
-            else printf "| #%d | %s | %.1f | %d |\n", rank, name, score, tests;
-          }' >> $SUMMARY_TMP
+          tail -n +2 "$SCORES_CSV" | head -30 | while IFS=, read -r rank name score tests; do
+            format_rank_4col "$rank" "$name" "$score" "$tests" >> $SUMMARY_TMP
+          done
           echo "" >> $SUMMARY_TMP
         fi
         
