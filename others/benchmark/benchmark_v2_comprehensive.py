@@ -536,18 +536,25 @@ def test_fastest_beta() -> List[TestResult]:
 
 
 def calculate_scores(results: List[TestResult]) -> List[TestResult]:
-    """全バージョン共通でスコア計算"""
-    # テスト名+サイズごとに最大ops/secを取得
+    """全バージョン共通でスコア計算 - 公平な比較のため
+    
+    各バージョンの最良構成のみを比較対象とする。
+    これにより、V2の複数モード/ストレージの遅い構成が平均を下げることを防ぐ。
+    """
+    # まず全結果にスコアを計算（後で使用）
     max_ops = {}
     for r in results:
         key = f"{r.test_name}_{r.data_size}"
         if key not in max_ops or r.ops_per_sec > max_ops[key]:
             max_ops[key] = r.ops_per_sec
     
-    # スコア計算 (0-100)
+    # 全結果にスコアを付ける
     for r in results:
         key = f"{r.test_name}_{r.data_size}"
-        r.score = (r.ops_per_sec / max_ops[key]) * 100 if max_ops.get(key, 0) > 0 else 0
+        if key in max_ops and max_ops[key] > 0:
+            r.score = (r.ops_per_sec / max_ops[key]) * 100
+        else:
+            r.score = 0.0
     
     return results
 

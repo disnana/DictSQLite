@@ -476,9 +476,9 @@ jobs:
           }' >> $SUMMARY_TMP
           echo "" >> $SUMMARY_TMP
           
-          # バージョン別統計
+          # バージョン別統計 - 全テスト平均
           cat >> $SUMMARY_TMP << 'VER_HEADER'
-        ## 📊 バージョン別 統計
+        ## 📊 バージョン別 統計（全テスト平均）
         
         | Version | テスト数 | 平均スコア | 最大 Ops/sec |
         |---------|-------:|----------:|-------------:|
@@ -492,6 +492,44 @@ jobs:
             ')
             if [ -n "$result" ]; then
               echo "| $version | $result |" >> $SUMMARY_TMP
+            fi
+          done
+          echo "" >> $SUMMARY_TMP
+          
+          # バージョン別最良構成の比較
+          cat >> $SUMMARY_TMP << 'BEST_CONFIG_HEADER'
+        ## 🥇 バージョン別 最良構成の比較
+        
+        各バージョンの最速構成のみを比較（公平な比較のため）
+        
+        | Version | 最良構成 | テスト数 | 平均スコア | 最大 Ops/sec |
+        |---------|---------|-------:|----------:|-------------:|
+        BEST_CONFIG_HEADER
+          
+          for version in "Original" "V2" "Fastest"; do
+            # 各バージョンで最も平均スコアが高い mode/storage 組み合わせを見つける
+            best_config=$(tail -n +2 "$DETAIL_CSV" | grep "^$version," | awk -F, '
+              {
+                key=$4"/"$5
+                score[key]+=$10
+                count[key]++
+                if($8>max_ops[key]) max_ops[key]=$8
+              }
+              END{
+                best_score=0
+                best_key=""
+                for(k in score) {
+                  avg=score[k]/count[k]
+                  if(avg>best_score) {
+                    best_score=avg
+                    best_key=k
+                  }
+                }
+                if(best_key!="") printf "%s | %d | %.1f | %.0f", best_key, count[best_key], best_score, max_ops[best_key]
+              }
+            ')
+            if [ -n "$best_config" ]; then
+              echo "| $version | $best_config |" >> $SUMMARY_TMP
             fi
           done
           echo "" >> $SUMMARY_TMP
