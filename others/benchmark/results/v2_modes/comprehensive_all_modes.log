@@ -8,54 +8,54 @@ Comprehensive Benchmark - All Modes + Sync/Async
 ================================================================================
 🔬 Synchronous Benchmarks: dictsqlite_v2 - Mode: MEMORY
 ================================================================================
-  Running: Write (2000 items)... ✓ 55,808 ops/sec
-  Running: Read (2000 items)... ✓ 138,460 ops/sec
-  Running: Mixed (2000 items)... ✓ 58,495 ops/sec
-  Running: Update (2000 items)... ✓ 70,342 ops/sec
+  Running: Write (2000 items)... ✓ 54,831 ops/sec
+  Running: Read (2000 items)... ✓ 133,351 ops/sec
+  Running: Mixed (2000 items)... ✓ 58,045 ops/sec
+  Running: Update (2000 items)... ✓ 69,493 ops/sec
 
 ================================================================================
 🔬 Asynchronous Benchmarks: dictsqlite_v2 - Mode: MEMORY
 ================================================================================
-  Running: Async Write (1000 items)... ✓ 54,281 ops/sec
-  Running: Async Read (1000 items)... ✓ 113,445 ops/sec
-  Running: Concurrent Write (2000 items, 10 concurrent)... ✓ 88,027 ops/sec
+  Running: Async Write (1000 items)... ✓ 51,735 ops/sec
+  Running: Async Read (1000 items)... ✓ 109,592 ops/sec
+  Running: Concurrent Write (2000 items, 10 concurrent)... ✓ 86,595 ops/sec
 
 ================================================================================
 🔬 Synchronous Benchmarks: dictsqlite_v2 - Mode: LAZY
 ================================================================================
-  Running: Write (2000 items)... ✓ 54,556 ops/sec
-  Running: Read (2000 items)... ✓ 137,681 ops/sec
-  Running: Mixed (2000 items)... ✓ 58,269 ops/sec
-  Running: Update (2000 items)... ✓ 70,150 ops/sec
+  Running: Write (2000 items)... ✓ 53,921 ops/sec
+  Running: Read (2000 items)... ✓ 136,763 ops/sec
+  Running: Mixed (2000 items)... ✓ 58,623 ops/sec
+  Running: Update (2000 items)... ✓ 70,565 ops/sec
 
 ================================================================================
 🔬 Asynchronous Benchmarks: dictsqlite_v2 - Mode: LAZY
 ================================================================================
-  Running: Async Write (1000 items)... ✓ 86,650 ops/sec
-  Running: Async Read (1000 items)... ✓ 113,225 ops/sec
-  Running: Concurrent Write (2000 items, 10 concurrent)... ✓ 90,513 ops/sec
+  Running: Async Write (1000 items)... ✓ 87,865 ops/sec
+  Running: Async Read (1000 items)... ✓ 112,255 ops/sec
+  Running: Concurrent Write (2000 items, 10 concurrent)... ✓ 89,270 ops/sec
 
 ================================================================================
 🔬 Synchronous Benchmarks: dictsqlite_v2 - Mode: WRITETHROUGH
 ================================================================================
-  Running: Write (2000 items)... ✓ 19,454 ops/sec
-  Running: Read (2000 items)... ✓ 131,277 ops/sec
-  Running: Mixed (2000 items)... ✓ 18,227 ops/sec
-  Running: Update (2000 items)... ✓ 18,229 ops/sec
+  Running: Write (2000 items)... ✓ 19,977 ops/sec
+  Running: Read (2000 items)... ✓ 127,587 ops/sec
+  Running: Mixed (2000 items)... ✓ 18,501 ops/sec
+  Running: Update (2000 items)... ✓ 18,422 ops/sec
 
 ================================================================================
 🔬 Asynchronous Benchmarks: dictsqlite_v2 - Mode: WRITETHROUGH
 ================================================================================
-  Running: Async Write (1000 items)... ✓ 5,830 ops/sec
-  Running: Async Read (1000 items)... ✓ 106,611 ops/sec
-  Running: Concurrent Write (2000 items, 10 concurrent)... ✓ 6,776 ops/sec
+  Running: Async Write (1000 items)... ✓ 5,272 ops/sec
+  Running: Async Read (1000 items)... ✓ 108,810 ops/sec
+  Running: Concurrent Write (2000 items, 10 concurrent)... ✓ 6,181 ops/sec
 
 ================================================================================
 🔬 Benchmarks: dictsqlite-fastest Beta v2
 ================================================================================
-  Running: Write (2000 items)... ✓ 72,836 ops/sec
-  Running: Read (2000 items)... ✓ 17,875 ops/sec
-  Running: Mixed (2000 items)... ✓ 55,768 ops/sec
+  Running: Write (2000 items)... ✓ 72,570 ops/sec
+  Running: Read (2000 items)... ✓ 18,318 ops/sec
+  Running: Mixed (2000 items)... ✓ 54,959 ops/sec
 
 
 ================================================================================
@@ -65,66 +65,66 @@ Comprehensive Benchmark - All Modes + Sync/Async
 ================================================================================
 📊 fastest
 ================================================================================
-  Write                         :       72,836 ops/sec (0.027s, 0.5 MB)
-  Read                          :       17,875 ops/sec (0.112s, 0.0 MB)
-  Mixed                         :       55,768 ops/sec (0.036s, 0.5 MB)
+  Write                         :       72,570 ops/sec (0.028s, 0.5 MB)
+  Read                          :       18,318 ops/sec (0.109s, 0.0 MB)
+  Mixed                         :       54,959 ops/sec (0.036s, 0.5 MB)
 
 ================================================================================
 📊 v2_lazy_async
 ================================================================================
-  Async Write                   :       86,650 ops/sec (0.012s, 0.0 MB)
-  Async Read                    :      113,225 ops/sec (0.009s, 0.0 MB)
-  Concurrent Write              :       90,513 ops/sec (0.022s, 0.0 MB)
+  Async Write                   :       87,865 ops/sec (0.011s, 0.0 MB)
+  Async Read                    :      112,255 ops/sec (0.009s, 0.0 MB)
+  Concurrent Write              :       89,270 ops/sec (0.022s, 0.0 MB)
 
 ================================================================================
 📊 v2_lazy_sync
 ================================================================================
-  Write                         :       54,556 ops/sec (0.037s, 0.0 MB)
-  Read                          :      137,681 ops/sec (0.015s, 0.0 MB)
-  Mixed                         :       58,269 ops/sec (0.034s, 0.0 MB)
-  Update                        :       70,150 ops/sec (0.029s, 0.0 MB)
+  Write                         :       53,921 ops/sec (0.037s, 0.0 MB)
+  Read                          :      136,763 ops/sec (0.015s, 0.0 MB)
+  Mixed                         :       58,623 ops/sec (0.034s, 0.0 MB)
+  Update                        :       70,565 ops/sec (0.028s, 0.0 MB)
 
 ================================================================================
 📊 v2_memory_async
 ================================================================================
-  Async Write                   :       54,281 ops/sec (0.018s, 0.0 MB)
-  Async Read                    :      113,445 ops/sec (0.009s, 0.0 MB)
-  Concurrent Write              :       88,027 ops/sec (0.023s, 0.0 MB)
+  Async Write                   :       51,735 ops/sec (0.019s, 0.0 MB)
+  Async Read                    :      109,592 ops/sec (0.009s, 0.0 MB)
+  Concurrent Write              :       86,595 ops/sec (0.023s, 0.0 MB)
 
 ================================================================================
 📊 v2_memory_sync
 ================================================================================
-  Write                         :       55,808 ops/sec (0.036s, 0.0 MB)
-  Read                          :      138,460 ops/sec (0.014s, 0.0 MB)
-  Mixed                         :       58,495 ops/sec (0.034s, 0.0 MB)
-  Update                        :       70,342 ops/sec (0.028s, 0.0 MB)
+  Write                         :       54,831 ops/sec (0.036s, 0.0 MB)
+  Read                          :      133,351 ops/sec (0.015s, 0.0 MB)
+  Mixed                         :       58,045 ops/sec (0.034s, 0.0 MB)
+  Update                        :       69,493 ops/sec (0.029s, 0.0 MB)
 
 ================================================================================
 📊 v2_writethrough_async
 ================================================================================
-  Async Write                   :        5,830 ops/sec (0.172s, 0.0 MB)
-  Async Read                    :      106,611 ops/sec (0.009s, 0.0 MB)
-  Concurrent Write              :        6,776 ops/sec (0.295s, 0.0 MB)
+  Async Write                   :        5,272 ops/sec (0.190s, 0.0 MB)
+  Async Read                    :      108,810 ops/sec (0.009s, 0.0 MB)
+  Concurrent Write              :        6,181 ops/sec (0.324s, 0.0 MB)
 
 ================================================================================
 📊 v2_writethrough_sync
 ================================================================================
-  Write                         :       19,454 ops/sec (0.103s, 0.0 MB)
-  Read                          :      131,277 ops/sec (0.015s, 0.0 MB)
-  Mixed                         :       18,227 ops/sec (0.110s, 0.0 MB)
-  Update                        :       18,229 ops/sec (0.110s, 0.0 MB)
+  Write                         :       19,977 ops/sec (0.100s, 0.0 MB)
+  Read                          :      127,587 ops/sec (0.016s, 0.0 MB)
+  Mixed                         :       18,501 ops/sec (0.108s, 0.0 MB)
+  Update                        :       18,422 ops/sec (0.109s, 0.0 MB)
 
 ================================================================================
 📈 平均パフォーマンス (Average Performance)
 ================================================================================
 
-  fastest                       :       48,826 ops/sec
-  v2_lazy_async                 :       96,796 ops/sec
-  v2_lazy_sync                  :       80,164 ops/sec
-  v2_memory_async               :       85,251 ops/sec
-  v2_memory_sync                :       80,776 ops/sec
-  v2_writethrough_async         :       39,739 ops/sec
-  v2_writethrough_sync          :       46,797 ops/sec
+  fastest                       :       48,616 ops/sec
+  v2_lazy_async                 :       96,463 ops/sec
+  v2_lazy_sync                  :       79,968 ops/sec
+  v2_memory_async               :       82,641 ops/sec
+  v2_memory_sync                :       78,930 ops/sec
+  v2_writethrough_async         :       40,088 ops/sec
+  v2_writethrough_sync          :       46,122 ops/sec
 
 ✅ Results saved to: /home/runner/work/DictSQLite/DictSQLite/others/benchmark/results/v2_modes/comprehensive_all_modes.json
 
@@ -132,11 +132,11 @@ Comprehensive Benchmark - All Modes + Sync/Async
 🏆 最速モード比較 (Best Mode Comparison)
 ================================================================================
 
-🥇 1. v2_lazy_async                 :       96,796 ops/sec
-🥈 2. v2_memory_async               :       85,251 ops/sec
-🥉 3. v2_memory_sync                :       80,776 ops/sec
-   4. v2_lazy_sync                  :       80,164 ops/sec
-   5. v2_writethrough_sync          :       46,797 ops/sec
-   6. v2_writethrough_async         :       39,739 ops/sec
+🥇 1. v2_lazy_async                 :       96,463 ops/sec
+🥈 2. v2_memory_async               :       82,641 ops/sec
+🥉 3. v2_lazy_sync                  :       79,968 ops/sec
+   4. v2_memory_sync                :       78,930 ops/sec
+   5. v2_writethrough_sync          :       46,122 ops/sec
+   6. v2_writethrough_async         :       40,088 ops/sec
 
-   fastest (reference)         :       48,826 ops/sec
+   fastest (reference)         :       48,616 ops/sec
