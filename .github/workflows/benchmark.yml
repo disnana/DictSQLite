@@ -431,6 +431,25 @@ jobs:
         # サマリーファイルを作成
         SUMMARY_TMP="/tmp/benchmark_summary.md"
         
+        # ランク表示のためのヘルパー関数
+        format_rank() {
+          local rank=$1
+          local name=$2
+          local col3=$3
+          local col4=$4
+          local col5=$5
+          
+          if [ $rank -eq 1 ]; then
+            printf "| **#%d 🥇** | **%s** | **%s** | **%s** | **%s** |\n" $rank "$name" "$col3" "$col4" "$col5"
+          elif [ $rank -eq 2 ]; then
+            printf "| **#%d 🥈** | %s | %s | %s | %s |\n" $rank "$name" "$col3" "$col4" "$col5"
+          elif [ $rank -eq 3 ]; then
+            printf "| **#%d 🥉** | %s | %s | %s | %s |\n" $rank "$name" "$col3" "$col4" "$col5"
+          else
+            printf "| #%d | %s | %s | %s | %s |\n" $rank "$name" "$col3" "$col4" "$col5"
+          fi
+        }
+        
         cat > $SUMMARY_TMP << 'HEADER'
         # 📊 DictSQLite 全バージョン ベンチマーク結果
         
@@ -451,13 +470,9 @@ jobs:
         |-----:|---------|-------------:|---------:|-------------:|
         POINTS_HEADER
           
-          tail -n +2 "$POINTS_CSV" | awk -F, '{
-            rank=$1; version=$2; points=$3; tests=$4; avg=$5;
-            if(rank==1) printf "| **#%d 🥇** | **%s** | **%s** | **%s** | **%s** |\n", rank, version, points, tests, avg;
-            else if(rank==2) printf "| **#%d 🥈** | %s | %s | %s | %s |\n", rank, version, points, tests, avg;
-            else if(rank==3) printf "| **#%d 🥉** | %s | %s | %s | %s |\n", rank, version, points, tests, avg;
-            else printf "| #%d | %s | %s | %s | %s |\n", rank, version, points, tests, avg;
-          }' >> $SUMMARY_TMP
+          tail -n +2 "$POINTS_CSV" | while IFS=, read -r rank version points tests avg; do
+            format_rank "$rank" "$version" "$points" "$tests" "$avg" >> $SUMMARY_TMP
+          done
           echo "" >> $SUMMARY_TMP
         fi
         
