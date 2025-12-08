@@ -8,60 +8,60 @@ dictsqlite_v2 (全モード) vs fastest 総合ベンチマーク
 ================================================================================
 🔬 dictsqlite_v2 - Mode: MEMORY
 ================================================================================
-Write (2000 items)...    160,373 ops/sec
-Read (2000 items)...    778,453 ops/sec
-Mixed (2000 items)...    345,580 ops/sec
+Write (2000 items)...    139,022 ops/sec
+Read (2000 items)...    728,304 ops/sec
+Mixed (2000 items)...    339,112 ops/sec
 
 ================================================================================
 🔬 dictsqlite_v2 - Mode: LAZY
 ================================================================================
-Write (2000 items)...    162,737 ops/sec
-Read (2000 items)...    778,670 ops/sec
-Mixed (2000 items)...    353,145 ops/sec
+Write (2000 items)...    162,161 ops/sec
+Read (2000 items)...    790,037 ops/sec
+Mixed (2000 items)...    341,904 ops/sec
 
 ================================================================================
 🔬 dictsqlite_v2 - Mode: WRITETHROUGH
 ================================================================================
-Write (2000 items)...     29,133 ops/sec
-Read (2000 items)...    624,989 ops/sec
-Mixed (2000 items)...     26,332 ops/sec
+Write (2000 items)...     28,859 ops/sec
+Read (2000 items)...    631,767 ops/sec
+Mixed (2000 items)...     26,061 ops/sec
 
 ================================================================================
 🔬 dictsqlite-fastest Beta v2
 ================================================================================
-Write (2000 items)...    279,016 ops/sec
-Read (2000 items)...     55,957 ops/sec
-Mixed (2000 items)...    200,930 ops/sec
+Write (2000 items)...    275,081 ops/sec
+Read (2000 items)...     53,830 ops/sec
+Mixed (2000 items)...    200,584 ops/sec
 
 ================================================================================
 📊 パフォーマンス比較 (すべてv2がfastestに勝つ必要がある)
 ================================================================================
 
 Write (2000 items):
-  v2_memory           :      160,373 ops/sec
-  v2_lazy             :      162,737 ops/sec
-  v2_writethrough     :       29,133 ops/sec
-  fastest             :      279,016 ops/sec
-  ⚠️  fastestが勝利! 1.71x faster than best v2
+  v2_memory           :      139,022 ops/sec
+  v2_lazy             :      162,161 ops/sec
+  v2_writethrough     :       28,859 ops/sec
+  fastest             :      275,081 ops/sec
+  ⚠️  fastestが勝利! 1.70x faster than best v2
 
 Read (2000 items):
-  v2_memory           :      778,453 ops/sec
-  v2_lazy             :      778,670 ops/sec
-  v2_writethrough     :      624,989 ops/sec
-  fastest             :       55,957 ops/sec
-  🏆 v2が勝利! 13.92x faster than fastest
+  v2_memory           :      728,304 ops/sec
+  v2_lazy             :      790,037 ops/sec
+  v2_writethrough     :      631,767 ops/sec
+  fastest             :       53,830 ops/sec
+  🏆 v2が勝利! 14.68x faster than fastest
 
 Mixed (2000 items):
-  v2_memory           :      345,580 ops/sec
-  v2_lazy             :      353,145 ops/sec
-  v2_writethrough     :       26,332 ops/sec
-  fastest             :      200,930 ops/sec
-  🏆 v2が勝利! 1.76x faster than fastest
+  v2_memory           :      339,112 ops/sec
+  v2_lazy             :      341,904 ops/sec
+  v2_writethrough     :       26,061 ops/sec
+  fastest             :      200,584 ops/sec
+  🏆 v2が勝利! 1.70x faster than fastest
 
 ================================================================================
 総合評価:
-  v2_memory           : 平均      428,135 ops/sec
-  v2_lazy             : 平均      431,517 ops/sec
-  v2_writethrough     : 平均      226,818 ops/sec
-  fastest             : 平均      178,634 ops/sec
+  v2_memory           : 平均      402,146 ops/sec
+  v2_lazy             : 平均      431,367 ops/sec
+  v2_writethrough     : 平均      228,896 ops/sec
+  fastest             : 平均      176,498 ops/sec
 ================================================================================
