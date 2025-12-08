@@ -429,6 +429,14 @@ def test_fastest_beta() -> List[TestResult]:
     fastest_beta_path = os.path.join(repo_root, "others/beta-versions/dictsqlite-fastest/beta")
     fastest_root_path = os.path.join(repo_root, "others/beta-versions/dictsqlite-fastest")
     
+    # Verify paths exist before attempting import
+    if not os.path.exists(fastest_beta_path):
+        print(f"  ⚠️ Fastest beta path does not exist: {fastest_beta_path}")
+        return results
+    if not os.path.exists(fastest_root_path):
+        print(f"  ⚠️ Fastest root path does not exist: {fastest_root_path}")
+        return results
+    
     # Save original sys.path
     original_sys_path = sys.path.copy()
     
