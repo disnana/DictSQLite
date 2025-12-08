@@ -448,7 +448,7 @@ def test_fastest_beta() -> List[TestResult]:
                 sys.path.insert(0, path)
                 print(f"  📂 Added to sys.path: {path}")
         
-        from dictsqlite_fastest_beta_v2 import DictSQLite as FastestDict
+        from dictsqlite_fastest_beta_v2 import DictSQLiteFastestBeta as FastestDict
         print("  ✅ dictsqlite-fastest beta v2 インポート成功")
     except ImportError as e:
         print(f"  ⚠️ dictsqlite-fastest beta v2がインポートできません: {e}")
