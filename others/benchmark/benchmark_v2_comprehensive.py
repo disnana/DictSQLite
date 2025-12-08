@@ -31,7 +31,7 @@ import os
 import sys
 import gc
 from dataclasses import dataclass
-from typing import List, Dict, Optional
+from typing import List, Dict, Tuple, Union, Optional
 import statistics
 from datetime import datetime
 
@@ -193,11 +193,57 @@ def test_dictsqlite_v2() -> List[TestResult]:
     DictSQLiteV2 = None
     AsyncDictSQLiteV2 = None
     
+    # CRITICAL FIX for issue #223:
+    # Ensure we import the V2 wheel from site-packages, NOT the original dictsqlite/ folder
+    # from the repository. We need to temporarily remove repo paths from sys.path.
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(os.path.dirname(script_dir))
+    
+    # Save original sys.path
+    original_sys_path = sys.path.copy()
+    import_successful = False
+    
     try:
-        # dictsqlite パッケージから直接インポート（wheelインストール時）
+        # Remove any paths that could lead to the original dictsqlite folder
+        paths_to_remove = {repo_root}
+        
+        # Also check for paths that might contain the original dictsqlite
+        # Only check paths that could realistically be repository paths (not system paths)
+        for path in sys.path[:]:
+            # Skip if path is clearly a system path
+            if 'site-packages' in path or 'dist-packages' in path:
+                continue
+            # Check if this path contains original dictsqlite (has main.py)
+            dictsqlite_init = os.path.join(path, 'dictsqlite', '__init__.py')
+            dictsqlite_main = os.path.join(path, 'dictsqlite', 'main.py')
+            if os.path.exists(dictsqlite_init) and os.path.exists(dictsqlite_main):
+                paths_to_remove.add(path)
+        
+        # Filter sys.path to remove problematic paths
+        sys.path[:] = [p for p in sys.path if p not in paths_to_remove]
+        if paths_to_remove:
+            print(f"  🧹 Removed {len(paths_to_remove)} path(s) from sys.path to prevent shadowing")
+        
+        # Import dictsqlite package (should now come from wheel in site-packages)
         from dictsqlite import DictSQLite as DictSQLiteV2
         from dictsqlite import AsyncDictSQLite as AsyncDictSQLiteV2
         print("  ✅ dictsqlite からインポート成功")
+        
+        # Verify we imported the correct version by checking the already-imported module
+        # Use the reference from sys.modules to avoid re-importing
+        dictsqlite_module = sys.modules.get('dictsqlite')
+        if dictsqlite_module:
+            module_file = getattr(dictsqlite_module, '__file__', None)
+            if module_file:
+                print(f"  📂 Imported from: {module_file}")
+                # Check if it's from site-packages (wheel) or from repo (wrong!)
+                if 'site-packages' in module_file or 'dist-packages' in module_file:
+                    print("  ✅ Correctly imported from installed wheel")
+                    import_successful = True
+                elif repo_root in module_file:
+                    print(f"  ❌ ERROR: Imported from repository folder, not wheel!")
+                    print(f"  ❌ This is the original dictsqlite, not V2. Skipping V2 tests.")
+                    return results
         
         # DictSQLiteV4 があるか確認（これがV2の証拠）
         try:
@@ -213,6 +259,14 @@ def test_dictsqlite_v2() -> List[TestResult]:
     except ImportError as e:
         print(f"  ⚠️ dictsqlite インポートエラー: {e}")
         return results
+    
+    finally:
+        # Restore original sys.path
+        sys.path[:] = original_sys_path
+        if import_successful:
+            print("  🔄 Restored original sys.path (import successful)")
+        else:
+            print("  🔄 Restored original sys.path")
     
     persist_modes = ["memory", "lazy", "writethrough"]
     storage_modes = ["pickle", "bytes"]
@@ -369,15 +423,40 @@ def test_fastest_beta() -> List[TestResult]:
     print("⚡ DictSQLite-Fastest Beta v2 (APSWベース)")
     print("=" * 60)
     
+    # Calculate absolute path to fastest beta directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(os.path.dirname(script_dir))
+    fastest_beta_path = os.path.join(repo_root, "others/beta-versions/dictsqlite-fastest/beta")
+    fastest_root_path = os.path.join(repo_root, "others/beta-versions/dictsqlite-fastest")
+    
+    # Verify paths exist before attempting import
+    if not os.path.exists(fastest_beta_path):
+        print(f"  ⚠️ Fastest beta path does not exist: {fastest_beta_path}")
+        return results
+    if not os.path.exists(fastest_root_path):
+        print(f"  ⚠️ Fastest root path does not exist: {fastest_root_path}")
+        return results
+    
+    # Save original sys.path
+    original_sys_path = sys.path.copy()
+    
     try:
-        from dictsqlite_fastest_beta_v2 import DictSQLite as FastestDict
-    except ImportError:
-        try:
-            sys.path.insert(0, "../../others/beta-versions/dictsqlite-fastest/beta")
-            from dictsqlite_fastest_beta_v2 import DictSQLite as FastestDict
-        except ImportError:
-            print("  ⚠️ dictsqlite-fastest beta v2がインポートできません (スキップ)")
-            return results
+        # Add fastest paths if not already in sys.path
+        paths_to_add = [fastest_beta_path, fastest_root_path]
+        for path in paths_to_add:
+            if path not in sys.path:
+                sys.path.insert(0, path)
+                print(f"  📂 Added to sys.path: {path}")
+        
+        from dictsqlite_fastest_beta_v2 import DictSQLiteFastestBeta as FastestDict
+        print("  ✅ dictsqlite-fastest beta v2 インポート成功")
+    except ImportError as e:
+        print(f"  ⚠️ dictsqlite-fastest beta v2がインポートできません: {e}")
+        print(f"  📂 Tried paths: {fastest_beta_path}, {fastest_root_path}")
+        return results
+    finally:
+        # Restore original sys.path to avoid affecting other tests
+        sys.path[:] = original_sys_path
     
     try:
         db_path = "/tmp/bench_fastest.db"
@@ -456,21 +535,79 @@ def test_fastest_beta() -> List[TestResult]:
     return results
 
 
-def calculate_scores(results: List[TestResult]) -> List[TestResult]:
-    """全バージョン共通でスコア計算"""
-    # テスト名+サイズごとに最大ops/secを取得
-    max_ops = {}
-    for r in results:
-        key = f"{r.test_name}_{r.data_size}"
-        if key not in max_ops or r.ops_per_sec > max_ops[key]:
-            max_ops[key] = r.ops_per_sec
+def calculate_scores(results: List[TestResult]) -> Tuple[List[TestResult], Dict[str, Dict[str, int]]]:
+    """ランキングベースのスコア計算 - 各テストで1位、2位、3位を決める
     
-    # スコア計算 (0-100)
-    for r in results:
-        key = f"{r.test_name}_{r.data_size}"
-        r.score = (r.ops_per_sec / max_ops[key]) * 100 if max_ops.get(key, 0) > 0 else 0
+    各テスト(test_name + data_size)ごとに:
+    - 各バージョンの最速結果を取得
+    - 3バージョンを比較して順位を決定
+    - 1位=1点、2位=2点、3位=3点を付与（少ない方が良い）
     
-    return results
+    Args:
+        results: テスト結果のリスト
+    
+    Returns:
+        Tuple[List[TestResult], Dict[str, Dict[str, int]]]: 
+            - 更新された結果リスト（スコア付き）
+            - バージョン別ポイント辞書 {"version": {"points": int, "tests": int}}
+    """
+    # ステップ1: 各バージョンの各テストでの最速結果を取得
+    version_best = {}
+    for r in results:
+        key = f"{r.version}_{r.test_name}_{r.data_size}"
+        if key not in version_best or r.ops_per_sec > version_best[key].ops_per_sec:
+            version_best[key] = r
+    
+    # ステップ2: テストごとにバージョンをランク付け
+    test_rankings = {}
+    for key, result in version_best.items():
+        test_key = f"{result.test_name}_{result.data_size}"
+        if test_key not in test_rankings:
+            test_rankings[test_key] = []
+        test_rankings[test_key].append((result.version, result.ops_per_sec))
+    
+    # ステップ3: 各テストでランキングを計算
+    version_points = {}
+    for test_key, version_results in test_rankings.items():
+        # ops/secでソート（降順）
+        sorted_versions = sorted(version_results, key=lambda x: x[1], reverse=True)
+        # 順位を付与（1位=1点、2位=2点、3位=3点）
+        for rank, (version, _) in enumerate(sorted_versions, 1):
+            if version not in version_points:
+                version_points[version] = {"points": 0, "tests": 0}
+            version_points[version]["points"] += rank
+            version_points[version]["tests"] += 1
+    
+    # ステップ4: バージョンごとの平均ポイントを事前計算
+    version_avg_points = {}
+    for version, data in version_points.items():
+        num_tests = data["tests"]
+        avg_points = data["points"] / num_tests if num_tests > 0 else 3.0
+        version_avg_points[version] = avg_points
+    
+    # ステップ5: 全結果にスコアを付与（事前計算した平均ポイントを使用）
+    for r in results:
+        if r.version in version_avg_points:
+            # 平均ポイント: 1.0が最高、3.0が最低
+            avg_points = version_avg_points[r.version]
+            # スコアに変換: 1.0→100点、2.0→50点、3.0→0点
+            r.score = max(0, 100 * (3.0 - avg_points) / 2.0)
+        else:
+            r.score = 0.0
+    
+    return results, version_points
+
+
+def sort_versions_by_points(version_points: Dict[str, Dict[str, int]]) -> List[Tuple[str, Dict[str, int]]]:
+    """バージョンをポイント順にソート（少ない方が上位）
+    
+    Args:
+        version_points: バージョン別ポイント辞書 {"version": {"points": int, "tests": int}}
+    
+    Returns:
+        List[Tuple[str, Dict[str, int]]]: ソート済みの [(version, data), ...] リスト
+    """
+    return sorted(version_points.items(), key=lambda x: x[1]["points"])
 
 
 def generate_rankings(results: List[TestResult]) -> List[Dict]:
@@ -497,7 +634,7 @@ def generate_rankings(results: List[TestResult]) -> List[Dict]:
     return rankings
 
 
-def save_results(results: List[TestResult], rankings: List[Dict]):
+def save_results(results: List[TestResult], rankings: List[Dict], version_points: Dict):
     """結果を保存"""
     os.makedirs(RESULTS_DIR, exist_ok=True)
     os.makedirs(IMAGES_DIR, exist_ok=True)
@@ -518,6 +655,15 @@ def save_results(results: List[TestResult], rankings: List[Dict]):
         writer.writerow(["rank", "name", "avg_score", "tests"])
         for r in rankings:
             writer.writerow([r["rank"], r["name"], f"{r['avg_score']:.1f}", r["tests"]])
+    
+    # バージョン別ポイント集計を保存
+    with open(f"{RESULTS_DIR}/version_points.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["rank", "version", "total_points", "tests", "avg_points"])
+        sorted_versions = sort_versions_by_points(version_points)
+        for rank, (version, data) in enumerate(sorted_versions, 1):
+            avg_points = data["points"] / data["tests"] if data["tests"] > 0 else 0
+            writer.writerow([rank, version, data["points"], data["tests"], f"{avg_points:.2f}"])
     
     print(f"\n📊 結果を保存: {RESULTS_DIR}/")
 
@@ -659,11 +805,20 @@ def main():
         return
     
     # スコア計算
-    results = calculate_scores(results)
+    results, version_points = calculate_scores(results)
     rankings = generate_rankings(results)
     
+    # バージョン別ポイント集計を表示
+    print("\n" + "=" * 70)
+    print("🏆 バージョン別ランキングポイント（低いほど良い）")
+    print("=" * 70)
+    sorted_versions = sort_versions_by_points(version_points)
+    for rank, (version, data) in enumerate(sorted_versions, 1):
+        avg_points = data["points"] / data["tests"] if data["tests"] > 0 else 0
+        print(f"  #{rank} {version}: {data['points']}点 (平均: {avg_points:.2f}点, テスト数: {data['tests']})")
+    
     # 保存と表示
-    save_results(results, rankings)
+    save_results(results, rankings, version_points)
     generate_graphs(results, rankings)
     print_summary(results, rankings)
     

@@ -431,6 +431,43 @@ jobs:
         # サマリーファイルを作成
         SUMMARY_TMP="/tmp/benchmark_summary.md"
         
+        # ランク表示のためのヘルパー関数（5列用）
+        format_rank_5col() {
+          local rank=$1
+          local name=$2
+          local col3=$3
+          local col4=$4
+          local col5=$5
+          
+          if [ $rank -eq 1 ]; then
+            printf "| **#%d 🥇** | **%s** | **%s** | **%s** | **%s** |\n" $rank "$name" "$col3" "$col4" "$col5"
+          elif [ $rank -eq 2 ]; then
+            printf "| **#%d 🥈** | %s | %s | %s | %s |\n" $rank "$name" "$col3" "$col4" "$col5"
+          elif [ $rank -eq 3 ]; then
+            printf "| **#%d 🥉** | %s | %s | %s | %s |\n" $rank "$name" "$col3" "$col4" "$col5"
+          else
+            printf "| #%d | %s | %s | %s | %s |\n" $rank "$name" "$col3" "$col4" "$col5"
+          fi
+        }
+        
+        # ランク表示のためのヘルパー関数（4列用）
+        format_rank_4col() {
+          local rank=$1
+          local name=$2
+          local col3=$3
+          local col4=$4
+          
+          if [ $rank -eq 1 ]; then
+            printf "| **#%d 🥇** | **%s** | **%s** | **%s** |\n" $rank "$name" "$col3" "$col4"
+          elif [ $rank -eq 2 ]; then
+            printf "| **#%d 🥈** | %s | %s | %s |\n" $rank "$name" "$col3" "$col4"
+          elif [ $rank -eq 3 ]; then
+            printf "| **#%d 🥉** | %s | %s | %s |\n" $rank "$name" "$col3" "$col4"
+          else
+            printf "| #%d | %s | %s | %s |\n" $rank "$name" "$col3" "$col4"
+          fi
+        }
+        
         cat > $SUMMARY_TMP << 'HEADER'
         # 📊 DictSQLite 全バージョン ベンチマーク結果
         
@@ -439,24 +476,38 @@ jobs:
         echo "> 実行日時: $(date '+%Y-%m-%d %H:%M:%S')" >> $SUMMARY_TMP
         echo "" >> $SUMMARY_TMP
         
-        # ====== スコアランキング ======
+        # ====== バージョン別総合ランキング（ポイント制） ======
+        POINTS_CSV="others/benchmark/results/v2_comprehensive/version_points.csv"
+        if [ -f "$POINTS_CSV" ]; then
+          cat >> $SUMMARY_TMP << 'POINTS_HEADER'
+        ## 🏆 バージョン別 総合ランキング
+        
+        各テストで1位=1点、2位=2点、3位=3点を付与（少ないほど良い）
+        
+        | Rank | Version | 総合ポイント | テスト数 | 平均ポイント |
+        |-----:|---------|-------------:|---------:|-------------:|
+        POINTS_HEADER
+          
+          tail -n +2 "$POINTS_CSV" | while IFS=, read -r rank version points tests avg; do
+            format_rank_5col "$rank" "$version" "$points" "$tests" "$avg" >> $SUMMARY_TMP
+          done
+          echo "" >> $SUMMARY_TMP
+        fi
+        
+        # ====== 構成別スコアランキング ======
         SCORES_CSV="others/benchmark/results/v2_comprehensive/benchmark_scores.csv"
         if [ -f "$SCORES_CSV" ]; then
           cat >> $SUMMARY_TMP << 'RANK_HEADER'
-        ## 🏆 パフォーマンスランキング
+        ## 📋 構成別パフォーマンスランキング
         
         | Rank | バージョン / モード | Score | Tests |
-        |-----:|---------------------|------:|------:|
+        |-----:|:--------------------|------:|------:|
         RANK_HEADER
           
           # 全結果を表示（最大30件）
-          tail -n +2 "$SCORES_CSV" | head -30 | awk -F, '{
-            rank=$1; name=$2; score=$3; tests=$4;
-            if(rank==1) printf "| **#%s 🥇** | **%s** | **%s** | %s |\n", rank, name, score, tests;
-            else if(rank==2) printf "| **#%s 🥈** | %s | %s | %s |\n", rank, name, score, tests;
-            else if(rank==3) printf "| **#%s 🥉** | %s | %s | %s |\n", rank, name, score, tests;
-            else printf "| #%s | %s | %s | %s |\n", rank, name, score, tests;
-          }' >> $SUMMARY_TMP
+          tail -n +2 "$SCORES_CSV" | head -30 | while IFS=, read -r rank name score tests; do
+            format_rank_4col "$rank" "$name" "$score" "$tests" >> $SUMMARY_TMP
+          done
           echo "" >> $SUMMARY_TMP
         fi
         
@@ -476,9 +527,9 @@ jobs:
           }' >> $SUMMARY_TMP
           echo "" >> $SUMMARY_TMP
           
-          # バージョン別統計
+          # バージョン別統計 - 全テスト平均
           cat >> $SUMMARY_TMP << 'VER_HEADER'
-        ## 📊 バージョン別 統計
+        ## 📊 バージョン別 統計（全テスト平均）
         
         | Version | テスト数 | 平均スコア | 最大 Ops/sec |
         |---------|-------:|----------:|-------------:|
@@ -492,6 +543,47 @@ jobs:
             ')
             if [ -n "$result" ]; then
               echo "| $version | $result |" >> $SUMMARY_TMP
+            fi
+          done
+          echo "" >> $SUMMARY_TMP
+          
+          # バージョン別最良構成の比較
+          cat >> $SUMMARY_TMP << 'BEST_CONFIG_HEADER'
+        ## 🥇 バージョン別 最良構成の比較
+        
+        各バージョンの最速構成のみを比較（公平な比較のため）
+        
+        | Version | 最良構成 | テスト数 | 平均スコア | 最大 Ops/sec |
+        |---------|---------|-------:|----------:|-------------:|
+        BEST_CONFIG_HEADER
+          
+          for version in "Original" "V2" "Fastest"; do
+            # 各バージョンで最も平均スコアが高い mode/storage 組み合わせを見つける
+            best_config=$(tail -n +2 "$DETAIL_CSV" | grep "^$version," | awk -F, '
+              {
+                if($8!="" && $10!="") {
+                  key=$4"/"$5
+                  score[key]+=$10
+                  count[key]++
+                  ops=$8+0
+                  if(ops>max_ops[key]) max_ops[key]=ops
+                }
+              }
+              END{
+                best_score=0
+                best_key=""
+                for(k in score) {
+                  avg=score[k]/count[k]
+                  if(avg>best_score) {
+                    best_score=avg
+                    best_key=k
+                  }
+                }
+                if(best_key!="") printf "%s | %d | %.1f | %.0f", best_key, count[best_key], best_score, max_ops[best_key]
+              }
+            ')
+            if [ -n "$best_config" ]; then
+              echo "| $version | $best_config |" >> $SUMMARY_TMP
             fi
           done
           echo "" >> $SUMMARY_TMP
