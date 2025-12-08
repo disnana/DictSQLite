@@ -536,27 +536,56 @@ def test_fastest_beta() -> List[TestResult]:
 
 
 def calculate_scores(results: List[TestResult]) -> List[TestResult]:
-    """全バージョン共通でスコア計算 - 公平な比較のため
+    """ランキングベースのスコア計算 - 各テストで1位、2位、3位を決める
     
-    各バージョンの最良構成のみを比較対象とする。
-    これにより、V2の複数モード/ストレージの遅い構成が平均を下げることを防ぐ。
+    各テスト(test_name + data_size)ごとに:
+    - 各バージョンの最速結果を取得
+    - 3バージョンを比較して順位を決定
+    - 1位=1点、2位=2点、3位=3点を付与（少ない方が良い）
     """
-    # まず全結果にスコアを計算（後で使用）
-    max_ops = {}
+    # ステップ1: 各バージョンの各テストでの最速結果を取得
+    version_best = {}
     for r in results:
-        key = f"{r.test_name}_{r.data_size}"
-        if key not in max_ops or r.ops_per_sec > max_ops[key]:
-            max_ops[key] = r.ops_per_sec
+        key = f"{r.version}_{r.test_name}_{r.data_size}"
+        if key not in version_best or r.ops_per_sec > version_best[key].ops_per_sec:
+            version_best[key] = r
     
-    # 全結果にスコアを付ける
+    # ステップ2: テストごとにバージョンをランク付け
+    test_rankings = {}
+    for key, result in version_best.items():
+        test_key = f"{result.test_name}_{result.data_size}"
+        if test_key not in test_rankings:
+            test_rankings[test_key] = []
+        test_rankings[test_key].append((result.version, result.ops_per_sec))
+    
+    # ステップ3: 各テストでランキングを計算
+    version_points = {}
+    for test_key, version_results in test_rankings.items():
+        # ops/secでソート（降順）
+        sorted_versions = sorted(version_results, key=lambda x: x[1], reverse=True)
+        # 順位を付与（1位=1点、2位=2点、3位=3点）
+        for rank, (version, _) in enumerate(sorted_versions, 1):
+            if version not in version_points:
+                version_points[version] = {"points": 0, "tests": 0}
+            version_points[version]["points"] += rank
+            version_points[version]["tests"] += 1
+    
+    # ステップ4: 全結果にスコアを付与
+    # 各結果に対して、そのバージョンの総合ポイントを記録
     for r in results:
-        key = f"{r.test_name}_{r.data_size}"
-        if max_ops.get(key, 0) > 0:
-            r.score = (r.ops_per_sec / max_ops[key]) * 100
+        if r.version in version_points:
+            # スコアは総合ポイントの逆数（低いほど良い→高いスコアに変換）
+            # 表示用に100点満点に正規化
+            total_points = version_points[r.version]["points"]
+            num_tests = version_points[r.version]["tests"]
+            # 平均ポイント: 1.0が最高、3.0が最低
+            avg_points = total_points / num_tests if num_tests > 0 else 3.0
+            # スコアに変換: 1.0→100点、2.0→50点、3.0→0点
+            r.score = max(0, 100 * (3.0 - avg_points) / 2.0)
         else:
             r.score = 0.0
     
-    return results
+    return results, version_points
 
 
 def generate_rankings(results: List[TestResult]) -> List[Dict]:
@@ -583,7 +612,7 @@ def generate_rankings(results: List[TestResult]) -> List[Dict]:
     return rankings
 
 
-def save_results(results: List[TestResult], rankings: List[Dict]):
+def save_results(results: List[TestResult], rankings: List[Dict], version_points: Dict):
     """結果を保存"""
     os.makedirs(RESULTS_DIR, exist_ok=True)
     os.makedirs(IMAGES_DIR, exist_ok=True)
@@ -604,6 +633,15 @@ def save_results(results: List[TestResult], rankings: List[Dict]):
         writer.writerow(["rank", "name", "avg_score", "tests"])
         for r in rankings:
             writer.writerow([r["rank"], r["name"], f"{r['avg_score']:.1f}", r["tests"]])
+    
+    # バージョン別ポイント集計を保存
+    with open(f"{RESULTS_DIR}/version_points.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["rank", "version", "total_points", "tests", "avg_points"])
+        sorted_versions = sorted(version_points.items(), key=lambda x: x[1]["points"])
+        for rank, (version, data) in enumerate(sorted_versions, 1):
+            avg_points = data["points"] / data["tests"] if data["tests"] > 0 else 0
+            writer.writerow([rank, version, data["points"], data["tests"], f"{avg_points:.2f}"])
     
     print(f"\n📊 結果を保存: {RESULTS_DIR}/")
 
@@ -745,11 +783,20 @@ def main():
         return
     
     # スコア計算
-    results = calculate_scores(results)
+    results, version_points = calculate_scores(results)
     rankings = generate_rankings(results)
     
+    # バージョン別ポイント集計を表示
+    print("\n" + "=" * 70)
+    print("🏆 バージョン別ランキングポイント（低いほど良い）")
+    print("=" * 70)
+    sorted_versions = sorted(version_points.items(), key=lambda x: x[1]["points"])
+    for rank, (version, data) in enumerate(sorted_versions, 1):
+        avg_points = data["points"] / data["tests"] if data["tests"] > 0 else 0
+        print(f"  #{rank} {version}: {data['points']}点 (平均: {avg_points:.2f}点, テスト数: {data['tests']})")
+    
     # 保存と表示
-    save_results(results, rankings)
+    save_results(results, rankings, version_points)
     generate_graphs(results, rankings)
     print_summary(results, rankings)
     
