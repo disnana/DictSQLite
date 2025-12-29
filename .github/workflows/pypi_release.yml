@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-    # 以下のファイル・ディレクトリが変更されたときだけ実行
     paths:
       - '.github/workflows/pypi_release.yml'
       - 'dictsqlite_v2/**'
@@ -17,47 +16,83 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: PyO3/maturin-action@v1
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          command: build
-          args: --release --out dist
-          # Cargo.toml があるディレクトリを指定（ここが重要）
-          working-directory: dictsqlite_v2
+          python-version: '3.9'
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Install maturin
+        run: pip install maturin
+      
+      - name: Build wheel
+        run: |
+          cd dictsqlite_v2/dictsqlite
+          maturin build --release --out dist
+          
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-linux
-          path: dictsqlite_v2/dist/*.whl
+          path: dictsqlite_v2/dictsqlite/dist/*.whl
 
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: PyO3/maturin-action@v1
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          command: build
-          args: --release --out dist
-          working-directory: dictsqlite_v2
+          python-version: '3.9'
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Install maturin
+        run: pip install maturin
+      
+      - name: Build wheel
+        run: |
+          cd dictsqlite_v2/dictsqlite
+          maturin build --release --out dist
+        shell: bash
+          
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-windows
-          path: dictsqlite_v2/dist/*.whl
+          path: dictsqlite_v2/dictsqlite/dist/*.whl
 
   macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: PyO3/maturin-action@v1
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          command: build
-          args: --release --out dist
-          working-directory: dictsqlite_v2
+          python-version: '3.9'
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Install maturin
+        run: pip install maturin
+      
+      - name: Build wheel
+        run: |
+          cd dictsqlite_v2/dictsqlite
+          maturin build --release --out dist
+          
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-macos
-          path: dictsqlite_v2/dist/*.whl
+          path: dictsqlite_v2/dictsqlite/dist/*.whl
 
   release:
     name: Release to PyPI
@@ -72,8 +107,8 @@ jobs:
           pattern: wheels-*
           merge-multiple: true
           path: dist
+          
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages_dir: dist
-          # skip_existing: true # すでに同じバージョンがある場合にエラーにしない設定（必要ならコメントアウト解除）
