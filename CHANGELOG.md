@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.9] - 2026-01-08
+
+### Changed
+- Internal code organization and cleanup for improved code quality and maintainability
+
+### Note
+- No functional changes or improvements
+- No performance impact
+- API remains identical to v2.0.8
+- Full backward compatibility with v2.0.8
+
+---
+
 ## [2.0.8] - 2026-01-03
 
 ### Added
