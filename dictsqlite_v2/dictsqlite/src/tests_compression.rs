@@ -128,7 +128,12 @@ fn test_compression_levels() {
         let retrieved = storage.get(key).unwrap();
 
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap(), value, "Failed at compression level {}", level);
+        assert_eq!(
+            retrieved.unwrap(),
+            value,
+            "Failed at compression level {}",
+            level
+        );
     }
 }
 
