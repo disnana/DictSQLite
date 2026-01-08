@@ -9,7 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.0.7] - 2025-12-07
+## [2.0.8] - 2026-01-03
+
+### Added
+- **ARM Package Distribution**: Pre-built packages for ARM64 (aarch64) and ARM32 (armv7l)
+- Windows on ARM (ARM64) package support
+- Multi-architecture CI/CD pipeline with GitHub Actions
+- Automated PyPI deployment for all architectures
+
+### Changed
+- PyPI package distribution now includes ARM architecture wheels
+- GitHub Actions automated build and release workflow
+
+### Improved
+- Installation on ARM platforms (no compilation needed)
+- Cross-platform deployment consistency
+
+### Note
+- Functionality and API remain identical across all architectures
+- Performance characteristics maintained from v2.0.7
+- ARM benchmark testing under consideration for future releases
+
+---
+
+## [2.0.7] - 2025-12-29
 
 ### Added
 - Updated dependencies to latest versions (pyo3 0.27.2, dashmap 6.1, tokio 1.42)
