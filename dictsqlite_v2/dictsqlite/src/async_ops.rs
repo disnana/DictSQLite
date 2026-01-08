@@ -19,9 +19,7 @@ static GLOBAL_RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
 /// グローバルTokio Runtimeを取得または初期化
 fn get_global_runtime() -> &'static Runtime {
-    GLOBAL_RUNTIME.get_or_init(|| {
-        Runtime::new().expect("Failed to create global Tokio runtime")
-    })
+    GLOBAL_RUNTIME.get_or_init(|| Runtime::new().expect("Failed to create global Tokio runtime"))
 }
 
 /// Async version of DictSQLite v4.2 for high-concurrency scenarios
@@ -102,10 +100,9 @@ impl AsyncDictSQLite {
         let storage = if config.persist_mode == PersistMode::Memory {
             Arc::new(None)
         } else {
-            Arc::new(Some(
-                StorageEngine::new(&db_path, &config)
-                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?,
-            ))
+            Arc::new(Some(StorageEngine::new(&db_path, &config).map_err(
+                |e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()),
+            )?))
         };
 
         // Initialize write buffer (v4.2 optimization)
@@ -1142,7 +1139,12 @@ impl AsyncTableProxy {
 
     /// Setdefault: Set key if not exists, return value (dict.setdefault())
     #[pyo3(signature = (key, default=None))]
-    fn setdefault(&self, key: String, default: Option<Py<PyAny>>, py: Python) -> PyResult<Py<PyAny>> {
+    fn setdefault(
+        &self,
+        key: String,
+        default: Option<Py<PyAny>>,
+        py: Python,
+    ) -> PyResult<Py<PyAny>> {
         match self.__getitem__(key.clone(), py) {
             Ok(value) => Ok(value),
             Err(_) => {

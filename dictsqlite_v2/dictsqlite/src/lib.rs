@@ -85,17 +85,15 @@ mod storage;
 
 // テスト用モジュール（テストビルド時のみコンパイル）
 #[cfg(test)]
+mod tests_compression; // v5.1: 圧縮機能テスト
+#[cfg(test)]
 mod tests_jsonb;
 #[cfg(test)]
 mod tests_lru;
 #[cfg(test)]
 mod tests_storage;
 #[cfg(test)]
-mod tests_compression; // v5.1: 圧縮機能テスト
-#[cfg(test)]
 mod tests_v6; // v6.0: API移行検証テスト
-
-
 
 // 公開APIのエクスポート
 // AsyncDictSQLite: 非同期版のDictSQLite（高並行シナリオ向け）
@@ -1396,7 +1394,11 @@ impl DictSQLiteV4 {
     ///
     /// # 戻り値
     /// キーと値のペアの辞書。見つからないキーは含まれません。
-    fn batch_get(&self, keys: Vec<String>, py: Python) -> PyResult<std::collections::HashMap<String, Py<PyAny>>> {
+    fn batch_get(
+        &self,
+        keys: Vec<String>,
+        py: Python,
+    ) -> PyResult<std::collections::HashMap<String, Py<PyAny>>> {
         let mut results = std::collections::HashMap::new();
         let mut cache_misses = Vec::new();
 
@@ -1449,9 +1451,9 @@ impl DictSQLiteV4 {
         for (key, value) in items {
             // 暗号化が有効な場合
             let data = if let Some(ref crypto) = self.crypto {
-                crypto.encrypt(&value).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
-                })?
+                crypto
+                    .encrypt(&value)
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?
             } else {
                 value
             };
@@ -2342,7 +2344,12 @@ impl TableProxy {
 
     /// Setdefault: Set key if not exists, return value (dict.setdefault())
     #[pyo3(signature = (key, default=None))]
-    fn setdefault(&self, key: String, default: Option<Py<PyAny>>, py: Python) -> PyResult<Py<PyAny>> {
+    fn setdefault(
+        &self,
+        key: String,
+        default: Option<Py<PyAny>>,
+        py: Python,
+    ) -> PyResult<Py<PyAny>> {
         match self.__getitem__(key.clone(), py) {
             Ok(value) => Ok(value),
             Err(_) => {
