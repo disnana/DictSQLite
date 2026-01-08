@@ -71,7 +71,6 @@ fn decompress_data(data: &[u8]) -> Vec<u8> {
     }
 }
 
-
 /// メモリtierの種類
 ///
 /// DictSQLiteの3層アーキテクチャを表す列挙型。
@@ -230,9 +229,7 @@ impl StorageEngine {
         drop(conn);
 
         // Warm tierキャッシュの初期化（v5最適化: DashMap）
-        let warm_cache = Arc::new(DashMap::with_capacity(
-            config.warm_tier_size / 1024,
-        ));
+        let warm_cache = Arc::new(DashMap::with_capacity(config.warm_tier_size / 1024));
 
         // v5最適化: アクセスカウントバッファ
         let access_count_buffer = Arc::new(DashMap::new());
@@ -401,7 +398,8 @@ impl StorageEngine {
     /// v5最適化: &selfに変更、DashMapを使用
     pub fn evict_warm_tier(&self) -> Result<usize> {
         // Warm tierから全アイテムを取得
-        let items: HashMap<String, Vec<u8>> = self.warm_cache
+        let items: HashMap<String, Vec<u8>> = self
+            .warm_cache
             .iter()
             .map(|r| (r.key().clone(), r.value().clone()))
             .collect();
@@ -434,7 +432,8 @@ impl StorageEngine {
         }
 
         // バッファからデータを取得してクリア
-        let counts: Vec<(String, u64)> = self.access_count_buffer
+        let counts: Vec<(String, u64)> = self
+            .access_count_buffer
             .iter()
             .map(|r| (r.key().clone(), *r.value()))
             .collect();
