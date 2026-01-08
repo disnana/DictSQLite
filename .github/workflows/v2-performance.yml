@@ -109,7 +109,7 @@ jobs:
           docker run --platform linux/arm64 --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace/dictsqlite_v2/dictsqlite \
-            rust:1.83-slim \
+            rustlang/rust:nightly \
             bash -c "
               apt-get update && apt-get install -y python3 python3-pip python3-venv build-essential &&
               python3 -m pip install --upgrade pip --break-system-packages &&
