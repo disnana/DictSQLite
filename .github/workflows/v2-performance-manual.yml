@@ -199,8 +199,7 @@ jobs:
             rustlang/rust:nightly \
             bash -c "
               apt-get update && apt-get install -y python3 python3-pip python3-venv build-essential &&
-              python3 -m pip install --upgrade pip --break-system-packages &&
-              python3 -m pip install maturin pytest pytest-asyncio --break-system-packages &&
+              python3 -m pip install --break-system-packages maturin pytest pytest-asyncio &&
               chmod +x build.sh &&
               ./build.sh &&
               python3 tests/test_v4.2_comprehensive_performance.py \
