@@ -16,13 +16,4 @@ jobs:
           command: check advisories bans licenses sources
           arguments: --all-features
 
-  cargo-deny-v4:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          log-level: warn
-          manifest-path: ./others/beta-versions/dictsqlite_v4.1/Cargo.toml
-          command: check advisories bans licenses sources
-          arguments: --all-features
+
