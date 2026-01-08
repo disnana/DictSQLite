@@ -80,6 +80,63 @@ jobs:
           path: dictsqlite_v2/dictsqlite/performance_results_*.json
           retention-days: 14
 
+  arm-benchmark:
+    name: ARM Performance Benchmark
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.11']
+        arch: ['aarch64', 'armv7']
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU for ARM emulation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/arm64,linux/arm/v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Run ARM benchmark in Docker
+        run: |
+          PLATFORM="linux/arm64"
+          ARCH_NAME="ARM64"
+          if [ "${{ matrix.arch }}" == "armv7" ]; then
+            PLATFORM="linux/arm/v7"
+            ARCH_NAME="ARM32"
+          fi
+          
+          echo "Running benchmark on $ARCH_NAME ($PLATFORM)"
+          
+          docker run --platform $PLATFORM --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace/dictsqlite_v2/dictsqlite \
+            python:${{ matrix.python-version }}-slim \
+            bash -c "
+              apt-get update && apt-get install -y curl build-essential &&
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y &&
+              . \$HOME/.cargo/env &&
+              pip install --upgrade pip &&
+              pip install maturin pytest pytest-asyncio &&
+              chmod +x build.sh &&
+              ./build.sh &&
+              python tests/test_v4.2_comprehensive_performance.py \
+                --iterations 3 \
+                --output /workspace/performance_results_${ARCH_NAME}_py${{ matrix.python-version }}.json
+            "
+
+      - name: Upload ARM performance results
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-results-${{ matrix.arch }}-py${{ matrix.python-version }}
+          path: performance_results_*.json
+          retention-days: 14
+
   security-check:
     name: Security and Code Quality
     runs-on: ubuntu-latest
