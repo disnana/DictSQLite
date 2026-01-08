@@ -10,18 +10,16 @@ jobs:
     strategy:
       matrix:
         project:
-          - path: ./dictsqlite_v2/dictsqlite
-            manifest: ./dictsqlite_v2/dictsqlite/Cargo.toml
-            config: ./dictsqlite_v2/dictsqlite/deny.toml
-          - path: ./others/beta-versions/dictsqlite_v4.1
-            manifest: ./others/beta-versions/dictsqlite_v4.1/Cargo.toml
-            config: ./others/beta-versions/dictsqlite_v4.1/deny.toml
+          - name: dictsqlite_v2
+            path: ./dictsqlite_v2/dictsqlite
+          - name: dictsqlite_v4.1
+            path: ./others/beta-versions/dictsqlite_v4.1
     steps:
       - uses: actions/checkout@v4
 
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           log-level: warn
-          manifest-path: ${{ matrix.project.manifest }}
+          manifest-path: ${{ matrix.project.path }}/Cargo.toml
           command: check advisories bans licenses sources
-          arguments: --all-features --config ${{ matrix.project.config }}
+          arguments: --all-features
