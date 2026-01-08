@@ -7,12 +7,21 @@ on:
 jobs:
   cargo-deny:
     runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        project:
+          - path: ./dictsqlite_v2/dictsqlite
+            manifest: ./dictsqlite_v2/dictsqlite/Cargo.toml
+            config: ./dictsqlite_v2/dictsqlite/deny.toml
+          - path: ./others/beta-versions/dictsqlite_v4.1
+            manifest: ./others/beta-versions/dictsqlite_v4.1/Cargo.toml
+            config: ./others/beta-versions/dictsqlite_v4.1/deny.toml
     steps:
       - uses: actions/checkout@v4
 
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           log-level: warn
-          manifest-path: ./others/beta-versions/dictsqlite_v4.1/Cargo.toml
+          manifest-path: ${{ matrix.project.manifest }}
           command: check advisories bans licenses sources
-          arguments: --all-features --config ./others/beta-versions/dictsqlite_v4.1/deny.toml
+          arguments: --all-features --config ${{ matrix.project.config }}
