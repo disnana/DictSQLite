@@ -14,5 +14,5 @@ jobs:
         with:
           log-level: warn
           manifest-path: ./others/beta-versions/dictsqlite_v4.1/Cargo.toml
-          command: check advisories bans sources
+          command: check advisories bans licenses sources
           arguments: --all-features
