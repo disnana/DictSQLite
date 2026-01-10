@@ -9,7 +9,7 @@ import time
 import uuid
 from typing import Dict, Any, Optional, Callable
 import websockets
-from websockets.client import WebSocketClientProtocol
+from websockets.asyncio.client import ClientConnection
 
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ class SyncClient:
         self.node_id = config.node_id or self._generate_node_id()
         
         # Connection state
-        self.websocket: Optional[WebSocketClientProtocol] = None
+        self.websocket: Optional[Any] = None
         self.connected = False
         self.remote_node_id: Optional[str] = None
         

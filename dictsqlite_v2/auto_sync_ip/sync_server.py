@@ -9,7 +9,7 @@ import time
 import uuid
 from typing import Dict, Set, Any, Optional
 import websockets
-from websockets.server import WebSocketServerProtocol
+from websockets.asyncio.server import ServerConnection
 
 
 logger = logging.getLogger(__name__)
@@ -36,8 +36,8 @@ class SyncServer:
         self.node_id = config.node_id or self._generate_node_id()
         
         # Connection management
-        self.connections: Set[WebSocketServerProtocol] = set()
-        self.connection_info: Dict[WebSocketServerProtocol, Dict[str, Any]] = {}
+        self.connections: Set[Any] = set()
+        self.connection_info: Dict[Any, Dict[str, Any]] = {}
         
         # Change tracking
         self.change_log: Dict[str, Dict[str, Any]] = {}
@@ -130,7 +130,7 @@ class SyncServer:
             if websocket in self.connection_info:
                 del self.connection_info[websocket]
     
-    async def process_message(self, websocket: WebSocketServerProtocol, data: Dict[str, Any]):
+    async def process_message(self, websocket: Any, data: Dict[str, Any]):
         """
         Process incoming message.
         
@@ -166,7 +166,7 @@ class SyncServer:
         else:
             logger.warning(f"Unknown message type: {msg_type}")
     
-    async def handle_sync_request(self, websocket: WebSocketServerProtocol, data: Dict[str, Any]):
+    async def handle_sync_request(self, websocket: Any, data: Dict[str, Any]):
         """Handle sync request from peer"""
         since_timestamp = data.get('since', 0.0)
         
@@ -181,7 +181,7 @@ class SyncServer:
         if changes:
             await self.send_changes(websocket, changes)
     
-    async def handle_changes(self, websocket: WebSocketServerProtocol, data: Dict[str, Any]):
+    async def handle_changes(self, websocket: Any, data: Dict[str, Any]):
         """
         Apply changes from remote node.
         
@@ -244,7 +244,7 @@ class SyncServer:
         
         logger.debug(f"Applied {applied_count} changes, {conflict_count} conflicts")
     
-    async def handle_get_missing(self, websocket: WebSocketServerProtocol, data: Dict[str, Any]):
+    async def handle_get_missing(self, websocket: Any, data: Dict[str, Any]):
         """
         Send all data and change history to help peer recover.
         
@@ -285,7 +285,7 @@ class SyncServer:
             await self.send_changes(websocket, changes)
             logger.info(f"Sent {len(changes)} changes for recovery (including deletions)")
     
-    async def send_changes(self, websocket: WebSocketServerProtocol, changes: Dict[str, Any]):
+    async def send_changes(self, websocket: Any, changes: Dict[str, Any]):
         """Send changes to peer in batches"""
         batch_size = self.config.batch_size
         change_items = list(changes.items())
@@ -300,7 +300,7 @@ class SyncServer:
                 'timestamp': time.time()
             })
     
-    async def send_message(self, websocket: WebSocketServerProtocol, data: Dict[str, Any]):
+    async def send_message(self, websocket: Any, data: Dict[str, Any]):
         """Send message to websocket"""
         try:
             message = self._encode_message(data)
@@ -308,7 +308,7 @@ class SyncServer:
         except Exception as e:
             logger.error(f"Error sending message: {e}")
     
-    async def send_error(self, websocket: WebSocketServerProtocol, error: str):
+    async def send_error(self, websocket: Any, error: str):
         """Send error message"""
         await self.send_message(websocket, {
             'type': 'error',
