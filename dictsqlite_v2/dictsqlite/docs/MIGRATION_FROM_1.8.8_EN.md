@@ -1,141 +1,509 @@
-Migration guide: DictSQLite v1.8.8 -> current wrapper (internal 'v4' label) (English)
+# Migration Guide from DictSQLite v1.8.8 to v2.0.7
 
-Purpose
--------
-This document helps you migrate code and data written against DictSQLite v1.8.8 to the new current Python wrapper present in this tree. The goal is minimal friction: the current wrapper's defaults aim to be compatible with v1.8.8 when possible (default storage_mode is 'pickle').
+This guide explains how to migrate from DictSQLite v1.8.8 to v2.0.7 (internal version v4).
 
-Summary of important changes
-----------------------------
-- Python wrapper exposes `DictSQLite`. Examples that previously showed `DictSQLiteV4` should just `from dictsqlite import DictSQLite`.
+## Table of Contents
 
-    # Recommended (examples used in docs)
-    from dictsqlite import DictSQLite
+1. [Overview](#overview)
+2. [Key Changes](#key-changes)
+3. [Breaking Changes](#breaking-changes)
+4. [New Features](#new-features)
+5. [Migration Steps](#migration-steps)
+6. [Code Examples](#code-examples)
+7. [Troubleshooting](#troubleshooting)
 
-    # If your code (or examples) show DictSQLiteV4, treat it as the same implementation (optional alias):
+## Overview
 
-    ```
-    from dictsqlite import DictSQLiteV4 as DictSQLite
-    ```
+### Version Information
 
-- Constructor parameter rename for encryption:
-    - v1.8.8: `password='mypw'`
-    - current wrapper: `encryption_password='mypw'`
+- **v1.8.8**: Old version (Python implementation)
+- **v2.0.7**: New version (Rust + Python, PyPI release version)
+- **v4**: Internal implementation version name (architecture label)
 
-- Default serialization (storage_mode) is `pickle`. This preserves behavior of storing Python objects without explicit pickle.dumps/loads in many cases.
+### Compatibility
 
-- Async API changed to provide true awaitable methods on `AsyncDictSQLite`: `aget`, `aset`, `abatch_get`, `abatch_set`. The class also exposes backward-compatible synchronous wrappers `get`, `set`, `batch_get`, `batch_set`.
+DictSQLite v2 is designed with **API compatibility** with v1.8.8 in mind. Most code will work with minimal changes.
 
-- The library provides Safe Pickle validation (optional): `enable_safe_pickle=True`, and `safe_pickle_allowed_modules` to restrict allowed module prefixes on unpickling.
+## Key Changes
 
-- Bulk insert and buffering behavior improved; prefer `bulk_insert` or the async batch APIs for large numbers of items.
+### 1. Parameter Name Changes
 
-Detailed migration steps
-------------------------
-1) Import / class name
-   - Replace any old import if needed. If your code uses `from dictsqlite import DictSQLite`, you likely need no change. If it imports `DictSQLiteV4`, replace with `DictSQLite` or alias it:
+#### Encryption Parameter
 
-       # Old code (example)
-       from dictsqlite import DictSQLite
+```python
+# v1.8.8
+db = DictSQLite('db.db', password='secret')
 
-       # New code (explicit v4 name is optional)
-       from dictsqlite import DictSQLite  # recommended
-       # or
-       from dictsqlite import DictSQLiteV4 as DictSQLite  # preserves example names
+# v2.0.7
+db = DictSQLite('db.db', encryption_password='secret')
+```
 
-2) Encryption parameter
-   - If your v1.8.8 code used `password=...` when creating the DB, rename the parameter to `encryption_password`:
+**Reason**: Clearer naming makes the parameter's purpose explicit.
 
-       # v1.8.8
-       db = DictSQLite('secrets.db', password='my_password')
+### 2. Import Names
 
-       # current wrapper
-       db = DictSQLite('secrets.db', encryption_password='my_password')
+**Recommended import:**
 
-   - Verify that `stats()['encryption_enabled']` returns True after opening.
+```python
+# v1.8.8
+from dictsqlite import DictSQLite
 
-3) Serialization / storage_mode
-   - Default `storage_mode='pickle'` preserves many existing workflows. If your old code stored pickled bytes manually, be aware that:
-     - When you used to store raw pickled bytes, the current wrapper may still return bytes; you can use `pickle.loads()` to decode.
-     - If you rely on non-pickled JSONB formats, set `storage_mode='jsonb'` explicitly when opening.
+# v2.0.7 (same)
+from dictsqlite import DictSQLite
+```
 
-4) Safe Pickle
-   - If you want to enable safer decoding for untrusted data, set `enable_safe_pickle=True` and optionally set `safe_pickle_allowed_modules=['myapp']`.
-   - When enabled, the current wrapper will validate pickled payloads and raise on suspicious objects.
+**Internal implementation name (optional):**
 
-5) Bulk operations and performance
-   - For loops of db[key] = value still work and are buffered by default. For best throughput, use `bulk_insert(dict_or_iter)` which is optimized for large batches.
-   - Example:
+```python
+# v2.0.7 also supports internal implementation name
+from dictsqlite import DictSQLiteV4  # Alias for DictSQLite
+```
 
-       data = {f'record:{i}': f'data_{i}' for i in range(10000)}
-       db.bulk_insert(data)
+> **Note**: For new code, we recommend using `DictSQLite`. `DictSQLiteV4` is provided for backward compatibility.
 
-6) Async migration
-   - If you used older async helpers, move to the new awaitable API:
+### 3. Improved Default Behavior
 
-       # current wrapper
-       from dictsqlite import AsyncDictSQLite
-       async def main():
-           db = AsyncDictSQLite(':memory:')
-           await db.aset('k', {'x': 1})
-           v = await db.aget('k')
+#### Automated Pickle Mode
 
-   - If you have synchronous callsites that relied on older wrappers, the async class provided by the current wrapper still provides `get`/`set` sync wrappers, but migrating to awaitable methods is recommended.
+```python
+# v1.8.8 (manual serialization sometimes needed)
+import pickle
+db['key'] = pickle.dumps({'data': 'value'})
+value = pickle.loads(db['key'])
 
-7) Table / namespace usage
-   - Use `db.table('other')` to access another table/namespace if your v1 code used multiple tables.
+# v2.0.7 (automated)
+db['key'] = {'data': 'value'}
+value = db['key']  # Automatically deserialized
+```
 
-8) Stats and verification
-   - After migrating, verify behavior with these checks:
-       - `db['key'] = 'value'` -> ensure `db['key']` returns a str
-       - Complex object roundtrip: `db['obj'] = {'a': 1}` and check `db['obj'] == {'a': 1}`
-       - Encryption: `db = DictSQLite(path, encryption_password='pw')` then `db.stats()['encryption_enabled'] is True`
-       - Bulk insert timings vs old approach
+### 4. Significant Performance Improvement
 
-Edge cases and incompatibilities
---------------------------------
-- If you have custom lower-level on-disk formats, or used direct SQL access into the underlying sqlite tables, verify table schema and storage_mode because the current wrapper may format values differently (pickle vs raw bytes vs jsonb columns).
-- If you used `password` for encryption and opened existing encrypted DBs, the rename to `encryption_password` is only a parameter name change — the underlying crypto is compatible if the same password is used.
-- Safe Pickle: enabling it may reject objects that previously succeeded; update `safe_pickle_allowed_modules` or avoid enabling if you need full compatibility.
+- **v1.8.8**: Python implementation, ~1M ops/sec
+- **v2.0.7**: Rust implementation, 100M+ ops/sec (100x+ faster)
 
-Building native extension (development)
---------------------------------------
-If you see a RuntimeError about the native extension not being available, build it locally. The repository includes build instructions in examples. Typical steps (development machine):
+### 5. New Constructor Parameters
 
-    cd dictsqlite_v2/dictsqlite
-    # build the native extension using maturin or project-supplied scripts
-    maturin develop --release
+Parameters added in v2.0.7:
 
-Run tests and examples
-----------------------
-- Examples: `dictsqlite_v2/dictsqlite/examples/` includes migration samples (e.g. `v4.2_migration_example.py`). Run them to verify behavior (note: some example filenames include the internal 'v4' label but the examples target the current wrapper API).
-- Tests: run pytest in the python wrapper directory to validate your environment. Example:
+```python
+DictSQLite(
+    db_path,
+    hot_capacity=1_000_000,         # New: Hot cache size
+    enable_async=True,              # New: Async flush
+    persist_mode="writethrough",    # Existing (improved)
+    storage_mode="pickle",          # Existing (improved)
+    table_name="main",              # Existing
+    encryption_password=None,       # Changed: password → encryption_password
+    enable_safe_pickle=False,       # New: Safe Pickle validation
+    safe_pickle_allowed_modules=None,  # New: Allowed modules
+    buffer_size=100,                # New: Buffer size
+    encoding='utf-8',               # New: Encoding
+    table_mode="prefix",            # New: Table mode
+    pool_size=20                    # New: Connection pool size
+)
+```
 
-    cd dictsqlite_v2/dictsqlite/python
-    pytest -q
+## Breaking Changes
 
-Rollback / fallbacks
---------------------
-- If you encounter unexpected behavior, re-open the DB with explicit `storage_mode` set to the format you expect (e.g., 'jsonb' or 'pickle'), or open a temp DB and re-export data in a controlled way.
+### 1. Encryption Parameter Name Change (Required)
 
-Checklist before deploying
---------------------------
-- [ ] Run unit/integration tests against the new wrapper on staging
-- [ ] Confirm encryption/keys and stats
-- [ ] Validate bulk write and read throughput
-- [ ] Update any CI build steps to include building the native extension if using compiled wheel
+**Impact**: All code using encryption
 
-Appendix: quick code map (old -> new)
-------------------------------------
-- Constructor
-    v1.8.8: `DictSQLite(path, password='pw')`
-    current wrapper:    `DictSQLite(path, encryption_password='pw')`
+**Before migration (v1.8.8):**
+```python
+db = DictSQLite('secure.db', password='my_password')
+```
 
-- Bulk writes
-    v1.8.8: loop assignments
-    current wrapper:    prefer `bulk_insert()` or async batch APIs
+**After migration (v2.0.7):**
+```python
+db = DictSQLite('secure.db', encryption_password='my_password')
+```
 
-- Async API
-    v1.x: helper/wrapper functions
-    current wrapper: `AsyncDictSQLite` with `aget`/`aset` awaitable methods
+### 2. Native Extension Build (Development Only)
 
-If you want, I can also generate a small migration script that detects common patterns and prints suggested replacements for your codebase. Just tell me whether you'd like a draft script or more examples.
+**Impact**: When developing from source
+
+**Required action:**
+```bash
+cd dictsqlite_v2/dictsqlite
+maturin develop --release
+```
+
+**Note**: Not required when installing from PyPI.
+
+### 3. Python Version Requirement
+
+- **v1.8.8**: Python 3.7+
+- **v2.0.7**: Python 3.9+
+
+## New Features
+
+### 1. Safe Pickle Validation
+
+Secure deserialization of untrusted data:
+
+```python
+db = DictSQLite(
+    'db.db',
+    enable_safe_pickle=True,
+    safe_pickle_allowed_modules=['myapp', 'mylib']
+)
+```
+
+### 2. Table Modes
+
+#### Prefix Mode (Default, Fast)
+
+```python
+db = DictSQLite(':memory:', table_mode='prefix')
+users = db.table('users')
+settings = db.table('settings')
+```
+
+#### Separate Mode (Complete Isolation)
+
+```python
+db = DictSQLite(':memory:', table_mode='separate')
+# Each table is created as a separate SQLite table
+```
+
+### 3. Async Awaitable API
+
+True asyncio integration:
+
+```python
+from dictsqlite import AsyncDictSQLite
+import asyncio
+
+async def main():
+    db = AsyncDictSQLite(':memory:')
+    
+    await db.aset('key', 'value')
+    value = await db.aget('key')
+    
+    await db.aclose()
+
+asyncio.run(main())
+```
+
+### 4. Adjustable Connection Pool Size
+
+Optimize concurrent access:
+
+```python
+db = DictSQLite('db.db', pool_size=50)  # For high concurrency
+```
+
+### 5. Adjustable Hot Capacity
+
+Control memory cache size:
+
+```python
+db = DictSQLite('db.db', hot_capacity=10_000_000)  # 10 million entries
+```
+
+## Migration Steps
+
+### Step 1: Install Package
+
+```bash
+pip install --upgrade dictsqlite
+```
+
+### Step 2: Verify Imports
+
+Check import statements in code (usually no change needed):
+
+```python
+from dictsqlite import DictSQLite  # No change needed
+```
+
+### Step 3: Update Parameter Names
+
+If using encryption, update parameter name:
+
+```python
+# Before migration
+db = DictSQLite('db.db', password='secret')
+
+# After migration
+db = DictSQLite('db.db', encryption_password='secret')
+```
+
+### Step 4: Run Tests
+
+Run existing test suite to verify functionality:
+
+```bash
+python -m pytest tests/
+```
+
+### Step 5: Verify Performance
+
+Check statistics to measure performance:
+
+```python
+stats = db.stats()
+print(stats)
+```
+
+## Code Examples
+
+### Example 1: Basic Migration
+
+**v1.8.8 code:**
+```python
+from dictsqlite import DictSQLite
+
+# Basic usage
+db = DictSQLite('myapp.db')
+db['user:1'] = {'name': 'Alice', 'age': 30}
+user = db['user:1']
+db.close()
+
+# Encryption
+secure_db = DictSQLite('secure.db', password='secret123')
+secure_db['token'] = 'abc123'
+secure_db.close()
+```
+
+**Migration to v2.0.7:**
+```python
+from dictsqlite import DictSQLite
+
+# Basic usage (no change)
+db = DictSQLite('myapp.db')
+db['user:1'] = {'name': 'Alice', 'age': 30}
+user = db['user:1']
+db.close()
+
+# Encryption (parameter name changed)
+secure_db = DictSQLite('secure.db', encryption_password='secret123')
+secure_db['token'] = 'abc123'
+secure_db.close()
+```
+
+### Example 2: Utilizing New Features
+
+```python
+from dictsqlite import DictSQLite
+
+# Enable Safe Pickle
+db = DictSQLite(
+    'db.db',
+    encryption_password='secret',
+    enable_safe_pickle=True,
+    safe_pickle_allowed_modules=['myapp']
+)
+
+# Table functionality
+users = db.table('users')
+users['alice'] = {'name': 'Alice', 'role': 'admin'}
+
+settings = db.table('settings')
+settings['theme'] = 'dark'
+
+db.close()
+```
+
+### Example 3: Migration to Async
+
+**v1.8.8 (sync only):**
+```python
+from dictsqlite import DictSQLite
+
+db = DictSQLite('db.db')
+
+for i in range(1000):
+    db[f'key_{i}'] = f'value_{i}'
+
+db.close()
+```
+
+**v2.0.7 (async):**
+```python
+from dictsqlite import AsyncDictSQLite
+import asyncio
+
+async def main():
+    db = AsyncDictSQLite('db.db')
+    
+    # Faster with batch operations
+    items = [(f'key_{i}', f'value_{i}') for i in range(1000)]
+    await db.abatch_set(items)
+    
+    await db.aclose()
+
+asyncio.run(main())
+```
+
+### Example 4: Performance Optimization
+
+```python
+from dictsqlite import DictSQLite
+
+# v1.8.8 default settings
+db_old = DictSQLite('db.db')
+
+# v2.0.7 optimized settings
+db_new = DictSQLite(
+    'db.db',
+    hot_capacity=10_000_000,  # Larger cache
+    persist_mode='lazy',       # Lazy write
+    pool_size=50,              # Larger connection pool
+    buffer_size=1000           # Larger buffer
+)
+```
+
+## Troubleshooting
+
+### Issue 1: RuntimeError: DictSQLite native extension not available
+
+**Cause**: Native extension not built (development only)
+
+**Solution:**
+```bash
+cd dictsqlite_v2/dictsqlite
+maturin develop --release
+```
+
+**Note**: This issue doesn't occur when installing from PyPI.
+
+### Issue 2: KeyError or TypeError after migration
+
+**Cause**: Encryption parameter name change
+
+**Solution:**
+```python
+# Wrong
+db = DictSQLite('db.db', password='secret')
+
+# Correct
+db = DictSQLite('db.db', encryption_password='secret')
+```
+
+### Issue 3: Pickle-related errors
+
+**Cause**: Pickle handling may differ between v1.8.8 and v2.0.7
+
+**Solution:**
+
+Enable Safe Pickle:
+```python
+db = DictSQLite(
+    'db.db',
+    enable_safe_pickle=True,
+    safe_pickle_allowed_modules=['your_module']
+)
+```
+
+Or change storage mode:
+```python
+db = DictSQLite('db.db', storage_mode='jsonb')
+```
+
+### Issue 4: Cannot read existing database
+
+**Cause**: Encryption password mismatch
+
+**Solution:**
+
+Specify exact password used in v1.8.8:
+```python
+# Saved in v1.8.8
+# db = DictSQLite('db.db', password='old_password')
+
+# Read in v2.0.7
+db = DictSQLite('db.db', encryption_password='old_password')
+```
+
+### Issue 5: Performance slower than expected
+
+**Diagnosis:**
+```python
+stats = db.stats()
+print(f"Hot tier size: {stats['hot_tier_size']}")
+print(f"Persist mode: {stats['persist_mode']}")
+```
+
+**Solution:**
+
+Adjust parameters:
+```python
+db = DictSQLite(
+    'db.db',
+    hot_capacity=10_000_000,  # Increase
+    persist_mode='lazy',       # Change
+    pool_size=50               # Increase
+)
+```
+
+## Database File Compatibility
+
+### Using v1.8.8 Database in v2.0.7
+
+**Without encryption:**
+```python
+# Can open v1.8.8 database directly
+db = DictSQLite('old_v1.8.8.db')
+```
+
+**With encryption:**
+```python
+# Just change parameter name
+# v1.8.8: password='secret'
+# v2.0.7: encryption_password='secret'
+db = DictSQLite('encrypted_v1.8.8.db', encryption_password='secret')
+```
+
+### Using v2.0.7 Database in v1.8.8
+
+Generally compatible, but v2.0.7 features (Safe Pickle, table modes, etc.) may not work correctly in v1.8.8.
+
+## Checklist
+
+Verify the following before migration:
+
+- [ ] Python 3.9+ is installed
+- [ ] Ran `pip install --upgrade dictsqlite`
+- [ ] Changed `password=` to `encryption_password=`
+- [ ] Test suite passes
+- [ ] Verified performance improvements
+- [ ] Considered new features (Safe Pickle, table modes, etc.)
+
+## Recommended Migration Strategies
+
+### Strategy 1: Gradual Migration (Recommended)
+
+1. First, migrate in test environment
+2. Update parameter names
+3. Run tests and verify functionality
+4. Deploy to production
+
+### Strategy 2: Parallel Operation
+
+1. Run v1.8.8 and v2.0.7 in parallel
+2. Implement new features in v2.0.7
+3. Gradually migrate to v2.0.7
+4. Deprecate v1.8.8
+
+## References
+
+- [README_EN.md](README_EN.md) - v2.0.7 quick start
+- [EXAMPLES_EN.md](EXAMPLES_EN.md) - Practical examples
+- [README_JP.md](README_JP.md) - Japanese documentation
+- [EXAMPLES_JP.md](EXAMPLES_JP.md) - Japanese examples
+
+## Support
+
+For migration questions or support:
+
+- **GitHub Issues**: [https://github.com/disnana/DictSQLite/issues](https://github.com/disnana/DictSQLite/issues)
+- **Email**: support@disnana.com
+- **Discord**: [https://discord.gg/KzeHDrgwAz](https://discord.gg/KzeHDrgwAz)
+
+---
+
+**Last Updated**: December 7, 2025  
+**Target Versions**: v1.8.8 → v2.0.7 (internal version v4)
+

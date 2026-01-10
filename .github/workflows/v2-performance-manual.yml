@@ -167,6 +167,61 @@ jobs:
             dictsqlite_v2/dictsqlite/v2_results.json
           retention-days: 30
 
+  arm-benchmark:
+    name: ARM Performance Benchmark
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [aarch64]
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build ARM64 wheel with maturin
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          working-directory: dictsqlite_v2/dictsqlite
+          manylinux: auto
+
+      - name: Set up QEMU for ARM emulation (test only)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/arm64
+
+      - name: Run ARM benchmark in Docker
+        run: |
+          echo "Running benchmark on ARM64 (linux/arm64)"
+          
+          docker run --platform linux/arm64 --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            python:3.11-slim \
+            bash -c "
+              apt-get update && apt-get install -y python3-pip &&
+              pip install --break-system-packages pytest pytest-asyncio &&
+              pip install --break-system-packages /workspace/dictsqlite_v2/dictsqlite/dist/*.whl &&
+              cd /workspace/dictsqlite_v2/dictsqlite &&
+              python3 tests/test_v4.2_comprehensive_performance.py \
+                --iterations ${{ github.event.inputs.iterations || '1' }} \
+                --output /workspace/performance_results_ARM64_py3.11.json
+            "
+
+      - name: Upload ARM performance results
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-results-${{ matrix.target }}-py3.11
+          path: performance_results_*.json
+          retention-days: 30
+
   security-check:
     name: Security and Code Quality
     runs-on: ubuntu-latest

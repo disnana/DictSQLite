@@ -428,32 +428,12 @@ fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
 }
 ```
 
-```rust
-// Option B: Bincode使用（最速だが標準形式ではない）
-use bincode;
-
-fn __setitem__(&self, key: String, value: PyObject, py: Python) -> PyResult<()> {
-    let data: Vec<u8> = match self.config.storage_mode {
-        StorageMode::JsonB => {
-            let json_value = pythonobj_to_serde_value(value, py)?;
-            
-            // Bincodeでバイナリシリアライズ（最速）
-            bincode::serialize(&json_value)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?
-        },
-        // ...
-    };
-    // ...
-}
-```
-
 **パフォーマンス比較:**
 
 | 形式 | 書き込み速度 | 読み込み速度 | サイズ | 互換性 | 可読性 |
 |------|------------|------------|--------|--------|--------|
 | JSON (text) | 85-90% | 80-85% | 100% | ★★★★★ | ★★★★★ |
 | JSONB (MessagePack) | **95-98%** | **95-98%** | 70-80% | ★★★★☆ | ☆☆☆☆☆ |
-| JSONB (Bincode) | **98-100%** | **98-100%** | 60-70% | ★★☆☆☆ | ☆☆☆☆☆ |
 | Pickle | 95-98% | 95-98% | 80-120% | ★★★☆☆ | ☆☆☆☆☆ |
 
 **推奨実装: MessagePack（rmp-serde）**

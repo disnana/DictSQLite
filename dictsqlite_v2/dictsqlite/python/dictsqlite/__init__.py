@@ -17,22 +17,25 @@ import logging
 # __init__ as a top-level module (no package context), a relative import fails
 # with "attempted relative import with no known parent package". Use a robust
 # strategy: try relative import first, then fall back to importing
-# 'modules.safe_pickle' (works when current dir is on sys.path), and finally
-# try 'dictsqlite.modules.safe_pickle' as a last resort.
+# 'dictsqlite.modules.safe_pickle' (works when package is installed), and finally
+# try 'modules.safe_pickle' as a last resort (works when current dir is on sys.path).
 try:
     from .modules import safe_pickle  # normal package-relative import
 except Exception:
     import importlib
     try:
-        safe_pickle = importlib.import_module('modules.safe_pickle')
+        safe_pickle = importlib.import_module('dictsqlite.modules.safe_pickle')
     except Exception:
-        raise
+        try:
+            safe_pickle = importlib.import_module('modules.safe_pickle')
+        except Exception:
+            raise
 
 logger = logging.getLogger(__name__)
 
 
 class Modes:
-    """Persistence and Storage Modes"""
+    """Persistence, Storage, and Table Modes"""
 
     # Persistence Modes
     MEMORY = "memory"          # All data in memory, no persistence
@@ -44,6 +47,10 @@ class Modes:
     JSONB = "jsonb"            # Use JSONB for serialization (PostgreSQL compatible)
     BYTES = "bytes"
     JSON = "json"              # Use JSON for serialization
+
+    # Table Modes
+    TABLE_PREFIX = "prefix"    # Use key prefixes for table isolation (default)
+    TABLE_SEPARATE = "separate"  # Use separate SQLite tables for complete isolation
 
 
 class DictSQLite:
@@ -74,7 +81,9 @@ class DictSQLite:
         enable_safe_pickle=False,
         safe_pickle_allowed_modules=None,
         buffer_size=100,
-        encoding='utf-8'
+        encoding='utf-8',
+        table_mode="prefix",
+        pool_size=20
     ):
         """
         Initialize DictSQLite v4.0
@@ -93,6 +102,11 @@ class DictSQLite:
             buffer_size: Buffer size for async operations (default: 100)
             encoding: Character encoding for string conversion (default: 'utf-8')
                      Strings are automatically encoded using this encoding
+            table_mode: Table isolation mode (default: "prefix")
+                       - "prefix": Use key prefixes for table isolation (current behavior)
+                       - "separate": Use separate SQLite tables for complete isolation
+            pool_size: Connection pool size for SQLite (default: 20)
+                      Determines the maximum number of concurrent database connections
         """
         if not _NATIVE_AVAILABLE:
             raise RuntimeError(
@@ -116,7 +130,9 @@ class DictSQLite:
             encryption_password,
             enable_safe_pickle,
             safe_pickle_allowed_modules,
-            buffer_size
+            buffer_size,
+            table_mode,
+            pool_size
         )
         # Python-side safe_pickle control: when native extension isn't performing
         # safe unpickle checks (or when we prefer Python-side checking), honor
@@ -186,17 +202,6 @@ class DictSQLite:
             return self._db.__getitem__(str(key))
         except KeyError:
             return default
-
-        # Same as __getitem__: when safe_pickle enabled, return raw bytes
-        # so caller can explicitly unpickle. Validation happens on write.
-        if isinstance(result, (bytes, bytearray)):
-            if self._enable_safe_pickle or result[:1] in (b'\x80', b'\x00'):
-                return result
-            try:
-                return result.decode(self._encoding)
-            except Exception:
-                return result
-        return result
 
     def keys(self):
         """Get all keys"""
@@ -297,6 +302,37 @@ class DictSQLite:
         """Flush hot tier to storage"""
         self._db.flush()
 
+    def batch_get(self, keys):
+        """Batch get multiple keys at once
+        
+        Args:
+            keys: List of keys to retrieve
+            
+        Returns:
+            Dict mapping keys to values (missing keys are omitted)
+        """
+        return self._db.batch_get([str(k) for k in keys])
+
+    def batch_set(self, items):
+        """Batch set multiple key-value pairs at once
+        
+        Args:
+            items: List of (key, value) tuples or dict
+        """
+        if isinstance(items, dict):
+            items = items.items()
+        
+        prepared = []
+        for key, value in items:
+            if isinstance(value, str):
+                value = value.encode('utf-8')
+            elif not isinstance(value, bytes):
+                import pickle
+                value = pickle.dumps(value)
+            prepared.append((str(key), value))
+        
+        self._db.batch_set(prepared)
+
     def close(self):
         """Close database and flush all data"""
         if not self._closed:
@@ -341,7 +377,8 @@ class AsyncDictSQLite:
     """
 
     def __init__(self, db_path, capacity=1_000_000, persist_mode="lazy",
-                 storage_mode="pickle", table_name="main", buffer_size=100):
+                 storage_mode="pickle", table_name="main", buffer_size=100,
+                 table_mode="prefix"):
         """
         Initialize Async DictSQLite
 
@@ -352,6 +389,9 @@ class AsyncDictSQLite:
             storage_mode: "pickle", "json", "jsonb", or "bytes"
             table_name: Default table name for operations
             buffer_size: Write buffer size for batching (default: 100)
+            table_mode: Table isolation mode (default: "prefix")
+                       - "prefix": Use key prefixes for table isolation (current behavior)
+                       - "separate": Use separate SQLite tables for complete isolation
         """
         if not _NATIVE_AVAILABLE:
             raise RuntimeError(
@@ -364,7 +404,8 @@ class AsyncDictSQLite:
             buffer_size = 1
 
         self._db = _NativeAsyncDictSQLite(
-            db_path, capacity, persist_mode, storage_mode, table_name, buffer_size
+            db_path, capacity, persist_mode, storage_mode, table_name, buffer_size,
+            table_mode
         )
         self._storage_mode = storage_mode
         self._closed = False
@@ -394,8 +435,8 @@ class AsyncDictSQLite:
         if self._storage_mode == "bytes":
             return result
         elif self._storage_mode == "pickle":
-            import pickle
-            return pickle.loads(result)
+            import pickle  # nosec B403 - pickle used for internal data serialization
+            return pickle.loads(result)  # nosec B301 - safe_pickle available for untrusted data
         elif self._storage_mode in ("json", "jsonb"):
             if self._storage_mode == "jsonb":
                 import msgpack

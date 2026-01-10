@@ -19,8 +19,8 @@ jobs:
       - uses: actions/checkout@v4
       
       - uses: actions-rust-lang/audit@v1
-        name: Audit Rust Dependencies
+        name: Audit Rust Dependencies (v2)
         with:
-          workingDirectory: ./others/beta-versions/dictsqlite_v4.1
+          workingDirectory: ./dictsqlite_v2/dictsqlite
           # 必要に応じて無視するアドバイザリを指定
           # ignore: RUSTSEC-2020-0036

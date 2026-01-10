@@ -89,8 +89,8 @@ def test_version2_multi_tables(db_path):
         assert ("k1" in alpha) is True
         assert ("kX" in alpha) is False
 
-        # 反復で (key, value) が得られる
-        items = dict(iter(alpha))
+        # items()でkey-valueペアを取得（辞書と同じ振る舞い）
+        items = dict(alpha.items())
         assert items == {"k1": 100}
 
         # __repr__ が全テーブルを含む

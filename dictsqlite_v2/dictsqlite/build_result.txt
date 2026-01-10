@@ -1,0 +1,352 @@
+   Compiling pyo3-build-config v0.27.2
+   Compiling hashbrown v0.14.5
+   Compiling hashlink v0.9.1
+   Compiling dashmap v6.1.0
+   Compiling rusqlite v0.31.0
+   Compiling pyo3-ffi v0.27.2
+   Compiling pyo3-macros-backend v0.27.2
+   Compiling pyo3 v0.27.2
+   Compiling r2d2_sqlite v0.24.0
+   Compiling pyo3-macros v0.27.2
+   Compiling pythonize v0.27.0
+   Compiling dictsqlite v2.0.7 (C:\Users\msi-z\Downloads\譁ｰ縺励＞繝輔か繝ｫ繝繝ｼ\繝励Ο繧ｸ繧ｧ繧ｯ繝・ode\DictSQLite\dictsqlite_v2\dictsqlite)
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+   --> src\lib.rs:119:13
+    |
+119 |     policy: PyObject,
+    |             ^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+   --> src\lib.rs:317:32
+    |
+317 | fn pyobject_to_json_value(obj: PyObject, py: Python) -> PyResult<serde_json::Value> {
+    |                                ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+   --> src\lib.rs:391:77
+    |
+391 | fn json_value_to_pyobject(value: serde_json::Value, py: Python) -> PyResult<PyObject> {
+    |                                                                             ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+   --> src\lib.rs:275:62
+    |
+275 |     pub fn validate_and_load(&self, data: &[u8]) -> PyResult<PyObject> {
+    |                                                              ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+   --> src\lib.rs:985:82
+    |
+985 |     fn get(&self, key: String, default: Option<Vec<u8>>, py: Python) -> PyResult<PyObject> {
+    |                                                                                  ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:1374:58
+     |
+1374 |     fn items(&self, py: Python) -> PyResult<Vec<(String, PyObject)>> {
+     |                                                          ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:1399:33
+     |
+1399 |         let items: Vec<(String, PyObject)> = all_items
+     |                                 ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:1414:50
+     |
+1414 |     fn values(&self, py: Python) -> PyResult<Vec<PyObject>> {
+     |                                                  ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:1439:25
+     |
+1439 |         let values: Vec<PyObject> = all_items
+     |                         ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:1460:82
+     |
+1460 |     fn pop(&self, key: String, default: Option<Vec<u8>>, py: Python) -> PyResult<PyObject> {
+     |                                                                                  ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:1500:81
+     |
+1500 |     fn setdefault(&self, key: String, default: Vec<u8>, py: Python) -> PyResult<PyObject> {
+     |                                                                                 ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:1656:45
+     |
+1656 |     fn stats(&self, py: Python) -> PyResult<PyObject> {
+     |                                             ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:1668:64
+     |
+1668 |     fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
+     |                                                                ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:1739:47
+     |
+1739 |     fn __setitem__(&self, key: String, value: PyObject, py: Python) -> PyResult<()> {
+     |                                               ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:1883:64
+     |
+1883 |     fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
+     |                                                                ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:1985:47
+     |
+1985 |     fn __setitem__(&self, key: String, value: PyObject, py: Python) -> PyResult<()> {
+     |                                               ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:2169:50
+     |
+2169 |     fn values(&self, py: Python) -> PyResult<Vec<PyObject>> {
+     |                                                  ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:2179:58
+     |
+2179 |     fn items(&self, py: Python) -> PyResult<Vec<(String, PyObject)>> {
+     |                                                          ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:2190:48
+     |
+2190 |     fn get(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+     |                                                ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:2190:83
+     |
+2190 |     fn get(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+     |                                                                                   ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:2199:48
+     |
+2199 |     fn pop(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+     |                                                ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:2199:83
+     |
+2199 |     fn pop(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+     |                                                                                   ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:2217:55
+     |
+2217 |     fn setdefault(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+     |                                                       ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:2217:90
+     |
+2217 |     fn setdefault(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+     |                                                                                          ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:2325:29
+     |
+2325 |     fn __eq__(&self, other: PyObject, py: Python) -> PyResult<bool> {
+     |                             ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\lib.rs:2360:64
+     |
+2360 |             let other_map: std::collections::HashMap<&String, &PyObject> =
+     |                                                                ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+   --> src\async_ops.rs:120:69
+    |
+120 |     fn get_async(&self, key: String, py: Python) -> PyResult<Option<PyObject>> {
+    |                                                                     ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+   --> src\async_ops.rs:192:79
+    |
+192 |     fn batch_get(&self, keys: Vec<String>, py: Python) -> PyResult<Vec<Option<PyObject>>> {
+    |                                                                               ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+   --> src\async_ops.rs:624:64
+    |
+624 |     fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
+    |                                                                ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+   --> src\async_ops.rs:674:47
+    |
+674 |     fn __setitem__(&self, key: String, value: PyObject, py: Python) -> PyResult<()> {
+    |                                               ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+   --> src\async_ops.rs:801:64
+    |
+801 |     fn __getitem__(&self, key: String, py: Python) -> PyResult<PyObject> {
+    |                                                                ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+   --> src\async_ops.rs:887:47
+    |
+887 |     fn __setitem__(&self, key: String, value: PyObject, py: Python) -> PyResult<()> {
+    |                                               ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\async_ops.rs:1047:58
+     |
+1047 |     fn items(&self, py: Python) -> PyResult<Vec<(String, PyObject)>> {
+     |                                                          ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\async_ops.rs:1057:50
+     |
+1057 |     fn values(&self, py: Python) -> PyResult<Vec<PyObject>> {
+     |                                                  ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\async_ops.rs:1068:48
+     |
+1068 |     fn get(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+     |                                                ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\async_ops.rs:1068:83
+     |
+1068 |     fn get(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+     |                                                                                   ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\async_ops.rs:1115:48
+     |
+1115 |     fn pop(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+     |                                                ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\async_ops.rs:1115:83
+     |
+1115 |     fn pop(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+     |                                                                                   ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\async_ops.rs:1133:55
+     |
+1133 |     fn setdefault(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+     |                                                       ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\async_ops.rs:1133:90
+     |
+1133 |     fn setdefault(&self, key: String, default: Option<PyObject>, py: Python) -> PyResult<PyObject> {
+     |                                                                                          ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\async_ops.rs:1240:29
+     |
+1240 |     fn __eq__(&self, other: PyObject, py: Python) -> PyResult<bool> {
+     |                             ^^^^^^^^
+
+warning: use of deprecated type alias `pyo3::PyObject`: use `Py<PyAny>` instead
+    --> src\async_ops.rs:1275:64
+     |
+1275 |             let other_map: std::collections::HashMap<&String, &PyObject> =
+     |                                                                ^^^^^^^^
+
+warning: use of deprecated method `pyo3::Python::<'py>::allow_threads`: use `Python::detach` instead
+   --> src\async_ops.rs:124:25
+    |
+124 |         let result = py.allow_threads(|| cache.get(&key).map(|value| value.clone()));
+    |                         ^^^^^^^^^^^^^
+
+warning: use of deprecated method `pyo3::Python::<'py>::allow_threads`: use `Python::detach` instead
+   --> src\async_ops.rs:196:67
+    |
+196 |         let (cached_results, cache_misses): (Vec<_>, Vec<_>) = py.allow_threads(|| {
+    |                                                                   ^^^^^^^^^^^^^
+
+warning: use of deprecated method `pyo3::Py::<pyo3::PyAny>::downcast_bound`: use `Py::cast_bound` instead
+    --> src\async_ops.rs:1246:39
+     |
+1246 |         if let Ok(other_dict) = other.downcast_bound::<PyDict>(py) {
+     |                                       ^^^^^^^^^^^^^^
+
+warning: use of deprecated associated function `pyo3::Python::<'_>::with_gil`: use `Python::attach` instead
+   --> src\lib.rs:134:17
+    |
+134 |         Python::with_gil(|py| {
+    |                 ^^^^^^^^
+
+warning: use of deprecated associated function `pyo3::Python::<'_>::with_gil`: use `Python::attach` instead
+   --> src\lib.rs:155:17
+    |
+155 |         Python::with_gil(|py| {
+    |                 ^^^^^^^^
+
+warning: use of deprecated associated function `pyo3::Python::<'_>::with_gil`: use `Python::attach` instead
+   --> src\lib.rs:177:17
+    |
+177 |         Python::with_gil(|py| {
+    |                 ^^^^^^^^
+
+warning: use of deprecated associated function `pyo3::Python::<'_>::with_gil`: use `Python::attach` instead
+   --> src\lib.rs:276:17
+    |
+276 |         Python::with_gil(|py| {
+    |                 ^^^^^^^^
+
+warning: use of deprecated method `pyo3::types::PyAnyMethods::downcast`: use `Bound::cast` instead
+   --> src\lib.rs:326:37
+    |
+326 |     } else if let Ok(val) = obj_ref.downcast::<PyBool>() {
+    |                                     ^^^^^^^^
+
+warning: use of deprecated method `pyo3::types::PyAnyMethods::downcast`: use `Bound::cast` instead
+   --> src\lib.rs:329:37
+    |
+329 |     } else if let Ok(val) = obj_ref.downcast::<PyInt>() {
+    |                                     ^^^^^^^^
+
+warning: use of deprecated method `pyo3::types::PyAnyMethods::downcast`: use `Bound::cast` instead
+   --> src\lib.rs:338:37
+    |
+338 |     } else if let Ok(val) = obj_ref.downcast::<PyFloat>() {
+    |                                     ^^^^^^^^
+
+warning: use of deprecated method `pyo3::types::PyAnyMethods::downcast`: use `Bound::cast` instead
+   --> src\lib.rs:345:37
+    |
+345 |     } else if let Ok(val) = obj_ref.downcast::<PyString>() {
+    |                                     ^^^^^^^^
+
+warning: use of deprecated method `pyo3::types::PyAnyMethods::downcast`: use `Bound::cast` instead
+   --> src\lib.rs:348:37
+    |
+348 |     } else if let Ok(val) = obj_ref.downcast::<PyList>() {
+    |                                     ^^^^^^^^
+
+warning: use of deprecated method `pyo3::types::PyAnyMethods::downcast`: use `Bound::cast` instead
+   --> src\lib.rs:355:37
+    |
+355 |     } else if let Ok(val) = obj_ref.downcast::<PyDict>() {
+    |                                     ^^^^^^^^
+
+warning: use of deprecated method `pyo3::Py::<pyo3::PyAny>::downcast_bound`: use `Py::cast_bound` instead
+    --> src\lib.rs:2331:39
+     |
+2331 |         if let Ok(other_dict) = other.downcast_bound::<PyDict>(py) {
+     |                                       ^^^^^^^^^^^^^^
+
+warning: `dictsqlite` (lib) generated 56 warnings
+    Finished `release` profile [optimized] target(s) in 20.04s

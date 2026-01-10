@@ -51,7 +51,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "✅ Installed successfully!"
     echo ""
     echo "Test installation:"
-    python -c "from dictsqlite_v4 import DictSQLiteV4; print('✅ DictSQLiteV4 imported successfully')"
+    python -c "from dictsqlite_v4 import DictSQLiteV4; print('[OK] DictSQLiteV4 imported successfully')"
 fi
 
 echo ""
