@@ -829,7 +829,6 @@ tokio = { version = "1.35", features = ["full"] }
 async-trait = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-bincode = "1.3"
 rmp-serde = "1.1"            # MessagePack (JSONB用)
 crossbeam = "0.8"
 parking_lot = "0.12"
