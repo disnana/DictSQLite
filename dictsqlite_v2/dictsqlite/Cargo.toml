@@ -97,3 +97,8 @@ name = "dictsqlite"
 long-description-file = "Pypi.md"
 
 # Note: classifiers and requires-python must be set in pyproject.toml (PEP 621)
+
+[patch.crates-io]
+# Security: RUSTSEC-2026-0007 / GHSA-434x-w66g-qw3r
+# Pin bytes to a patched version to avoid UB in BytesMut::reserve unique reclaim path
+bytes = "1.11.1"
