@@ -282,8 +282,10 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
 
         # 4) 検証済みの journal_mode を適用
         if self.journal_mode is not None:
-            # Use % formatting instead of f-string to avoid B608 false positive
-            # journal_mode is already validated via _validate_journal_mode whitelist
+            # Note: SQLite does not support parameterized PRAGMA statements.
+            # Using % formatting instead of f-string to satisfy security scanners (Bandit B608).
+            # journal_mode is already validated via _validate_journal_mode whitelist,
+            # so this is safe from SQL injection.
             self.conn.execute('PRAGMA journal_mode=%s;' % self.journal_mode)
 
         # 安全pickle設定（デフォルトは自パッケージのクラス復元のみ許可、関数は不許可）
@@ -502,8 +504,9 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             ))
 
         def __delitem__(self, key):
-            # Use string concatenation instead of f-string to avoid B608 false positive
-            # table_name is safely quoted by _quote_ident
+            # Note: Using string concatenation instead of f-string for security scanner compliance.
+            # Security scanners (Bandit) flag f-strings in SQL as potential injection risks.
+            # This is safe because: table_name is quoted via _quote_ident, and key uses parameterization.
             query = "DELETE FROM " + self.db._quote_ident(self.table_name) + " WHERE key = ?"  # nosec B608
             self.db.operation_queue.put((
                 self.db._execute,  # pylint: disable=protected-access
@@ -512,8 +515,9 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             ))
 
         def __contains__(self, key):
-            # Use string concatenation instead of f-string to avoid B608 false positive
-            # table_name is safely quoted by _quote_ident
+            # Note: Using string concatenation instead of f-string for security scanner compliance.
+            # Security scanners (Bandit) flag f-strings in SQL as potential injection risks.
+            # This is safe because: table_name is quoted via _quote_ident, and key uses parameterization.
             query = "SELECT 1 FROM " + self.db._quote_ident(self.table_name) + " WHERE key = ?"  # nosec B608
             result_queue = queue.Queue()
             self.db.operation_queue.put((
@@ -830,14 +834,16 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         return self.cursor.fetchone()
 
     def __delitem__(self, key):
-        # Use string concatenation instead of f-string to avoid B608 false positive
-        # table_name is safely quoted by _quote_ident
+        # Note: Using string concatenation instead of f-string for security scanner compliance.
+        # Security scanners (Bandit) flag f-strings in SQL as potential injection risks.
+        # This is safe because: table_name is quoted via _quote_ident, and key uses parameterization.
         query = "DELETE FROM " + self._quote_ident(self.table_name) + " WHERE key = ?"  # nosec B608
         self.operation_queue.put((self._execute, (query, (key,)), {}, None))
 
     def __contains__(self, key):
-        # Use string concatenation instead of f-string to avoid B608 false positive
-        # table_name is safely quoted by _quote_ident
+        # Note: Using string concatenation instead of f-string for security scanner compliance.
+        # Security scanners (Bandit) flag f-strings in SQL as potential injection risks.
+        # This is safe because: table_name is quoted via _quote_ident, and key uses parameterization.
         query = "SELECT 1 FROM " + self._quote_ident(self.table_name) + " WHERE key = ?"  # nosec B608
         result_queue = queue.Queue()
         self.operation_queue.put((self._fetchone, (query, (key,)), {}, result_queue))
