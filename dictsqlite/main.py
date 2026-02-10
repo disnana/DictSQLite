@@ -75,6 +75,7 @@ class DBSyncedSet(set):
         return val
 
     def clear(self):
+        """データの初期化"""
         super().clear()
         self.sync()
 
