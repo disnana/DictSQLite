@@ -49,6 +49,15 @@ class SyncConfig:
     batch_size: int = 100  # Number of items to sync in one batch
     compression_enabled: bool = True
     
+    def __post_init__(self):
+        """Convert string values to proper enum types after initialization"""
+        if isinstance(self.sync_mode, str):
+            try:
+                self.sync_mode = SyncMode(self.sync_mode)
+            except ValueError:
+                valid = [m.value for m in SyncMode]
+                raise ValueError(f"Invalid sync_mode '{self.sync_mode}'. Must be one of: {valid}")
+
     def validate(self) -> bool:
         """Validate configuration"""
         if self.sync_interval <= 0:

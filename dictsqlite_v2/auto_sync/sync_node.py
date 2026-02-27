@@ -131,8 +131,13 @@ class SyncNode:
             local_change = self._change_log.get(key)
             
             if local_change:
-                # There's a potential conflict - let the conflict resolver handle it
-                return False, local_change
+                # It's only a real conflict if the sources differ, or local is newer/same.
+                # If the update comes from the same originating node and is newer,
+                # treat it as a plain update (not a conflict).
+                same_source = local_change.get('node_id', '') == remote_node_id
+                incoming_is_newer = timestamp > local_change['timestamp']
+                if not (same_source and incoming_is_newer):
+                    return False, local_change
             
             # No conflict, apply the change
             if value is None:

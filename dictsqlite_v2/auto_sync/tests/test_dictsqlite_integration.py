@@ -257,7 +257,7 @@ class TestDictSQLiteIntegration:
         node1 = SyncNode(db1, node_id="node1")
         node2 = SyncNode(db2, node_id="node2")
         
-        config = SyncConfig(enable_auto_recovery=True, recovery_interval=0.2)
+        config = SyncConfig(enable_auto_recovery=True, recovery_retry_interval=0.2)
         manager = SyncManager(node1, config)
         manager.add_peer(node2)
         
