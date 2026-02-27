@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.0] - 2026-02-11
+
+### Security
+- Fixed vulnerabilities in used libraries
+
+### Fixed
+- Fixed internal bugs
+
+---
+
 ## [2.0.9] - 2026-01-08
 
 ### Changed
@@ -298,6 +308,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 For detailed release notes, see [others/release-notes/](./others/release-notes/)
 
+[2.1.0]: https://github.com/disnana/DictSQLite/compare/v2.0.9...v2.1.0
+[2.0.9]: https://github.com/disnana/DictSQLite/compare/v2.0.8...v2.0.9
+[2.0.8]: https://github.com/disnana/DictSQLite/compare/v2.0.7...v2.0.8
 [2.0.7]: https://github.com/disnana/DictSQLite/compare/v2.0.6...v2.0.7
 [2.0.6]: https://github.com/disnana/DictSQLite/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/disnana/DictSQLite/compare/v2.0.4...v2.0.5
