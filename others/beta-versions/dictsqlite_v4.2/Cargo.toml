@@ -53,7 +53,7 @@ rand = "0.8"            # Random number generation
 num_cpus = "1.16"       # CPU core detection
 
 # Error handling
-thiserror = "1.0"
+thiserror = "2.0"
 anyhow = "1.0"
 
 # Logging
