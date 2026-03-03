@@ -6,11 +6,10 @@
 //! - 高速化のため、鍵をキャッシュ
 
 use aes_gcm::{
-    aead::{Aead, KeyInit, OsRng},
+    aead::{rand_core::RngCore, Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
 use pbkdf2::pbkdf2_hmac;
-use aes_gcm::aead::rand_core::RngCore;
 use sha2::Sha256;
 use std::sync::Arc;
 use thiserror::Error;
