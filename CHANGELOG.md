@@ -9,20 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.1.0] - 2026-03-03
+## [2.1.0] - 2026-02-11
 
 ### Security
-- Updated pyo3 to v0.28.2 (Rust-Python bindings security and compatibility fixes)
-- Updated pythonize to 0.28 (aligned with pyo3 0.28)
-- Updated papaya to 0.2 (concurrent hash map security fixes)
-- Updated base64 to 0.22
+- Fixed vulnerabilities in used libraries
 
-### Changed
-- Updated actions/cache to v5
-- Updated actions/checkout to v6
-- Updated actions/setup-python to v6
-- Updated google/osv-scanner-action to v2.3.3
-- Updated criterion to 0.8 (benchmarking dependency)
+### Fixed
+- Fixed internal bugs
 
 ---
 
