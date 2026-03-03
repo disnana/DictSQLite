@@ -74,7 +74,7 @@ jobs:
           pytest tests/ -v --tb=short
       
       - name: Upload performance results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: performance-results-${{ matrix.os }}-py${{ matrix.python-version }}
           path: others/beta-versions/dictsqlite_v4.2/performance_results_*.json
@@ -159,7 +159,7 @@ jobs:
           EOF
       
       - name: Upload comparison results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-comparison
           path: |

@@ -74,7 +74,7 @@ jobs:
           pytest tests/ -v --tb=short
       
       - name: Upload performance results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: performance-results-${{ matrix.os }}-py${{ matrix.python-version }}
           path: dictsqlite_v2/dictsqlite/performance_results_*.json
@@ -129,7 +129,7 @@ jobs:
             "
 
       - name: Upload ARM performance results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: performance-results-${{ matrix.target }}-py3.11
           path: performance_results_*.json
