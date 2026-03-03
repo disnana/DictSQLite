@@ -452,7 +452,7 @@ impl StorageEngine {
             )?;
 
             for (key, increment) in counts {
-                let _ = stmt.execute(params![increment, key]);
+                let _ = stmt.execute(params![i64::try_from(increment).unwrap_or(i64::MAX), key]);
             }
         }
 
