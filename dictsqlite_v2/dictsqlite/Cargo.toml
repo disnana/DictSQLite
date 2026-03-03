@@ -55,7 +55,7 @@ aes-gcm = "0.10"        # AES-256-GCM encryption
 argon2 = "0.5"          # Password hashing (PBKDF2 alternative)
 pbkdf2 = { version = "0.12", features = ["simple"] }  # PBKDF2 key derivation
 sha2 = "0.10"           # SHA-256 hashing
-base64 = "0.21"         # Base64 encoding
+base64 = "0.22"         # Base64 encoding
 rand = "0.8"            # Random number generation
 
 # System info
