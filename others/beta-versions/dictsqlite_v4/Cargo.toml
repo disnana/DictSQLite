@@ -16,7 +16,7 @@ pyo3 = { version = "0.24", features = ["extension-module", "abi3-py39"] }
 
 # High-performance concurrent data structures
 dashmap = "5.5"          # Lock-free concurrent HashMap
-papaya = "0.1"          # Ultra-low latency concurrent hashmap
+papaya = "0.2"          # Ultra-low latency concurrent hashmap
 
 # SQLite backend
 rusqlite = { version = "0.31", features = ["bundled", "backup", "blob", "hooks"] }
