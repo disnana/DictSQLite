@@ -145,13 +145,13 @@ jobs:
         pip install maturin
 
     - name: Download v4.1 wheel
-      uses: actions/download-artifact@v4.1.3
+      uses: actions/download-artifact@v4.3.0
       with:
         name: wheel-v4.1
         path: ./wheels/v4.1
 
     - name: Download v2 wheel
-      uses: actions/download-artifact@v4.1.3
+      uses: actions/download-artifact@v4.3.0
       with:
         name: wheel-v2
         path: ./wheels/v2
