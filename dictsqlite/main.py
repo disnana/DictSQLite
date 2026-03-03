@@ -17,7 +17,7 @@ from dictsqlite.modules import crypto, utils
 from dictsqlite.modules.safe_pickle import SafePolicy, safe_loads
 from dictsqlite.modules import safe_pickle
 
-__version__ = '2.1.0'
+__version__ = '1.8.9'  # 未定
 
 # 公開API
 __all__ = [
