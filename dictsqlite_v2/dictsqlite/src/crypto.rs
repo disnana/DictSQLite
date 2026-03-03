@@ -10,7 +10,7 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use pbkdf2::pbkdf2_hmac;
-use rand::RngCore;
+use aes_gcm::aead::rand_core::RngCore;
 use sha2::Sha256;
 use std::sync::Arc;
 use thiserror::Error;
