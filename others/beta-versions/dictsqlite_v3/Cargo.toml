@@ -19,7 +19,7 @@ dashmap = "6.0"          # Lock-free concurrent HashMap
 papaya = "0.2"          # Ultra-low latency concurrent hashmap
 
 # SQLite backend
-rusqlite = { version = "0.31", features = ["bundled", "backup", "blob", "hooks"] }
+rusqlite = { version = "0.38", features = ["bundled", "backup", "blob", "hooks"] }
 
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }

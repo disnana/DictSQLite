@@ -20,7 +20,7 @@ papaya = "0.2"          # Ultra-low latency concurrent hashmap
 lru = "0.16.3"          # LRU cache implementation (patched RUSTSEC-2026-0002)
 
 # SQLite backend (keeping 0.31 for r2d2_sqlite compatibility)
-rusqlite = { version = "0.31", features = ["bundled", "backup", "blob", "hooks"] }
+rusqlite = { version = "0.38", features = ["bundled", "backup", "blob", "hooks"] }
 r2d2 = "0.8"             # Generic connection pool
 r2d2_sqlite = "0.24"     # SQLite connection pool adapter
 
