@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Python bindings (Security fix: RUSTSEC-2025-0020 - buffer overflow vulnerability)
-pyo3 = { version = "0.24.1", features = ["extension-module", "abi3-py39"] }
+pyo3 = { version = "0.28.0", features = ["extension-module", "abi3-py39"] }
 
 # High-performance concurrent data structures
 dashmap = "6.0"          # Lock-free concurrent HashMap
