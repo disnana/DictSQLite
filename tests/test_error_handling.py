@@ -6,6 +6,7 @@ to ensure the library handles errors gracefully and maintains data integrity.
 # pylint: disable=redefined-outer-name,broad-except
 
 import os
+import sqlite3
 import tempfile
 import threading
 import pytest
@@ -46,25 +47,14 @@ def test_database_corruption_handling(tmp_path):
     with open(db_path, "w", encoding="utf-8") as f:
         f.write("This is not a valid SQLite database file")
 
-    # DictSQLite might handle corruption in the background queue
-    # So we'll test that it doesn't crash and handles it gracefully
-    db = DictSQLite(str(db_path))
-
-    # Try to use the database - this should trigger the corruption detection
-    db["test"] = "value"
-    db.operation_queue.join()  # Wait for background operation to complete
-
-    # The operation should have failed in the background, but the client should still work
-    # Check that we can still query the database (even if it returns no results)
-    try:
-        _ = db.keys()  # Try to get keys instead of using get method
-        # If we get here, either the corruption was handled or the operation was queued
-        # Both are acceptable behaviors
-    except Exception:
-        # Exception is also acceptable for corrupted database
-        pass
-
-    db.close()
+    # With direct synchronous execution, a corrupted database raises immediately
+    # during construction (when the first table-creation query is executed).
+    with pytest.raises((sqlite3.DatabaseError, Exception)):
+        db = DictSQLite(str(db_path))
+        # If construction somehow succeeded (e.g. SQLite opened it in a degraded
+        # state), ensure operations also raise or handle gracefully.
+        db["test"] = "value"
+        db.close()
 
 
 def test_read_only_database(tmp_path):
@@ -84,20 +74,9 @@ def test_read_only_database(tmp_path):
         db_readonly = DictSQLite(str(db_path))
         assert db_readonly["test"] == "value"
 
-        # Writing should fail - but it might be queued, so wait for the operation
-        db_readonly["new"] = "value"
-        db_readonly.operation_queue.join()  # Wait for the operation to be processed
-
-        # The write operation should have failed, check if it actually persisted
-        # If the readonly check worked, the value shouldn't be in the database
-        try:
-            # Try to read it back - this might fail or return nothing
-            _ = db_readonly.keys()  # Try to get keys instead of using get method
-            # If we get here, either the corruption was handled or the operation was queued
-            # Both are acceptable behaviors
-        except Exception:
-            # Exception during read is also acceptable
-            pass
+        # Writing to a read-only database now raises immediately with direct execution
+        with pytest.raises((sqlite3.OperationalError, Exception)):
+            db_readonly["new"] = "value"
 
         db_readonly.close()
     finally:
