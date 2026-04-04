@@ -1,11 +1,12 @@
 // v6.0: PyO3 0.27 API完全移行
 
 use dashmap::DashMap;
+use parking_lot::Mutex;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use rayon::prelude::*;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use tokio::runtime::Runtime;
 
 use crate::{
@@ -162,7 +163,7 @@ impl AsyncDictSQLite {
         if self.config.persist_mode == PersistMode::WriteThrough {
             // Add to write buffer
             {
-                let mut buffer = self.write_buffer.lock().unwrap();
+                let mut buffer = self.write_buffer.lock();
                 buffer.insert(key, value);
             }
 
@@ -177,7 +178,7 @@ impl AsyncDictSQLite {
     /// Flush write buffer to storage (v4.2 optimization)
     /// Batches multiple writes into a single transaction
     fn flush_write_buffer(&self) -> PyResult<()> {
-        let mut buffer = self.write_buffer.lock().unwrap();
+        let mut buffer = self.write_buffer.lock();
 
         if buffer.is_empty() {
             return Ok(());
@@ -373,7 +374,7 @@ impl AsyncDictSQLite {
         if config.persist_mode == PersistMode::WriteThrough {
             // Add to write buffer
             let should_flush = {
-                let mut buffer = write_buffer.lock().unwrap();
+                let mut buffer = write_buffer.lock();
                 buffer.insert(key, value);
                 buffer.len() >= buffer_size
             };
@@ -382,7 +383,7 @@ impl AsyncDictSQLite {
             if should_flush {
                 runtime
                     .spawn_blocking(move || {
-                        let mut buffer = write_buffer.lock().unwrap();
+                        let mut buffer = write_buffer.lock();
                         if buffer.is_empty() {
                             return Ok(());
                         }
@@ -475,7 +476,7 @@ impl AsyncDictSQLite {
         if config.persist_mode == PersistMode::WriteThrough {
             // Add to write buffer
             let should_flush = {
-                let mut buffer = write_buffer.lock().unwrap();
+                let mut buffer = write_buffer.lock();
                 for (key, value) in items {
                     buffer.insert(key, value);
                 }
@@ -488,7 +489,7 @@ impl AsyncDictSQLite {
             if should_flush {
                 runtime
                     .spawn_blocking(move || {
-                        let mut buffer = write_buffer.lock().unwrap();
+                        let mut buffer = write_buffer.lock();
                         if buffer.is_empty() {
                             return Ok(());
                         }
@@ -587,7 +588,7 @@ impl AsyncDictSQLite {
         runtime
             .spawn_blocking(move || {
                 // First, flush any pending writes in the buffer
-                let mut buffer = write_buffer.lock().unwrap();
+                let mut buffer = write_buffer.lock();
                 if !buffer.is_empty() {
                     if let Some(ref storage_engine) = *storage {
                         for (k, v) in buffer.drain() {
@@ -771,7 +772,7 @@ impl AsyncDictSQLite {
 
         // Remove from write buffer
         if self.config.persist_mode == PersistMode::WriteThrough {
-            let mut buffer = self.write_buffer.lock().unwrap();
+            let mut buffer = self.write_buffer.lock();
             buffer.remove(&full_key);
         }
 
