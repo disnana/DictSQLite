@@ -11,8 +11,8 @@ name = "dictsqlite"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# Python bindings (updated: PyO3 0.28 with improved FromPyObject performance)
-pyo3 = { version = "0.28", features = ["extension-module", "abi3-py39", "experimental-async"] }
+# Python bindings (updated: PyO3 0.29 for latest security fixes)
+pyo3 = { version = "0.29", features = ["extension-module", "abi3-py39", "experimental-async"] }
 
 # High-performance concurrent data structures (v5.1 update: dashmap 6.1 for better perf)
 dashmap = "6.1"          # Lock-free concurrent HashMap
@@ -32,7 +32,6 @@ async-trait = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rmp-serde = "1.1"  # MessagePack for JSONB mode
-pythonize = "0.28"       # Fast Python <-> Rust JSON conversion (pyo3 0.28 compat)
 
 # Compression (v5 optimization)
 zstd = "0.13"            # High-speed compression
