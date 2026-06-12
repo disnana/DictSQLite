@@ -322,21 +322,13 @@ impl Default for SafePickleValidator {
 /// - list -> array
 /// - dict -> object
 ///
-/// v6.0: pythonize統合（フォールバック付き）
-/// - pythonizeで高速変換を試行
-/// - 失敗時は手動変換にフォールバック（100%互換性保証）
+/// JSON互換型を手動で変換（100%互換性保証）
 fn pyobject_to_json_value(obj: Py<PyAny>, py: Python) -> PyResult<serde_json::Value> {
-    // v6.0 Tier 2: まずpythonizeで高速変換を試行
-    if let Ok(value) = pythonize::depythonize::<serde_json::Value>(obj.bind(py)) {
-        return Ok(value);
-    }
-
-    // フォールバック: 手動変換（100%互換性保証）
+    // 手動変換（100%互換性保証）
     manual_pyobject_to_json_value(obj, py)
 }
 
-/// 手動変換（フォールバック用）
-/// pythonizeが失敗した場合に使用される互換性保証の変換関数
+/// 手動変換
 fn manual_pyobject_to_json_value(obj: Py<PyAny>, py: Python) -> PyResult<serde_json::Value> {
     use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 

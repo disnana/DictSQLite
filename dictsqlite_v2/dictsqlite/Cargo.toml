@@ -32,7 +32,6 @@ async-trait = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rmp-serde = "1.1"  # MessagePack for JSONB mode
-pythonize = "0.29"       # Fast Python <-> Rust JSON conversion (pyo3 0.29 compat)
 
 # Compression (v5 optimization)
 zstd = "0.13"            # High-speed compression
