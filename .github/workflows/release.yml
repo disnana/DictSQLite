@@ -231,7 +231,7 @@ jobs:
           initial_tag="${{ steps.get_version.outputs.new_tag }}"
           echo "🔍 Starting tag search from: $initial_tag"
 
-          # まず初期タグを確認
+          # Check whether the initial tag is available
           if ! git rev-parse -q --verify "refs/tags/${initial_tag}" >/dev/null 2>&1; then
             echo "✅ Found available tag: $initial_tag"
             echo "available_tag=$initial_tag" >> $GITHUB_OUTPUT
@@ -241,7 +241,7 @@ jobs:
 
           echo "⚠️ Tag $initial_tag already exists, searching revision tag..."
 
-          # 同じベースバージョンに +revN を付与（例: v01.02.03+rev1）
+          # Keep the same base version and append +revN (e.g. v01.02.03+rev1)
           base_tag="${initial_tag%%+rev*}"
           max_rev=0
 
