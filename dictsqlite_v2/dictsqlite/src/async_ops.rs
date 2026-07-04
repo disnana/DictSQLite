@@ -85,6 +85,23 @@ fn flush_items_to_storage(
     Ok(())
 }
 
+fn flush_write_buffer_requeue(
+    write_buffer: &Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    storage: &Arc<Option<StorageEngine>>,
+) -> PyResult<()> {
+    let items = drain_write_buffer(write_buffer);
+    match flush_items_to_storage(storage, &items) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let mut buffer = write_buffer.lock();
+            for (key, value) in items {
+                buffer.entry(key).or_insert(value);
+            }
+            Err(err)
+        }
+    }
+}
+
 #[pymethods]
 impl AsyncDictSQLite {
     #[new]
@@ -206,8 +223,7 @@ impl AsyncDictSQLite {
     /// Flush write buffer to storage (v4.2 optimization)
     /// Batches multiple writes into a single transaction
     fn flush_write_buffer(&self) -> PyResult<()> {
-        let items = drain_write_buffer(&self.write_buffer);
-        flush_items_to_storage(&self.storage, &items)
+        flush_write_buffer_requeue(&self.write_buffer, &self.storage)
     }
 
     /// Batch get (optimized with Rayon for parallel processing)
@@ -426,8 +442,7 @@ impl AsyncDictSQLite {
             if should_flush {
                 runtime
                     .spawn_blocking(move || {
-                        let items = drain_write_buffer(&write_buffer);
-                        flush_items_to_storage(&storage, &items)
+                        flush_write_buffer_requeue(&write_buffer, &storage)
                     })
                     .await
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
@@ -525,8 +540,7 @@ impl AsyncDictSQLite {
             if should_flush {
                 runtime
                     .spawn_blocking(move || {
-                        let items = drain_write_buffer(&write_buffer);
-                        flush_items_to_storage(&storage, &items)
+                        flush_write_buffer_requeue(&write_buffer, &storage)
                     })
                     .await
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
@@ -612,8 +626,7 @@ impl AsyncDictSQLite {
         runtime
             .spawn_blocking(move || {
                 // First, flush any pending writes in the buffer
-                let pending_items = drain_write_buffer(&write_buffer);
-                flush_items_to_storage(&storage, &pending_items)?;
+                flush_write_buffer_requeue(&write_buffer, &storage)?;
 
                 // Then flush the cache (for Lazy mode)
                 if config.persist_mode == PersistMode::Lazy {
@@ -768,7 +781,7 @@ impl AsyncDictSQLite {
     }
 
     /// Dict-like deletion: del db[key]
-    fn __delitem__(&self, key: String, py: Python) -> PyResult<()> {
+    fn __delitem__(&self, key: String, _py: Python) -> PyResult<()> {
         // Add table prefix if default table is not "main" or empty
         let full_key = if !self.config.table_name.is_empty() && self.config.table_name != "main" {
             format!("{}:{}", self.config.table_name, key)
@@ -777,7 +790,14 @@ impl AsyncDictSQLite {
         };
 
         // Check if key exists first
-        if !self.__contains__(full_key.clone(), py)? {
+        let exists = self.cache.contains_key(&full_key)
+            || (self.config.persist_mode != PersistMode::Memory
+                && (*self.storage)
+                    .as_ref()
+                    .and_then(|storage| storage.get(&full_key).ok().flatten())
+                    .is_some());
+
+        if !exists {
             return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
                 "Key not found: {}",
                 key
@@ -954,9 +974,10 @@ impl AsyncTableProxy {
                 // Update cache
                 db.cache.insert(cache_key, data.clone());
 
-                // Write to storage in WriteThrough mode
+                // Separate tables are not represented in the generic write buffer,
+                // so persist them directly for every durable mode.
                 // v5最適化: Mutex削除、直接アクセス
-                if db.config.persist_mode == PersistMode::WriteThrough {
+                if db.config.persist_mode != PersistMode::Memory {
                     if let Some(ref storage) = *db.storage {
                         storage
                             .set_with_table(&self.table_name, &key, &data)
@@ -1108,6 +1129,9 @@ impl AsyncTableProxy {
                 let full_key = format!("{}:{}", self.table_name, key);
                 // Remove from cache
                 db.cache.remove(&full_key);
+                if db.config.persist_mode == PersistMode::WriteThrough {
+                    db.write_buffer.lock().remove(&full_key);
+                }
                 // Remove from storage
                 // Remove from storage
                 // v5最適化: Mutex削除、直接アクセス
@@ -1123,6 +1147,9 @@ impl AsyncTableProxy {
 
                 // Remove from cache
                 db.cache.remove(&cache_key);
+                if db.config.persist_mode == PersistMode::WriteThrough {
+                    db.write_buffer.lock().remove(&cache_key);
+                }
 
                 // Remove from storage
                 // v5最適化: Mutex削除、直接アクセス
@@ -1212,6 +1239,11 @@ impl AsyncTableProxy {
 
                 for key in keys_to_remove {
                     db.cache.remove(&key);
+                }
+                if db.config.persist_mode == PersistMode::WriteThrough {
+                    db.write_buffer
+                        .lock()
+                        .retain(|key, _| !key.starts_with(&prefix));
                 }
 
                 // Clear storage table

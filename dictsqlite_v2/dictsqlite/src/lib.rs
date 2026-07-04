@@ -1258,25 +1258,26 @@ impl DictSQLiteV4 {
     /// - `Ok(())`: フラッシュ成功
     /// - `Err(PyErr)`: ストレージ書き込みエラー
     fn flush_write_buffer(&self) -> PyResult<()> {
-        let mut buffer = self.write_buffer.lock();
+        let buffered_items = {
+            let mut buffer = self.write_buffer.lock();
+            if buffer.is_empty() {
+                return Ok(());
+            }
+            std::mem::take(&mut *buffer)
+        };
 
-        // バッファが空の場合は何もしない
-        if buffer.is_empty() {
-            return Ok(());
-        }
-
-        // バッファからHashMapを構築（bulk_insert用）
-        let items: HashMap<String, Vec<u8>> = buffer.drain(..).collect();
-
-        // 早期にバッファのロックを解放
-        drop(buffer);
+        let items: HashMap<String, Vec<u8>> = buffered_items.iter().cloned().collect();
 
         // ストレージハンドルを取得してバルクインサート
         if let Some(ref storage) = self.storage {
             // bulk_insert()を使用して単一トランザクションで高速書き込み
-            storage
-                .bulk_insert(&items)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+            if let Err(e) = storage.bulk_insert(&items) {
+                let mut buffer = self.write_buffer.lock();
+                let current = std::mem::take(&mut *buffer);
+                buffer.extend(buffered_items);
+                buffer.extend(current);
+                return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()));
+            }
         }
 
         Ok(())
@@ -2155,8 +2156,9 @@ impl TableProxy {
                     .insert(cache_key.clone(), encrypted_data.clone());
                 db.access_tracker.lock().put(cache_key, ());
 
-                // Write to storage in WriteThrough mode
-                if db.config.persist_mode == PersistMode::WriteThrough {
+                // Separate tables bypass the generic write buffer, so durable modes
+                // must persist them directly.
+                if db.config.persist_mode != PersistMode::Memory {
                     if let Some(ref storage) = db.storage {
                         storage
                             .set_with_table(&self.table_name, &key, &encrypted_data)
@@ -2186,6 +2188,9 @@ impl TableProxy {
                 // Remove from hot tier
                 db.access_tracker.lock().pop(&cache_key);
                 db.hot_tier.remove(&cache_key);
+                if db.config.persist_mode == PersistMode::WriteThrough {
+                    db.write_buffer.lock().retain(|(k, _)| k != &cache_key);
+                }
 
                 // Remove from storage
                 if db.config.persist_mode != PersistMode::Memory {
@@ -2382,6 +2387,11 @@ impl TableProxy {
                 for key in keys_to_remove {
                     db.hot_tier.remove(&key);
                     db.access_tracker.lock().pop(&key);
+                }
+                if db.config.persist_mode == PersistMode::WriteThrough {
+                    db.write_buffer
+                        .lock()
+                        .retain(|(key, _)| !key.starts_with(&prefix));
                 }
 
                 // Clear storage table
