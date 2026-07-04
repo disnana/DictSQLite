@@ -214,14 +214,34 @@ jobs:
             benchmark/benchmark_results.csv \
             benchmark/github_benchmark_results.json
 
+      - name: Ensure benchmark history branch exists
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        run: |
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            echo "gh-pages branch already exists"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            current_branch="$(git branch --show-current)"
+            git switch --orphan gh-pages
+            git rm -rf . >/dev/null 2>&1 || true
+            touch .nojekyll
+            mkdir -p dictsqlite-v2-performance
+            git add .nojekyll dictsqlite-v2-performance
+            git commit -m "Initialize benchmark history"
+            git push origin gh-pages
+            git switch "$current_branch"
+          fi
+
       - name: Publish benchmark comparison
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         uses: benchmark-action/github-action-benchmark@v1
         with:
           tool: customBiggerIsBetter
           output-file-path: dictsqlite_v2/dictsqlite/benchmark/github_benchmark_results.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           benchmark-data-dir-path: dictsqlite-v2-performance
-          auto-push: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+          auto-push: true
           summary-always: true
           alert-threshold: '1000%'
           comment-on-alert: false
