@@ -26,6 +26,8 @@ input,
 textarea,
 select {
   font-family: var(--vp-font-family-base);
+  font-synthesis: none;
+  font-optical-sizing: none;
   letter-spacing: 0;
 }
 
@@ -34,6 +36,7 @@ kbd,
 samp,
 pre {
   font-family: var(--vp-font-family-mono);
+  font-synthesis: none;
   letter-spacing: 0;
 }
 
