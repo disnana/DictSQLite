@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -230,57 +230,39 @@ jobs:
         run: |
           initial_tag="${{ steps.get_version.outputs.new_tag }}"
           echo "🔍 Starting tag search from: $initial_tag"
-          
-          # 初期タグから始めて、利用可能なタグを見つける
-          base_tag=${initial_tag#v}
-          IFS='.' read -r MA MI PA <<< "$base_tag"
-          
-          # パディングを除去して10進数に変換
-          MA_clean=$(echo "$MA" | sed 's/^0*//' | sed 's/^$/0/')
-          MI_clean=$(echo "$MI" | sed 's/^0*//' | sed 's/^$/0/')
-          PA_clean=$(echo "$PA" | sed 's/^0*//' | sed 's/^$/0/')
-          
-          ma_dec=$((16#$MA_clean))
-          mi_dec=$((16#$MI_clean))
-          pa_dec=$((16#$PA_clean))
-          
-          max_attempts=50  # 最大50回まで試行
-          attempts=0
-          
-          while [ $attempts -lt $max_attempts ]; do
-            current_tag=$(printf "v%02x.%02x.%02x" $ma_dec $mi_dec $pa_dec)
-            
-            echo "🔍 Checking tag: $current_tag"
-            
-            if ! git rev-parse -q --verify "refs/tags/${current_tag}" >/dev/null 2>&1; then
-              echo "✅ Found available tag: $current_tag"
-              echo "available_tag=$current_tag" >> $GITHUB_OUTPUT
-              echo "found=true" >> $GITHUB_OUTPUT
-              exit 0
-            else
-              echo "⚠️ Tag $current_tag already exists"
+
+          # Check whether the initial tag is available
+          if ! git rev-parse -q --verify "refs/tags/${initial_tag}" >/dev/null 2>&1; then
+            echo "✅ Found available tag: $initial_tag"
+            echo "available_tag=$initial_tag" >> $GITHUB_OUTPUT
+            echo "found=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "⚠️ Tag $initial_tag already exists, searching revision tag..."
+
+          # Keep the same base version and append +revN (e.g. v01.02.03+rev1)
+          base_tag="${initial_tag%%+rev*}"
+          max_rev=0
+
+          while IFS= read -r existing_tag; do
+            if [[ "$existing_tag" == "${base_tag}+rev"* ]]; then
+              rev_num="${existing_tag#${base_tag}+rev}"
+              if [[ ! "$rev_num" =~ ^[0-9]+$ ]]; then
+                continue
+              fi
+              if [ "$rev_num" -gt "$max_rev" ]; then
+                max_rev="$rev_num"
+              fi
             fi
-            
-            # 次のバージョンを計算
-            pa_dec=$((pa_dec + 1))
-            
-            # 16進数の桁上がり処理
-            if [ $pa_dec -ge 16 ]; then
-              mi_dec=$((mi_dec + pa_dec / 16))
-              pa_dec=$((pa_dec % 16))
-            fi
-            
-            if [ $mi_dec -ge 16 ]; then
-              ma_dec=$((ma_dec + mi_dec / 16))
-              mi_dec=$((mi_dec % 16))
-            fi
-            
-            attempts=$((attempts + 1))
-          done
-          
-          echo "❌ Could not find available tag after $max_attempts attempts"
-          echo "found=false" >> $GITHUB_OUTPUT
-          exit 1
+          done < <(git tag -l "${base_tag}+rev*")
+
+          next_rev=$((max_rev + 1))
+          revision_tag="${base_tag}+rev${next_rev}"
+
+          echo "✅ Using revision tag: $revision_tag"
+          echo "available_tag=$revision_tag" >> $GITHUB_OUTPUT
+          echo "found=true" >> $GITHUB_OUTPUT
 
       - name: Verify final tag availability
         if: steps.check_commits.outputs.skip_release == 'false' && steps.find_available_tag.outputs.found == 'true'

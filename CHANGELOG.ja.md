@@ -9,6 +9,23 @@ DictSQLiteの全ての重要な変更がこのファイルに記録されます�
 
 ---
 
+## [2.1.1] - 2026-03-03
+
+### セキュリティ
+- pyo3 を v0.28.2 へ更新（Rust-Pythonバインディングのセキュリティおよび互換性修正）
+- pythonize を 0.28 へ更新（pyo3 0.28 に対応）
+- papaya を 0.2 へ更新（並行ハッシュマップのセキュリティ修正）
+- base64 を 0.22 へ更新
+
+### 変更
+- actions/cache を v5 へ更新
+- actions/checkout を v6 へ更新
+- actions/setup-python を v6 へ更新
+- google/osv-scanner-action を v2.3.3 へ更新
+- criterion を 0.8 へ更新（ベンチマーク依存）
+
+---
+
 ## [2.1.0] - 2026-02-11
 
 ### セキュリティ

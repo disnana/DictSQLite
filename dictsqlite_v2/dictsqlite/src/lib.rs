@@ -49,13 +49,14 @@
 
 use dashmap::DashMap;
 use lru::LruCache;
+use parking_lot::Mutex;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBytes, PyDict};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 // v4.2.4 パフォーマンス最適化定数
 /// 小容量キャパシティの閾値 (この値以下では厳密なキャパシティ管理)
@@ -321,21 +322,13 @@ impl Default for SafePickleValidator {
 /// - list -> array
 /// - dict -> object
 ///
-/// v6.0: pythonize統合（フォールバック付き）
-/// - pythonizeで高速変換を試行
-/// - 失敗時は手動変換にフォールバック（100%互換性保証）
+/// JSON互換型を手動で変換（100%互換性保証）
 fn pyobject_to_json_value(obj: Py<PyAny>, py: Python) -> PyResult<serde_json::Value> {
-    // v6.0 Tier 2: まずpythonizeで高速変換を試行
-    if let Ok(value) = pythonize::depythonize::<serde_json::Value>(obj.bind(py)) {
-        return Ok(value);
-    }
-
-    // フォールバック: 手動変換（100%互換性保証）
+    // 手動変換（100%互換性保証）
     manual_pyobject_to_json_value(obj, py)
 }
 
-/// 手動変換（フォールバック用）
-/// pythonizeが失敗した場合に使用される互換性保証の変換関数
+/// 手動変換
 fn manual_pyobject_to_json_value(obj: Py<PyAny>, py: Python) -> PyResult<serde_json::Value> {
     use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 
@@ -698,8 +691,9 @@ pub struct DictSQLiteV4 {
     /// ストレージエンジン: warm/cold tierの管理
     ///
     /// Memory以外の永続化モードで使用。
-    /// SQLiteへの読み書きを担当。
-    storage: Arc<Mutex<Option<StorageEngine>>>,
+    /// StorageEngineは内部でr2d2コネクションプール + DashMapを使用するため
+    /// スレッドセーフであり、外部のMutexは不要。
+    storage: Option<Arc<StorageEngine>>,
 
     /// 設定
     config: Config,
@@ -950,13 +944,14 @@ impl DictSQLiteV4 {
         )));
 
         // 純粋なメモリモードでない場合のみストレージを作成
+        // StorageEngineは内部でスレッドセーフなので Arc だけでラップする
         let storage = if config.persist_mode == PersistMode::Memory {
-            Arc::new(Mutex::new(None))
+            None
         } else {
-            Arc::new(Mutex::new(Some(
+            Some(Arc::new(
                 StorageEngine::new(&db_path, &config)
                     .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?,
-            )))
+            ))
         };
 
         // パスワードが提供された場合、暗号化エンジンを初期化
@@ -1021,8 +1016,8 @@ impl DictSQLiteV4 {
     /// - 復号化に失敗した場合: ValueError
     #[pyo3(signature = (key, default=None))]
     fn get(&self, key: String, default: Option<Vec<u8>>, py: Python) -> PyResult<Py<PyAny>> {
-        // v4.2.4最適化: LRU追跡は必要な場合のみ実行（Memory/Lazyモードではスキップ）
-        // WriteThroughモードまたはキャパシティ超過時のみLRU追跡
+        // v7.1最適化: LRU追跡はキャパシティ超過時のみ実行（エビクション判定が必要な場合のみ）
+        // WriteThroughモードの特別扱いを廃止し、全モードで同一の閾値を使用
         let current_size = self.hot_tier.len();
         let tracking_threshold = if self.config.hot_tier_capacity <= SMALL_CAPACITY_THRESHOLD {
             // 小容量: 常に追跡（テスト互換性）
@@ -1031,11 +1026,10 @@ impl DictSQLiteV4 {
             // 大容量: LRU_TRACKING_THRESHOLD_PERCENT%から追跡（パフォーマンス優先）
             (self.config.hot_tier_capacity * LRU_TRACKING_THRESHOLD_PERCENT) / 100
         };
-        let needs_lru = self.config.persist_mode == PersistMode::WriteThrough
-            || current_size >= tracking_threshold;
+        let needs_lru = current_size >= tracking_threshold;
 
         if needs_lru {
-            self.access_tracker.lock().unwrap().put(key.clone(), ());
+            self.access_tracker.lock().put(key.clone(), ());
         }
 
         // Hot tierを最初に試行（ロックフリー読み取り）
@@ -1066,8 +1060,7 @@ impl DictSQLiteV4 {
         }
 
         // 他のモードではストレージ（Cold tier）も検索
-        let storage_guard = self.storage.lock().unwrap();
-        if let Some(ref storage) = *storage_guard {
+        if let Some(ref storage) = self.storage {
             if let Ok(Some(value)) = storage.get(&key) {
                 // 暗号化されているがパスワードがない場合のチェック
                 if self.crypto.is_none() && crate::crypto::CryptoEngine::is_encrypted(&value) {
@@ -1087,7 +1080,6 @@ impl DictSQLiteV4 {
 
                 // Hot tierにプロモート（暗号化状態で保存）
                 // これにより次回アクセス時の速度が向上
-                drop(storage_guard);
                 self.hot_tier.insert(key, value);
                 return Ok(PyBytes::new(py, &data).into());
             }
@@ -1154,9 +1146,8 @@ impl DictSQLiteV4 {
             (is_new, None)
         };
 
-        // v4.2.4最適化: LRUアクセス追跡の条件付き更新（パフォーマンス向上）
-        // Memory/Lazyモードでは大容量を前提としているため、LRU追跡を最小化
-        // WriteThroughモードまたはキャパシティ超過時のみLRU追跡を有効化
+        // v7.1最適化: LRUアクセス追跡はキャパシティ超過時のみ実行
+        // WriteThroughモードの特別扱いを廃止し、全モードで同一の閾値を使用
         let current_size = self.hot_tier.len();
         let tracking_threshold = if self.config.hot_tier_capacity <= SMALL_CAPACITY_THRESHOLD {
             // 小容量: 常に追跡（テスト互換性）
@@ -1165,17 +1156,16 @@ impl DictSQLiteV4 {
             // 大容量: LRU_TRACKING_THRESHOLD_PERCENT%から追跡（パフォーマンス優先）
             (self.config.hot_tier_capacity * LRU_TRACKING_THRESHOLD_PERCENT) / 100
         };
-        let needs_lru = self.config.persist_mode == PersistMode::WriteThrough
-            || current_size >= tracking_threshold;
+        let needs_lru = current_size >= tracking_threshold;
 
         if is_new_key && needs_lru {
-            self.access_tracker.lock().unwrap().put(key.clone(), ());
+            self.access_tracker.lock().put(key.clone(), ());
         }
 
         // v4.2.2最適化: WriteThroughモードでは書き込みバッファを使用
         if self.config.persist_mode == PersistMode::WriteThrough {
             let should_flush = {
-                let mut buffer = self.write_buffer.lock().unwrap();
+                let mut buffer = self.write_buffer.lock();
                 buffer.push((key.clone(), data_for_buffer.unwrap()));
                 // バッファサイズに達したらフラッシュ
                 // buffer_size=1の場合は即時フラッシュ
@@ -1219,7 +1209,7 @@ impl DictSQLiteV4 {
     /// # エラー
     /// - ストレージ書き込みに失敗した場合: IOError
     fn evict_to_warm_tier(&self) -> PyResult<()> {
-        let mut tracker = self.access_tracker.lock().unwrap();
+        let mut tracker = self.access_tracker.lock();
 
         // v4.2.4最適化: 一度にBATCH_EVICTION_PERCENT%のエントリをエビクション（バッチ処理）
         let eviction_count = std::cmp::max(
@@ -1245,8 +1235,7 @@ impl DictSQLiteV4 {
 
         // Memoryモードでない場合はストレージに一括書き込み
         if self.config.persist_mode != PersistMode::Memory && !evicted_items.is_empty() {
-            let mut storage_guard = self.storage.lock().unwrap();
-            if let Some(ref mut storage) = *storage_guard {
+            if let Some(ref storage) = self.storage {
                 // bulk_insertで一括書き込み（単一トランザクション）
                 storage
                     .bulk_insert(&evicted_items)
@@ -1269,7 +1258,7 @@ impl DictSQLiteV4 {
     /// - `Ok(())`: フラッシュ成功
     /// - `Err(PyErr)`: ストレージ書き込みエラー
     fn flush_write_buffer(&self) -> PyResult<()> {
-        let mut buffer = self.write_buffer.lock().unwrap();
+        let mut buffer = self.write_buffer.lock();
 
         // バッファが空の場合は何もしない
         if buffer.is_empty() {
@@ -1283,8 +1272,7 @@ impl DictSQLiteV4 {
         drop(buffer);
 
         // ストレージハンドルを取得してバルクインサート
-        let mut storage_guard = self.storage.lock().unwrap();
-        if let Some(ref mut storage) = *storage_guard {
+        if let Some(ref storage) = self.storage {
             // bulk_insert()を使用して単一トランザクションで高速書き込み
             storage
                 .bulk_insert(&items)
@@ -1331,8 +1319,7 @@ impl DictSQLiteV4 {
                 .collect();
 
             // バルクインサートで一括永続化（単一トランザクション）
-            let mut storage_guard = self.storage.lock().unwrap();
-            if let Some(ref mut storage) = *storage_guard {
+            if let Some(ref storage) = self.storage {
                 storage
                     .bulk_insert(&items)
                     .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
@@ -1352,21 +1339,20 @@ impl DictSQLiteV4 {
         }
 
         // Track that we're removing this
-        self.access_tracker.lock().unwrap().pop(&key);
+        self.access_tracker.lock().pop(&key);
 
         // Remove from hot tier
         self.hot_tier.remove(&key);
 
         // Remove from write buffer (v4.2)
         if self.config.persist_mode == PersistMode::WriteThrough {
-            let mut buffer = self.write_buffer.lock().unwrap();
+            let mut buffer = self.write_buffer.lock();
             buffer.retain(|(k, _)| k != &key);
         }
 
         // Also remove from storage
         if self.config.persist_mode != PersistMode::Memory {
-            let mut storage_guard = self.storage.lock().unwrap();
-            if let Some(ref mut storage) = *storage_guard {
+            if let Some(ref storage) = self.storage {
                 let _ = storage.delete(&key);
             }
         }
@@ -1424,8 +1410,7 @@ impl DictSQLiteV4 {
         }
 
         // 3. ストレージからキャッシュミスを取得
-        let storage_guard = self.storage.lock().unwrap();
-        if let Some(ref storage) = *storage_guard {
+        if let Some(ref storage) = self.storage {
             for key in cache_misses {
                 if let Ok(Some(value)) = storage.get(&key) {
                     let data = if let Some(ref crypto) = self.crypto {
@@ -1463,7 +1448,7 @@ impl DictSQLiteV4 {
 
             // WriteThroughモードではバッファに追加
             if self.config.persist_mode == PersistMode::WriteThrough {
-                let mut buffer = self.write_buffer.lock().unwrap();
+                let mut buffer = self.write_buffer.lock();
                 buffer.push((key, data));
             }
         }
@@ -1489,8 +1474,7 @@ impl DictSQLiteV4 {
 
         // Also get keys from storage if not in memory-only mode
         if self.config.persist_mode != PersistMode::Memory {
-            let storage_guard = self.storage.lock().unwrap();
-            if let Some(ref storage) = *storage_guard {
+            if let Some(ref storage) = self.storage {
                 if let Ok(storage_keys) = storage.keys() {
                     all_keys.extend(storage_keys);
                 }
@@ -1508,8 +1492,7 @@ impl DictSQLiteV4 {
         let mut all_items: HashMap<String, Vec<u8>> = HashMap::new();
 
         if self.config.persist_mode != PersistMode::Memory {
-            let storage_guard = self.storage.lock().unwrap();
-            if let Some(ref storage) = *storage_guard {
+            if let Some(ref storage) = self.storage {
                 if let Ok(keys) = storage.keys() {
                     for key in keys {
                         if let Ok(Some(value)) = storage.get(&key) {
@@ -1548,8 +1531,7 @@ impl DictSQLiteV4 {
         let mut all_items: HashMap<String, Vec<u8>> = HashMap::new();
 
         if self.config.persist_mode != PersistMode::Memory {
-            let storage_guard = self.storage.lock().unwrap();
-            if let Some(ref storage) = *storage_guard {
+            if let Some(ref storage) = self.storage {
                 if let Ok(keys) = storage.keys() {
                     for key in keys {
                         if let Ok(Some(value)) = storage.get(&key) {
@@ -1589,7 +1571,7 @@ impl DictSQLiteV4 {
     #[pyo3(signature = (key, default=None))]
     fn pop(&self, key: String, default: Option<Vec<u8>>, py: Python) -> PyResult<Py<PyAny>> {
         // Track that we're removing this
-        self.access_tracker.lock().unwrap().pop(&key);
+        self.access_tracker.lock().pop(&key);
 
         if let Some((_, value)) = self.hot_tier.remove(&key) {
             let data = if let Some(ref crypto) = self.crypto {
@@ -1604,8 +1586,7 @@ impl DictSQLiteV4 {
 
         // Also try to remove from storage if it exists there
         if self.config.persist_mode != PersistMode::Memory {
-            let mut storage_guard = self.storage.lock().unwrap();
-            if let Some(ref mut storage) = *storage_guard {
+            if let Some(ref storage) = self.storage {
                 if let Ok(Some(value)) = storage.get(&key) {
                     // Delete from storage
                     let _ = storage.delete(&key);
@@ -1642,8 +1623,7 @@ impl DictSQLiteV4 {
 
         // Not in hot tier, check storage
         if self.config.persist_mode != PersistMode::Memory {
-            let storage_guard = self.storage.lock().unwrap();
-            if let Some(ref storage) = *storage_guard {
+            if let Some(ref storage) = self.storage {
                 if let Ok(Some(value)) = storage.get(&key) {
                     let data = if let Some(ref crypto) = self.crypto {
                         crypto.decrypt(&value).map_err(|e| {
@@ -1652,7 +1632,6 @@ impl DictSQLiteV4 {
                     } else {
                         value.clone()
                     };
-                    drop(storage_guard);
                     // Promote to hot tier
                     self.hot_tier.insert(key, value);
                     return Ok(PyBytes::new(py, &data).into());
@@ -1702,8 +1681,7 @@ impl DictSQLiteV4 {
 
         // Also get keys from storage if not in memory-only mode
         if self.config.persist_mode != PersistMode::Memory {
-            let storage_guard = self.storage.lock().unwrap();
-            if let Some(ref storage) = *storage_guard {
+            if let Some(ref storage) = self.storage {
                 if let Ok(storage_keys) = storage.keys() {
                     for key in storage_keys {
                         // Apply same filtering logic
@@ -1741,8 +1719,7 @@ impl DictSQLiteV4 {
 
         // Then check storage
         if self.config.persist_mode != PersistMode::Memory {
-            let storage_guard = self.storage.lock().unwrap();
-            if let Some(ref storage) = *storage_guard {
+            if let Some(ref storage) = self.storage {
                 if let Ok(Some(_)) = storage.get(&full_key) {
                     return Ok(true);
                 }
@@ -1758,12 +1735,11 @@ impl DictSQLiteV4 {
         self.hot_tier.clear();
 
         // Clear write buffer to prevent pending writes from re-populating the database
-        self.write_buffer.lock().unwrap().clear();
+        self.write_buffer.lock().clear();
 
         // Clear storage if not in memory-only mode
         if self.config.persist_mode != PersistMode::Memory {
-            let mut storage_guard = self.storage.lock().unwrap();
-            if let Some(ref mut storage) = *storage_guard {
+            if let Some(ref storage) = self.storage {
                 storage.clear().map_err(|e| {
                     PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
                         "Failed to clear storage: {}",
@@ -1986,8 +1962,7 @@ impl DictSQLiteV4 {
                     tables.insert("main".to_string());
                     Ok(tables.into_iter().collect())
                 } else {
-                    let storage_guard = self.storage.lock().unwrap();
-                    if let Some(ref storage) = *storage_guard {
+                    if let Some(ref storage) = self.storage {
                         storage.list_tables().map_err(|e| {
                             PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string())
                         })
@@ -2042,12 +2017,10 @@ impl TableProxy {
                     }
                 } else {
                     // Check storage
-                    let storage_guard = db.storage.lock().unwrap();
-                    if let Some(ref storage) = *storage_guard {
+                    if let Some(ref storage) = db.storage {
                         match storage.get_with_table(&self.table_name, &key) {
                             Ok(Some(value)) => {
                                 // Promote to hot tier
-                                drop(storage_guard);
                                 db.hot_tier.insert(cache_key, value.clone());
                                 // Decrypt if needed
                                 if let Some(ref crypto) = db.crypto {
@@ -2167,12 +2140,11 @@ impl TableProxy {
                 // Update hot tier
                 db.hot_tier
                     .insert(cache_key.clone(), encrypted_data.clone());
-                db.access_tracker.lock().unwrap().put(cache_key, ());
+                db.access_tracker.lock().put(cache_key, ());
 
                 // Write to storage in WriteThrough mode
                 if db.config.persist_mode == PersistMode::WriteThrough {
-                    let mut storage_guard = db.storage.lock().unwrap();
-                    if let Some(ref mut storage) = *storage_guard {
+                    if let Some(ref storage) = db.storage {
                         storage
                             .set_with_table(&self.table_name, &key, &encrypted_data)
                             .map_err(|e| {
@@ -2199,13 +2171,12 @@ impl TableProxy {
                 let cache_key = format!("{}:{}", self.table_name, key);
 
                 // Remove from hot tier
-                db.access_tracker.lock().unwrap().pop(&cache_key);
+                db.access_tracker.lock().pop(&cache_key);
                 db.hot_tier.remove(&cache_key);
 
                 // Remove from storage
                 if db.config.persist_mode != PersistMode::Memory {
-                    let mut storage_guard = db.storage.lock().unwrap();
-                    if let Some(ref mut storage) = *storage_guard {
+                    if let Some(ref storage) = db.storage {
                         let _ = storage.delete_with_table(&self.table_name, &key);
                     }
                 }
@@ -2234,8 +2205,7 @@ impl TableProxy {
 
                 // Check storage
                 if db.config.persist_mode != PersistMode::Memory {
-                    let storage_guard = db.storage.lock().unwrap();
-                    if let Some(ref storage) = *storage_guard {
+                    if let Some(ref storage) = db.storage {
                         if let Ok(Some(_)) = storage.get_with_table(&self.table_name, &key) {
                             return Ok(true);
                         }
@@ -2282,8 +2252,7 @@ impl TableProxy {
 
                 // Get keys from storage
                 if db.config.persist_mode != PersistMode::Memory {
-                    let storage_guard = db.storage.lock().unwrap();
-                    if let Some(ref storage) = *storage_guard {
+                    if let Some(ref storage) = db.storage {
                         if let Ok(storage_keys) = storage.keys_with_table(&self.table_name) {
                             all_keys.extend(storage_keys);
                         }
@@ -2399,13 +2368,12 @@ impl TableProxy {
 
                 for key in keys_to_remove {
                     db.hot_tier.remove(&key);
-                    db.access_tracker.lock().unwrap().pop(&key);
+                    db.access_tracker.lock().pop(&key);
                 }
 
                 // Clear storage table
                 if db.config.persist_mode != PersistMode::Memory {
-                    let mut storage_guard = db.storage.lock().unwrap();
-                    if let Some(ref mut storage) = *storage_guard {
+                    if let Some(ref storage) = db.storage {
                         storage.clear_table(&self.table_name).map_err(|e| {
                             PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string())
                         })?;

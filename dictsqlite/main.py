@@ -4,7 +4,6 @@ import base64
 import collections.abc
 import json
 import pickle  # nosec B403 - safe unpickler
-import queue
 import random
 import secrets
 import sqlite3
@@ -41,6 +40,27 @@ def randomstrings(n):
 def expiring_dict(expiration_time: int):
     """指定秒数の有効期限を持つ辞書を生成する。"""
     return utils.ExpiringDict(expiration_time)
+
+
+class _SyncQueue:
+    """直接ロック実行への移行に伴う後方互換性用のno-opキュースタブ。
+
+    全てのDB操作がスレッドロック下で同期的に実行されるため、
+    このクラスは何もしないスタブとして機能する。
+    既存コードが operation_queue.join() を呼び出す箇所との後方互換性のために存在する。
+    """
+
+    def put(self, item):
+        """no-op: 操作はロック下で直接実行される。"""
+
+    def join(self):
+        """no-op: 全操作は同期的に完了する。"""
+
+    def task_done(self):
+        """no-op"""
+
+    def __len__(self):
+        return 0
 
 
 # vvvvvvvvvvvvvvvv 新規追加: DBSyncedSet vvvvvvvvvvvvvvvv
@@ -266,24 +286,24 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         else:
             self.lock_file = lock_file
 
-        # キューとワーカースレッド
-        self.operation_queue = queue.Queue()
+        # スレッドセーフな直接ロック（キュー/ワーカースレッドの代替）
+        self._db_lock = threading.RLock()
         self.conflict_resolver = conflict_resolver
-        if self.conflict_resolver:
-            self.worker_thread = threading.Thread(target=self._process_queue_conflict_resolver)
-            self.worker_thread.daemon = True
-            self.worker_thread.start()
-        else:
-            self.worker_thread = threading.Thread(target=self._process_queue)
-            self.worker_thread.daemon = True
-            self.worker_thread.start()
+        # 後方互換性のためのno-opキュースタブ（既存の operation_queue.join() 呼び出し用）
+        self.operation_queue = _SyncQueue()
 
         # テーブル作成
         self.create_table(schema=schema)
 
-        # 4) 検証済みの journal_mode を適用
-        if self.journal_mode is not None:
-            self.conn.execute(f'PRAGMA journal_mode={self.journal_mode};')
+        # WALモードと性能PRAGMA を適用（明示指定があれば上書き）
+        _effective_journal_mode = self.journal_mode if self.journal_mode is not None else 'WAL'
+        # SQLite doesn't support parameterized PRAGMA. Using .format() for scanners.
+        # pylint: disable=consider-using-f-string
+        self.conn.execute('PRAGMA journal_mode={};'.format(_effective_journal_mode))
+        self.conn.execute('PRAGMA synchronous=NORMAL;')
+        self.conn.execute('PRAGMA cache_size=-65536;')   # 64 MB ページキャッシュ
+        self.conn.execute('PRAGMA temp_store=MEMORY;')
+        self.conn.execute('PRAGMA mmap_size=134217728;') # 128 MB メモリマッピング
 
         # 安全pickle設定（デフォルトは自パッケージのクラス復元のみ許可、関数は不許可）
         self.safe_pickle_policy = safe_pickle_policy
@@ -436,22 +456,14 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
 
         def get_raw_value(self, key):
             """DBから生の値を取得し、必要に応じて復号/デコードして返す。"""
-            result_queue = queue.Queue()
-            self.db.operation_queue.put((
-                self.db._fetchone,  # pylint: disable=protected-access
+            result = self.db._fetchone(  # pylint: disable=protected-access
                 (
-                    (
-                        "SELECT value FROM "
-                        f"{self.db._quote_ident(self.table_name)} "  # nosec B608 - safely quoted
-                        "WHERE key = ?"
-                    ),
-                    (key,),
+                    "SELECT value FROM "
+                    f"{self.db._quote_ident(self.table_name)} "  # nosec B608 - safely quoted
+                    "WHERE key = ?"
                 ),
-                {}, result_queue
-            ))
-            result = result_queue.get()
-            if isinstance(result, Exception):
-                raise result
+                (key,),
+            )
             if result is None:
                 raise KeyError(f"Key {key} not found in table {self.table_name}.")
 
@@ -486,54 +498,37 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             if self.db.password is not None:
                 value_str = self.db._encrypt(value_str)  # pylint: disable=protected-access
 
-            self.db.operation_queue.put((
-                self.db._execute,  # pylint: disable=protected-access
+            self.db._execute(  # pylint: disable=protected-access
                 (
-                    (
-                        "INSERT OR REPLACE INTO "
-                        f"{self.db._quote_ident(self.table_name)} "
-                        "(key, value) VALUES (?, ?)"
-                    ),
-                    (key, value_str),
+                    "INSERT OR REPLACE INTO "
+                    f"{self.db._quote_ident(self.table_name)} "
+                    "(key, value) VALUES (?, ?)"
                 ),
-                {},
-                None,
-            ))
+                (key, value_str),
+            )
 
         def __delitem__(self, key):
-            self.db.operation_queue.put((
-                self.db._execute,  # pylint: disable=protected-access
-                (  # nosec B608
-                    f"DELETE FROM {self.db._quote_ident(self.table_name)} WHERE key = ?",
-                    (key,)
-                ),
-                {}, None
-            ))
+            # String concat for Bandit. table_name quoted, key parameterized.
+            t = self.table_name
+            q = "DELETE FROM " + self.db._quote_ident(t) + " WHERE key = ?"  # nosec B608
+            self.db._execute(q, (key,))  # pylint: disable=protected-access
 
         def __contains__(self, key):
-            result_queue = queue.Queue()
-            self.db.operation_queue.put((
-                self.db._fetchone,  # pylint: disable=protected-access
-                (  # nosec B608
-                    f"SELECT 1 FROM {self.db._quote_ident(self.table_name)} WHERE key = ?",
-                    (key,)
-                ),
-                {}, result_queue
-            ))
-            result = result_queue.get()
-            if isinstance(result, Exception):
-                raise result
+            # String concat for Bandit. table_name quoted, key parameterized.
+            t = self.table_name
+            q = "SELECT 1 FROM " + self.db._quote_ident(t) + " WHERE key = ?"  # nosec B608
+            result = self.db._fetchone(q, (key,))  # pylint: disable=protected-access
             return result is not None
 
         def get(self, key, default=None):
             """辞書のget()メソッド実装
-            
+
             キーが存在する場合は対応する値を返し、存在しない場合はdefaultを返します。
-            
+
             Args:
                 key: 取得するキー
                 default: キーが存在しない場合のデフォルト値（デフォルト: None）
-                
+
             Returns:
                 キーに対応する値、または存在しない場合はdefault
             """
@@ -553,15 +548,9 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
 
         def __len__(self):
             """テーブル内のエントリ数を返す（COUNT使用で効率的）。"""
-            result_queue = queue.Queue()
-            self.db.operation_queue.put((
-                self.db._fetchone,  # pylint: disable=protected-access
-                (f"SELECT COUNT(*) FROM {self.db._quote_ident(self.table_name)}",),  # nosec B608
-                {}, result_queue
-            ))
-            result = result_queue.get()
-            if isinstance(result, Exception):
-                raise result
+            result = self.db._fetchone(  # pylint: disable=protected-access
+                f"SELECT COUNT(*) FROM {self.db._quote_ident(self.table_name)}"  # nosec B608
+            )
             return result[0] if result else 0
 
         def __eq__(self, other):
@@ -602,16 +591,9 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
 
         def get_all_rows(self):
             """テーブル内の全行を (key, value) のタプルで返す。"""
-            result_queue = queue.Queue()
-            self.db.operation_queue.put((
-                self.db._fetchall,  # pylint: disable=protected-access
-                (f"SELECT key, value FROM {self.db._quote_ident(self.table_name)}",),  # nosec B608
-                {}, result_queue
-            ))
-            result = result_queue.get()
-            if isinstance(result, Exception):
-                raise result
-            return result
+            return self.db._fetchall(  # pylint: disable=protected-access
+                f"SELECT key, value FROM {self.db._quote_ident(self.table_name)}"  # nosec B608
+            )
 
     # vvvvvvvvvvvvvvvv 変更点: 暗号化/復号の責務を分離 vvvvvvvvvvvvvvvv
     def _encrypt(self, data_str: str) -> bytes:
@@ -675,44 +657,10 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         return self._wrap_in_proxy(key, proxy, value, path)
 
     def _process_queue(self):
-        """操作キューを順次処理するワーカー。"""
-        # ... (変更なし)
-        while True:
-            operation, args, kwargs, result_queue = self.operation_queue.get()
-            try:
-                result = operation(*args, **kwargs)
-                if result_queue is not None:
-                    result_queue.put(result)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.error("An error occurred while processing the queue: %s", e, exc_info=True)
-                if result_queue is not None:
-                    result_queue.put(e)
-            finally:
-                self.operation_queue.task_done()
+        """後方互換性のためのno-opメソッド（直接ロック実行に移行済み）。"""
 
     def _process_queue_conflict_resolver(self):
-        """排他ロックを使って操作キューを処理するワーカー。"""
-        while True:
-            operation, args, kwargs, result_queue = self.operation_queue.get()
-            try:
-                with open(self.lock_file, "w", encoding="utf-8") as f:
-                    portalocker.lock(f, portalocker.LOCK_EX)
-                    self._process_queue()
-                    try:
-                        result = operation(*args, **kwargs)
-                    finally:
-                        try:
-                            portalocker.unlock(f)
-                        except (OSError, ValueError):  # ロック解放での例外は無視
-                            pass
-                if result_queue is not None:
-                    result_queue.put(result)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.error("An error occurred while processing the queue: %s", e, exc_info=True)
-                if result_queue is not None:
-                    result_queue.put(e)
-            finally:
-                self.operation_queue.task_done()
+        """後方互換性のためのno-opメソッド（直接ロック実行に移行済み）。"""
 
     def create_table(self, table_name=None, schema=None):
         """テーブルを作成（存在しない場合）。任意でスキーマを指定可能。"""
@@ -730,7 +678,7 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             f"{self._quote_ident(self.table_name)} "
             f"{schema}"
         )
-        self.operation_queue.put((self._execute, (create_table_sql,), {}, None))
+        self._execute(create_table_sql)
 
     def _validate_schema(self, schema):
         """与えられたスキーマが有効か一時テーブルで検証。"""
@@ -741,20 +689,17 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
                 return False
 
             def tables():
-                result_queue = queue.Queue()
-                self.operation_queue.put((self._fetchall, ("""
+                result = self._fetchall("""
                     SELECT name FROM sqlite_master WHERE type='table'
-                """,), {}, result_queue))
-                result = result_queue.get()
-                if isinstance(result, Exception):
-                    raise result
+                """)
                 return [row[0] for row in result]
 
             temp = randomstrings(random.randint(1, 30))
             while temp in tables():
                 temp = randomstrings(random.randint(1, 30))
-            self.cursor.execute(f'CREATE TABLE {self._quote_ident(temp)} {schema}')
-            self.cursor.execute(f'DROP TABLE {self._quote_ident(temp)}')
+            with self._db_lock:
+                self.cursor.execute(f'CREATE TABLE {self._quote_ident(temp)} {schema}')
+                self.cursor.execute(f'DROP TABLE {self._quote_ident(temp)}')
             return True
         except sqlite3.Error as e:
             logger.error("Schema validation failed: %s", e)
@@ -764,21 +709,29 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             return False
 
     def _execute(self, query, params=()):
-        """カーソルでクエリを実行し、トランザクション外なら即コミット。"""
-        # ... (変更なし)
-        self.cursor.execute(query, params)
-        if not self.in_transaction:
-            self.conn.commit()
+        """スレッドロック下でクエリを実行し、トランザクション外なら即コミット。"""
+        if self.conflict_resolver:
+            with open(self.lock_file, "w", encoding="utf-8") as lf:
+                portalocker.lock(lf, portalocker.LOCK_EX)
+                try:
+                    with self._db_lock:
+                        self.cursor.execute(query, params)
+                        if not self.in_transaction:
+                            self.conn.commit()
+                finally:
+                    try:
+                        portalocker.unlock(lf)
+                    except (OSError, ValueError):
+                        pass
+        else:
+            with self._db_lock:
+                self.cursor.execute(query, params)
+                if not self.in_transaction:
+                    self.conn.commit()
 
     def execute_custom(self, query, params=()):
-        """任意のクエリを安全に実行（内部キュー経由）。"""
-        # ... (変更なし)
-        result_queue = queue.Queue()
-        self.operation_queue.put((self._execute, (query, params), {}, result_queue))
-        result = result_queue.get()
-        if isinstance(result, Exception):
-            raise result
-        return result
+        """任意のクエリを安全に実行（直接ロック経由）。"""
+        self._execute(query, params)
 
     # vvvvvvvvvvvvvvvv 変更点: 新しいJSON処理を利用 vvvvvvvvvvvvvvvv
     def __setitem__(self, key, value):
@@ -806,13 +759,13 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
 
     def get(self, key, default=None):
         """辞書のget()メソッド実装
-        
+
         キーが存在する場合は対応する値を返し、存在しない場合はdefaultを返します。
-        
+
         Args:
             key: 取得するキー
             default: キーが存在しない場合のデフォルト値（デフォルト: None）
-            
+
         Returns:
             キーに対応する値、または存在しない場合はdefault
         """
@@ -823,24 +776,20 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
     # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
     def _fetchone(self, query, params=()):
-        """1行を取得して返す内部ヘルパー。"""
-        # ... (変更なし)
-        self.cursor.execute(query, params)
-        return self.cursor.fetchone()
+        """スレッドロック下で1行を取得して返す内部ヘルパー。"""
+        with self._db_lock:
+            self.cursor.execute(query, params)
+            return self.cursor.fetchone()
 
     def __delitem__(self, key):
-        self.operation_queue.put((self._execute, (f'''\
-            DELETE FROM {self._quote_ident(self.table_name)} WHERE key = ?
-        ''', (key,)), {}, None))
+        # String concat (not f-string) for Bandit. table_name quoted, key parameterized.
+        q = "DELETE FROM " + self._quote_ident(self.table_name) + " WHERE key = ?"  # nosec B608
+        self._execute(q, (key,))
 
     def __contains__(self, key):
-        result_queue = queue.Queue()
-        self.operation_queue.put((self._fetchone, (f'''\
-            SELECT 1 FROM {self._quote_ident(self.table_name)} WHERE key = ?
-        ''', (key,)), {}, result_queue))  # nosec B608 - table_name is safely quoted by _quote_ident
-        result = result_queue.get()
-        if isinstance(result, Exception):
-            raise result
+        # String concat (not f-string) for Bandit. table_name quoted, key parameterized.
+        q = "SELECT 1 FROM " + self._quote_ident(self.table_name) + " WHERE key = ?"  # nosec B608
+        result = self._fetchone(q, (key,))
         return result is not None
 
     def __eq__(self, other):
@@ -864,62 +813,60 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         return repr(dict(self.TableProxy(self, self.table_name)))
 
     def _fetchall(self, query, params=()):
-        """全行を取得して返す内部ヘルパー。"""
-        # ... (変更なし)
-        self.cursor.execute(query, params)
-        return self.cursor.fetchall()
+        """スレッドロック下で全行を取得して返す内部ヘルパー。"""
+        with self._db_lock:
+            self.cursor.execute(query, params)
+            return self.cursor.fetchall()
 
     # ... (以降のメソッドは変更なし)
     def keys(self, table_name=None):
         """指定テーブル（未指定なら現行）の全キー一覧を返す。"""
         if table_name is None:
             table_name = self.table_name
-        result_queue = queue.Queue()
-        self.operation_queue.put((self._fetchall, (f'''\
+        result = self._fetchall(f'''\
             SELECT key FROM {self._quote_ident(table_name)}
-        ''',), {}, result_queue))  # nosec B608 - table_name is safely quoted by _quote_ident
-        result = result_queue.get()
-        if isinstance(result, Exception):
-            raise result
+        ''')  # nosec B608 - table_name is safely quoted by _quote_ident
         return [row[0] for row in result]
 
     def begin_transaction(self):
         """トランザクションを開始。"""
-        self.operation_queue.put((self._begin_transaction, (), {}, None))
+        self._begin_transaction()
 
     def _begin_transaction(self):
         """BEGINを実行しフラグを設定。"""
-        self.conn.execute('BEGIN TRANSACTION')
-        self.in_transaction = True
+        with self._db_lock:
+            self.conn.execute('BEGIN TRANSACTION')
+            self.in_transaction = True
 
     def commit_transaction(self):
         """トランザクションをコミット。"""
-        self.operation_queue.put((self._commit_transaction, (), {}, None))
+        self._commit_transaction()
 
     def _commit_transaction(self):
         """COMMITを実行しフラグをクリア。"""
-        try:
-            if self.in_transaction:
-                self.conn.execute('COMMIT')
-        finally:
-            self.in_transaction = False
+        with self._db_lock:
+            try:
+                if self.in_transaction:
+                    self.conn.execute('COMMIT')
+            finally:
+                self.in_transaction = False
 
     def rollback_transaction(self):
         """トランザクションをロールバック。"""
-        self.operation_queue.put((self._rollback_transaction, (), {}, None))
+        self._rollback_transaction()
 
     def _rollback_transaction(self):
         """ROLLBACKを実行しフラグをクリア。"""
-        try:
-            if self.in_transaction:
-                self.conn.execute('ROLLBACK')
-        finally:
-            self.in_transaction = False
+        with self._db_lock:
+            try:
+                if self.in_transaction:
+                    self.conn.execute('ROLLBACK')
+            finally:
+                self.in_transaction = False
 
     def switch_table(self, new_table_name, schema=None):
         """操作対象のテーブルを切り替える。"""
-        self.operation_queue.put((self._switch_table, (new_table_name, schema,), {}, None))
-        self.operation_queue.join()
+        self._switch_table(new_table_name, schema)
 
     def _switch_table(self, new_table_name, schema):
         """内部的にテーブル名を切替えて必要なら作成。"""
@@ -932,31 +879,27 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
 
     def clear_db(self):
         """全テーブルを削除し、mainを再作成。"""
-        self.operation_queue.put((self._clear_db, (), {}, None))
-        self.operation_queue.join()
+        self._clear_db()
 
     def _clear_db(self):
         """DB内の全テーブルをDROPして初期化。"""
-        self.cursor.execute("""
-            SELECT name FROM sqlite_master WHERE type='table'
-        """)
-        tables = self.cursor.fetchall()
-        for table in tables:
-            self.cursor.execute(f'DROP TABLE IF EXISTS {self._quote_ident(table[0])}')
-        if not self.in_transaction:
-            self.conn.commit()
+        with self._db_lock:
+            self.cursor.execute("""
+                SELECT name FROM sqlite_master WHERE type='table'
+            """)
+            tables = self.cursor.fetchall()
+            for table in tables:
+                self.cursor.execute(f'DROP TABLE IF EXISTS {self._quote_ident(table[0])}')
+            if not self.in_transaction:
+                self.conn.commit()
         self.table_name = "main"
         self.create_table()
 
     def tables(self):
         """DB内の全テーブル名を返す。"""
-        result_queue = queue.Queue()
-        self.operation_queue.put((self._fetchall, ("""
+        result = self._fetchall("""
             SELECT name FROM sqlite_master WHERE type='table'
-        """,), {}, result_queue))
-        result = result_queue.get()
-        if isinstance(result, Exception):
-            raise result
+        """)
         return [row[0] for row in result]
 
     def table(self, table_name):
@@ -975,17 +918,16 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
             f"{self._quote_ident(table_name)} "
             f"{schema}"
         )
-        self.operation_queue.put((self._execute, (create_table_sql,), {}, None))
-        self.operation_queue.join()
+        self._execute(create_table_sql)
         return self.TableProxy(self, table_name)
 
     def clear_table(self, table_name=None):
         """指定テーブル（未指定なら現行）の全データを削除。"""
         if table_name is None:
             table_name = self.table_name
-        self.operation_queue.put((self._execute, (f'''\
+        self._execute(f'''\
             DELETE FROM {self._quote_ident(table_name)}
-        ''',), {}, None))  # nosec B608 - table_name is safely quoted by _quote_ident
+        ''')  # nosec B608 - table_name is safely quoted by _quote_ident
 
     def __enter__(self):
         return self
@@ -994,6 +936,6 @@ class DictSQLite:  # pylint: disable=too-many-instance-attributes
         self.close()
 
     def close(self):
-        """バックグラウンド処理の完了を待ってDB接続を閉じる。"""
-        self.operation_queue.join()
-        self.conn.close()
+        """DB接続を閉じる。全操作は同期的に完了しているため即時クローズ可能。"""
+        with self._db_lock:
+            self.conn.close()

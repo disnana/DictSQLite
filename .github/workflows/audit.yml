@@ -11,12 +11,12 @@ on:
 
 jobs:
   security-audit:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       
       - uses: actions-rust-lang/audit@v1
         name: Audit Rust Dependencies (v2)
