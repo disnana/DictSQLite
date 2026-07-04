@@ -369,7 +369,6 @@ def readme(lang: str) -> str:
     - [{'非同期 API' if ja else 'Async API'}](guide/async.md)
     - [{'安全性' if ja else 'Safety'}](guide/security.md)
     - [{'パフォーマンス' if ja else 'Performance'}](guide/performance.md)
-    - [{'リリース' if ja else 'Release'}](guide/release.md)
     """
 
 
@@ -387,22 +386,16 @@ def config() -> str:
           { text: 'ホーム', link: '/' },
           { text: 'ガイド', link: '/guide' },
           { text: 'API', link: '/api' },
-          { text: 'Benchmark', link: '/performance' },
-          { text: 'Release', link: '/release' }
+          { text: 'Benchmark', link: '/performance' }
         ],
         sidebar: [
-          {
-            items: [
-              { text: 'ガイド', link: '/guide' },
-              { text: 'API', link: '/api' },
-              { text: '保存形式と永続化', link: '/storage' },
-              { text: '非同期 API', link: '/async' },
-              { text: '安全性', link: '/security' },
-              { text: 'パフォーマンス', link: '/performance' },
-              { text: 'リリース', link: '/release' },
-              { text: '変更履歴', link: '/changelog' }
-            ]
-          }
+          { text: 'ガイド', link: '/guide' },
+          { text: 'API', link: '/api' },
+          { text: '保存形式と永続化', link: '/storage' },
+          { text: '非同期 API', link: '/async' },
+          { text: '安全性', link: '/security' },
+          { text: 'パフォーマンス', link: '/performance' },
+          { text: '変更履歴', link: '/changelog' }
         ],
         socialLinks: [
           { icon: 'github', link: 'https://github.com/disnana/DictSQLite' }
@@ -422,22 +415,16 @@ def config() -> str:
               { text: 'Home', link: '/en/' },
               { text: 'Guide', link: '/en/guide' },
               { text: 'API', link: '/en/api' },
-              { text: 'Benchmark', link: '/en/performance' },
-              { text: 'Release', link: '/en/release' }
+              { text: 'Benchmark', link: '/en/performance' }
             ],
             sidebar: [
-              {
-                items: [
-                  { text: 'Guide', link: '/en/guide' },
-                  { text: 'API', link: '/en/api' },
-                  { text: 'Storage and Persistence', link: '/en/storage' },
-                  { text: 'Async API', link: '/en/async' },
-                  { text: 'Safety', link: '/en/security' },
-                  { text: 'Performance', link: '/en/performance' },
-                  { text: 'Release', link: '/en/release' },
-                  { text: 'Changelog', link: '/en/changelog' }
-                ]
-              }
+              { text: 'Guide', link: '/en/guide' },
+              { text: 'API', link: '/en/api' },
+              { text: 'Storage and Persistence', link: '/en/storage' },
+              { text: 'Async API', link: '/en/async' },
+              { text: 'Safety', link: '/en/security' },
+              { text: 'Performance', link: '/en/performance' },
+              { text: 'Changelog', link: '/en/changelog' }
             ]
           }
         }
@@ -483,7 +470,6 @@ PAGES = {
     "async.md": async_page,
     "security.md": security,
     "performance.md": performance,
-    "release.md": release,
     "changelog.md": changelog,
 }
 
@@ -501,7 +487,6 @@ def main() -> None:
         write(base / "guide" / "async.md", async_page(lang))
         write(base / "guide" / "security.md", security(lang))
         write(base / "guide" / "performance.md", performance(lang))
-        write(base / "guide" / "release.md", release(lang))
 
     write(SITE / ".vitepress" / "config.mts", config())
     write(SITE / "package.json", package_json())

@@ -8,4 +8,3 @@
 - [非同期 API](guide/async.md)
 - [安全性](guide/security.md)
 - [パフォーマンス](guide/performance.md)
-- [リリース](guide/release.md)
