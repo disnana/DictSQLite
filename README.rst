@@ -9,7 +9,7 @@ DictSQLite
    :target: https://github.com/disnana/DictSQLite/blob/main/LICENSE
 .. image:: https://static.pepy.tech/badge/dictsqlite
    :target: https://pepy.tech/project/dictsqlite
-.. image:: https://img.shields.io/badge/docs-dictsqlite.disnana.com-4f46e5
+.. image:: https://img.shields.io/badge/docs-dictsqlite.disnana.com-334155
    :target: https://dictsqlite.disnana.com/
 
 **Handle SQLite databases in Python with the simplicity of a dictionary.**
