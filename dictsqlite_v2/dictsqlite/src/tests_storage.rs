@@ -23,7 +23,7 @@ mod tests {
         let db_path = temp_file.path().to_str().unwrap();
 
         let config = Config::default();
-        let mut storage = StorageEngine::new(db_path, &config).unwrap();
+        let storage = StorageEngine::new(db_path, &config).unwrap();
 
         // Set a value
         let key = "test_key";
@@ -42,7 +42,7 @@ mod tests {
         let db_path = temp_file.path().to_str().unwrap();
 
         let config = Config::default();
-        let mut storage = StorageEngine::new(db_path, &config).unwrap();
+        let storage = StorageEngine::new(db_path, &config).unwrap();
 
         // Create bulk data
         let mut items = HashMap::new();
@@ -66,7 +66,7 @@ mod tests {
         let db_path = temp_file.path().to_str().unwrap();
 
         let config = Config::default();
-        let mut storage = StorageEngine::new(db_path, &config).unwrap();
+        let storage = StorageEngine::new(db_path, &config).unwrap();
 
         // Set and then delete
         let key = "delete_test";
@@ -92,7 +92,7 @@ mod tests {
 
         // Write data
         {
-            let mut storage = StorageEngine::new(db_path, &config).unwrap();
+            let storage = StorageEngine::new(db_path, &config).unwrap();
             storage.set("persist_key", b"persist_value").unwrap();
         }
 

@@ -62,7 +62,7 @@
 
 ## Version Information / バージョン情報
 
-- **Package Version**: v2.0.7 (PyPI)
+- **Package Version**: v2.1.3 (PyPI)
 - **Internal Implementation**: v4 (internal architecture label)
 
 The package is published on PyPI as `dictsqlite 2.x.x`. Internally, the implementation uses "v4" as an architecture label, but this is for internal purposes only.
@@ -162,7 +162,7 @@ dictsqlite_v2/dictsqlite/docs/
 
 ---
 
-**Last Updated**: December 7, 2025  
-**Package Version**: v2.0.7  
+**Last Updated**: July 4, 2026  
+**Package Version**: v2.1.3  
 **Internal Version**: v4
 

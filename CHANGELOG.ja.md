@@ -348,6 +348,8 @@ DictSQLiteの全ての重要な変更がこのファイルに記録されます�
 
 詳細なリリースノートは [others/release-notes/](./others/release-notes/) を参照してください
 
+[2.1.3]: https://github.com/disnana/DictSQLite/compare/v2.1.1...v2.1.3
+[2.1.1]: https://github.com/disnana/DictSQLite/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/disnana/DictSQLite/compare/v2.0.9...v2.1.0
 [2.0.9]: https://github.com/disnana/DictSQLite/compare/v2.0.8...v2.0.9
 [2.0.8]: https://github.com/disnana/DictSQLite/compare/v2.0.7...v2.0.8

@@ -20,8 +20,8 @@ use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, params_from_iter};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use crate::Config;
 
@@ -143,11 +143,11 @@ impl StorageEngine {
     }
 
     fn subtract_warm_bytes(&self, amount: usize) {
-        let _ = self
-            .warm_cache_bytes
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                Some(current.saturating_sub(amount))
-            });
+        let _ =
+            self.warm_cache_bytes
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                    Some(current.saturating_sub(amount))
+                });
     }
 
     /// 新しいストレージエンジンを作成

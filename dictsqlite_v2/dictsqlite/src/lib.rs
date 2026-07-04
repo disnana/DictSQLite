@@ -948,10 +948,9 @@ impl DictSQLiteV4 {
         let storage = if config.persist_mode == PersistMode::Memory {
             None
         } else {
-            Some(Arc::new(
-                StorageEngine::new(&db_path, &config)
-                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?,
-            ))
+            Some(Arc::new(StorageEngine::new(&db_path, &config).map_err(
+                |e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()),
+            )?))
         };
 
         // パスワードが提供された場合、暗号化エンジンを初期化

@@ -261,10 +261,8 @@ impl AsyncDictSQLite {
             // v5最適化: Mutex削除、直接アクセス
             if let Some(ref storage) = *self.storage {
                 // v4.2 Optimization: Batch read from storage (reduces SQL queries)
-                let miss_keys: Vec<String> = cache_misses
-                    .iter()
-                    .map(|(_, key)| key.clone())
-                    .collect();
+                let miss_keys: Vec<String> =
+                    cache_misses.iter().map(|(_, key)| key.clone()).collect();
                 if let Ok(fetched) = storage.bulk_get(&miss_keys) {
                     for (idx, key) in cache_misses {
                         if let Some(value) = fetched.get(&key) {
@@ -441,9 +439,7 @@ impl AsyncDictSQLite {
             // Flush if buffer is full
             if should_flush {
                 runtime
-                    .spawn_blocking(move || {
-                        flush_write_buffer_requeue(&write_buffer, &storage)
-                    })
+                    .spawn_blocking(move || flush_write_buffer_requeue(&write_buffer, &storage))
                     .await
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
             }
@@ -478,10 +474,8 @@ impl AsyncDictSQLite {
             let fetched = runtime
                 .spawn_blocking(move || {
                     if let Some(ref storage_engine) = *storage {
-                        let miss_keys: Vec<String> = cache_misses
-                            .iter()
-                            .map(|(_, key)| key.clone())
-                            .collect();
+                        let miss_keys: Vec<String> =
+                            cache_misses.iter().map(|(_, key)| key.clone()).collect();
                         if let Ok(values) = storage_engine.bulk_get(&miss_keys) {
                             return cache_misses
                                 .into_iter()
@@ -539,9 +533,7 @@ impl AsyncDictSQLite {
             // v5最適化: Mutex削除、直接アクセス
             if should_flush {
                 runtime
-                    .spawn_blocking(move || {
-                        flush_write_buffer_requeue(&write_buffer, &storage)
-                    })
+                    .spawn_blocking(move || flush_write_buffer_requeue(&write_buffer, &storage))
                     .await
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))??;
             }
