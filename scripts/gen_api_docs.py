@@ -73,24 +73,12 @@ def guide(lang: str) -> str:
 
     {'DictSQLite は、SQLite をバックエンドにした高速な永続化辞書です。v2 は Rust/PyO3 実装で、同期 API と非同期 API の両方を提供します。' if ja else 'DictSQLite is a fast persistent dictionary backed by SQLite. Version 2 is implemented with Rust/PyO3 and provides both sync and async APIs.'}
 
-    <div class="quick-grid">
-      <a class="quick-card" href="./api">
-        <strong>{'API を見る' if ja else 'API reference'}</strong>
-        <span>{'DictSQLite / AsyncDictSQLite / TableProxy の操作一覧' if ja else 'Operations for DictSQLite, AsyncDictSQLite, and TableProxy'}</span>
-      </a>
-      <a class="quick-card" href="./storage">
-        <strong>{'モードを選ぶ' if ja else 'Choose modes'}</strong>
-        <span>{'pickle/jsonb/json/bytes と lazy/writethrough の使い分け' if ja else 'Pick pickle/jsonb/json/bytes and lazy/writethrough modes'}</span>
-      </a>
-      <a class="quick-card" href="./async">
-        <strong>{'非同期で使う' if ja else 'Use async'}</strong>
-        <span>{'asyncio 向けの set/get/batch/flush' if ja else 'set/get/batch/flush for asyncio workloads'}</span>
-      </a>
-      <a class="quick-card" href="./performance">
-        <strong>{'性能を見る' if ja else 'Read benchmarks'}</strong>
-        <span>{'サイズ・件数・バッチ・保存形式ごとの測定' if ja else 'Measurements by size, count, batch, and storage format'}</span>
-      </a>
-    </div>
+    ## {'すぐ見る' if ja else 'Quick links'}
+
+    - [{'API を見る' if ja else 'API reference'}](./api): {'DictSQLite / AsyncDictSQLite / TableProxy の操作一覧' if ja else 'Operations for DictSQLite, AsyncDictSQLite, and TableProxy'}
+    - [{'モードを選ぶ' if ja else 'Choose modes'}](./storage): {'pickle/jsonb/json/bytes と lazy/writethrough の使い分け' if ja else 'Pick pickle/jsonb/json/bytes and lazy/writethrough modes'}
+    - [{'非同期で使う' if ja else 'Use async'}](./async): {'asyncio 向けの set/get/batch/flush' if ja else 'set/get/batch/flush for asyncio workloads'}
+    - [{'性能を見る' if ja else 'Read benchmarks'}](./performance): {'サイズ・件数・バッチ・保存形式ごとの測定' if ja else 'Measurements by size, count, batch, and storage format'}
 
     ## {'インストール' if ja else 'Installation'}
 

@@ -2,24 +2,12 @@
 
 DictSQLite is a fast persistent dictionary backed by SQLite. Version 2 is implemented with Rust/PyO3 and provides both sync and async APIs.
 
-<div class="quick-grid">
-  <a class="quick-card" href="./api">
-    <strong>API reference</strong>
-    <span>Operations for DictSQLite, AsyncDictSQLite, and TableProxy</span>
-  </a>
-  <a class="quick-card" href="./storage">
-    <strong>Choose modes</strong>
-    <span>Pick pickle/jsonb/json/bytes and lazy/writethrough modes</span>
-  </a>
-  <a class="quick-card" href="./async">
-    <strong>Use async</strong>
-    <span>set/get/batch/flush for asyncio workloads</span>
-  </a>
-  <a class="quick-card" href="./performance">
-    <strong>Read benchmarks</strong>
-    <span>Measurements by size, count, batch, and storage format</span>
-  </a>
-</div>
+## Quick links
+
+- [API reference](./api): Operations for DictSQLite, AsyncDictSQLite, and TableProxy
+- [Choose modes](./storage): Pick pickle/jsonb/json/bytes and lazy/writethrough modes
+- [Use async](./async): set/get/batch/flush for asyncio workloads
+- [Read benchmarks](./performance): Measurements by size, count, batch, and storage format
 
 ## Installation
 
