@@ -316,7 +316,10 @@ def release(lang: str) -> str:
 
 def changelog(lang: str) -> str:
     path = ROOT / ("CHANGELOG.ja.md" if lang == "ja" else "CHANGELOG.md")
-    return path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8")
+    text = re.sub(r"^> \*\*.*version\*\*:.*\n\n?", "", text, flags=re.M)
+    text = re.sub(r"^.*others/release-notes.*\n\n?", "", text, flags=re.M)
+    return text
 
 
 def readme(lang: str) -> str:

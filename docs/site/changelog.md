@@ -5,8 +5,6 @@ DictSQLiteの全ての重要な変更がこのファイルに記録されます�
 このフォーマットは[Keep a Changelog](https://keepachangelog.com/ja/1.0.0/)に基づいており、
 このプロジェクトは[セマンティック バージョニング](https://semver.org/lang/ja/)に従っています。
 
-> **English version**: [CHANGELOG.md](./CHANGELOG.md)
-
 ---
 
 ## [2.1.3] - 2026-07-04
@@ -345,8 +343,6 @@ DictSQLiteの全ての重要な変更がこのファイルに記録されます�
 - **パフォーマンス**: パフォーマンス改善
 
 ---
-
-詳細なリリースノートは [others/release-notes/](./others/release-notes/) を参照してください
 
 [2.1.3]: https://github.com/disnana/DictSQLite/compare/v2.1.1...v2.1.3
 [2.1.1]: https://github.com/disnana/DictSQLite/compare/v2.1.0...v2.1.1
