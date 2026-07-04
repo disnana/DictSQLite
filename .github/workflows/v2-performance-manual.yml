@@ -1,6 +1,6 @@
 name: DictSQLite v2 Performance Tests (Manual)
 permissions:
-  contents: read
+  contents: write
 
 on:
   workflow_dispatch:
@@ -9,6 +9,15 @@ on:
         description: 'Number of iterations per test'
         required: false
         default: '3'
+      benchmark_profile:
+        description: 'benchmark/benchmark_all.py profile'
+        required: false
+        default: 'quick'
+        type: choice
+        options:
+          - quick
+          - full
+          - stress
 
 jobs:
   build-and-test:
@@ -167,6 +176,108 @@ jobs:
             dictsqlite_v2/dictsqlite/v2_results.json
           retention-days: 30
 
+  benchmark-csv:
+    name: Benchmark CSV and Comparison
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install benchmark dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin matplotlib
+
+      - name: Build and install DictSQLite
+        working-directory: dictsqlite_v2/dictsqlite
+        run: |
+          maturin build --release --strip
+          pip install --force-reinstall target/wheels/*.whl
+
+      - name: Run benchmark suite
+        working-directory: dictsqlite_v2/dictsqlite
+        run: |
+          python benchmark/benchmark_all.py --profile "${{ github.event.inputs.benchmark_profile || 'quick' }}"
+          python benchmark/analyze_results.py
+          python benchmark/export_for_github_action_benchmark.py \
+            benchmark/benchmark_results.csv \
+            benchmark/github_benchmark_results.json
+
+      - name: Publish benchmark comparison
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: customBiggerIsBetter
+          output-file-path: dictsqlite_v2/dictsqlite/benchmark/github_benchmark_results.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          benchmark-data-dir-path: dictsqlite-v2-performance
+          auto-push: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+          summary-always: true
+          alert-threshold: '1000%'
+          comment-on-alert: false
+          fail-on-alert: false
+
+      - name: Add benchmark summary
+        run: |
+          python - <<'PY'
+          import csv
+          import os
+
+          profile = "${{ github.event.inputs.benchmark_profile || 'quick' }}"
+          path = "dictsqlite_v2/dictsqlite/benchmark/benchmark_results.csv"
+          rows = []
+          with open(path, encoding="utf-8") as f:
+              rows.extend(csv.DictReader(f))
+          rows.sort(key=lambda r: float(r.get("p95_time_ms", 0) or 0), reverse=True)
+
+          lines = [
+              "## DictSQLite v2 benchmark",
+              "",
+              f"- Profile: {profile}",
+              "- CSV: `dictsqlite_v2/dictsqlite/benchmark/benchmark_results.csv`",
+              "- GitHub benchmark JSON: `dictsqlite_v2/dictsqlite/benchmark/github_benchmark_results.json`",
+              "- Benchmark alerts are disabled to avoid false positives from GitHub runner variance.",
+              "",
+              "### Slowest p95 rows",
+              "",
+              "| category | operation | scenario | mode | store | p95 ms | ops/sec |",
+              "|---|---|---|---|---|---:|---:|",
+          ]
+
+          for row in rows[:10]:
+              lines.append(
+                  f"| {row['category']} | {row['operation']} | {row.get('scenario','')} | "
+                  f"{row.get('persist_mode','')} | {row.get('storage_mode','')} | "
+                  f"{float(row.get('p95_time_ms', 0) or 0):.3f} | "
+                  f"{float(row.get('ops_per_sec', 0) or 0):.1f} |"
+              )
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("\n".join(lines))
+              f.write("\n")
+          PY
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-csv-and-graphs
+          path: |
+            dictsqlite_v2/dictsqlite/benchmark/benchmark_results.csv
+            dictsqlite_v2/dictsqlite/benchmark/github_benchmark_results.json
+            dictsqlite_v2/dictsqlite/benchmark/benchmark_report.txt
+            dictsqlite_v2/dictsqlite/benchmark/images/*.png
+          retention-days: 30
+
   arm-benchmark:
     name: ARM Performance Benchmark
     runs-on: ubuntu-latest
@@ -249,3 +360,99 @@ jobs:
       - name: Check formatting
         working-directory: dictsqlite_v2/dictsqlite
         run: cargo fmt --check || true
+
+  performance-report:
+    name: Performance Report
+    runs-on: ubuntu-latest
+    needs: [build-and-test, benchmark-comparison, benchmark-csv, arm-benchmark, security-check]
+    if: always()
+
+    steps:
+      - name: Download benchmark artifact
+        uses: actions/download-artifact@v6
+        continue-on-error: true
+        with:
+          name: benchmark-csv-and-graphs
+          path: benchmark-summary-artifact
+
+      - name: Write final workflow summary
+        run: |
+          python - <<'PY'
+          import csv
+          import os
+          from pathlib import Path
+
+          profile = "${{ github.event.inputs.benchmark_profile || 'quick' }}"
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          csv_path = Path("benchmark-summary-artifact/benchmark_results.csv")
+
+          lines = [
+              "## DictSQLite v2 performance workflow result",
+              "",
+              f"- Benchmark profile: {profile}",
+              "",
+              "| Job | Result |",
+              "|---|---|",
+              "| build-and-test | ${{ needs.build-and-test.result }} |",
+              "| benchmark-comparison | ${{ needs.benchmark-comparison.result }} |",
+              "| benchmark-csv | ${{ needs.benchmark-csv.result }} |",
+              "| arm-benchmark | ${{ needs.arm-benchmark.result }} |",
+              "| security-check | ${{ needs.security-check.result }} |",
+              "",
+              "Benchmark alerts are disabled to avoid false positives from GitHub runner variance.",
+          ]
+
+          if csv_path.exists():
+              rows = list(csv.DictReader(csv_path.open(encoding="utf-8")))
+              slow = sorted(rows, key=lambda r: float(r.get("p95_time_ms", 0) or 0), reverse=True)[:10]
+              fast = sorted(rows, key=lambda r: float(r.get("ops_per_sec", 0) or 0), reverse=True)[:10]
+
+              lines += [
+                  "",
+                  "### Slowest p95 latency",
+                  "",
+                  "| category | operation | scenario | mode | store | p95 ms | ops/sec |",
+                  "|---|---|---|---|---|---:|---:|",
+              ]
+              for row in slow:
+                  lines.append(
+                      f"| {row.get('category','')} | {row.get('operation','')} | {row.get('scenario','')} | "
+                      f"{row.get('persist_mode','')} | {row.get('storage_mode','')} | "
+                      f"{float(row.get('p95_time_ms', 0) or 0):.3f} | "
+                      f"{float(row.get('ops_per_sec', 0) or 0):.1f} |"
+                  )
+
+              lines += [
+                  "",
+                  "### Fastest throughput",
+                  "",
+                  "| category | operation | scenario | mode | store | ops/sec | p95 ms |",
+                  "|---|---|---|---|---|---:|---:|",
+              ]
+              for row in fast:
+                  lines.append(
+                      f"| {row.get('category','')} | {row.get('operation','')} | {row.get('scenario','')} | "
+                      f"{row.get('persist_mode','')} | {row.get('storage_mode','')} | "
+                      f"{float(row.get('ops_per_sec', 0) or 0):.1f} | "
+                      f"{float(row.get('p95_time_ms', 0) or 0):.3f} |"
+                  )
+
+              lines += [
+                  "",
+                  "### Artifacts",
+                  "",
+                  "- `benchmark_results.csv`",
+                  "- `github_benchmark_results.json`",
+                  "- `benchmark_report.txt`",
+                  "- graph images under `images/*.png`",
+              ]
+          else:
+              lines += [
+                  "",
+                  "### Benchmark result",
+                  "",
+                  "Benchmark CSV artifact was not available. Check the `benchmark-csv` job logs/artifacts.",
+              ]
+
+          summary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
