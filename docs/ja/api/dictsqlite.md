@@ -4,6 +4,8 @@ outline: [2, 3]
 
 # API リファレンス
 
+普段使いでは `DictSQLite`、asyncio では `AsyncDictSQLite`、名前空間を分けたい場合は `table()` から `TableProxy` を使います。
+
 ## `DictSQLite`
 
 ```python
