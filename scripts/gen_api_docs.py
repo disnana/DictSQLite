@@ -73,6 +73,25 @@ def guide(lang: str) -> str:
 
     {'DictSQLite は、SQLite をバックエンドにした高速な永続化辞書です。v2 は Rust/PyO3 実装で、同期 API と非同期 API の両方を提供します。' if ja else 'DictSQLite is a fast persistent dictionary backed by SQLite. Version 2 is implemented with Rust/PyO3 and provides both sync and async APIs.'}
 
+    <div class="quick-grid">
+      <a class="quick-card" href="./api">
+        <strong>{'API を見る' if ja else 'API reference'}</strong>
+        <span>{'DictSQLite / AsyncDictSQLite / TableProxy の操作一覧' if ja else 'Operations for DictSQLite, AsyncDictSQLite, and TableProxy'}</span>
+      </a>
+      <a class="quick-card" href="./storage">
+        <strong>{'モードを選ぶ' if ja else 'Choose modes'}</strong>
+        <span>{'pickle/jsonb/json/bytes と lazy/writethrough の使い分け' if ja else 'Pick pickle/jsonb/json/bytes and lazy/writethrough modes'}</span>
+      </a>
+      <a class="quick-card" href="./async">
+        <strong>{'非同期で使う' if ja else 'Use async'}</strong>
+        <span>{'asyncio 向けの set/get/batch/flush' if ja else 'set/get/batch/flush for asyncio workloads'}</span>
+      </a>
+      <a class="quick-card" href="./performance">
+        <strong>{'性能を見る' if ja else 'Read benchmarks'}</strong>
+        <span>{'サイズ・件数・バッチ・保存形式ごとの測定' if ja else 'Measurements by size, count, batch, and storage format'}</span>
+      </a>
+    </div>
+
     ## {'インストール' if ja else 'Installation'}
 
     ```bash
@@ -113,6 +132,16 @@ def guide(lang: str) -> str:
     - `table_mode`: `prefix`, `separate`
 
     {'Safe Pickle や暗号化が必要な場合は、信頼境界に合わせて設定してください。大量の書き込みでは `lazy`、確実な即時保存では `writethrough` が向いています。' if ja else 'Use Safe Pickle and encryption according to your trust boundary. `lazy` is useful for heavy write throughput, while `writethrough` is best when each write must be persisted immediately.'}
+
+    ## {'よく使う構成' if ja else 'Common setups'}
+
+    | {'用途' if ja else 'Use case'} | {'おすすめ' if ja else 'Recommended setup'} |
+    |---|---|
+    | {'一時キャッシュ' if ja else 'Temporary cache'} | `persist_mode="memory"` |
+    | {'高速な永続キャッシュ' if ja else 'Fast persistent cache'} | `persist_mode="lazy", storage_mode="jsonb"` |
+    | {'書き込み直後の耐久性優先' if ja else 'Durability after every write'} | `persist_mode="writethrough"` |
+    | {'バイナリ保存' if ja else 'Binary data'} | `storage_mode="bytes"` |
+    | {'テーブル分離' if ja else 'Separated tables'} | `table_mode="separate"` |
     """
 
 
@@ -124,6 +153,8 @@ def api(lang: str) -> str:
     ---
 
     # {'API リファレンス' if ja else 'API Reference'}
+
+    {'普段使いでは `DictSQLite`、asyncio では `AsyncDictSQLite`、名前空間を分けたい場合は `table()` から `TableProxy` を使います。' if ja else 'Use `DictSQLite` for normal code, `AsyncDictSQLite` for asyncio, and `table()` / `TableProxy` for namespaces.'}
 
     ## `DictSQLite`
 
@@ -361,7 +392,6 @@ def config() -> str:
         ],
         sidebar: [
           {
-            text: 'DictSQLite',
             items: [
               { text: 'ガイド', link: '/guide' },
               { text: 'API', link: '/api' },
@@ -397,7 +427,6 @@ def config() -> str:
             ],
             sidebar: [
               {
-                text: 'DictSQLite',
                 items: [
                   { text: 'Guide', link: '/en/guide' },
                   { text: 'API', link: '/en/api' },

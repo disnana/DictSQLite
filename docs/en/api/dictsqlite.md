@@ -4,6 +4,8 @@ outline: [2, 3]
 
 # API Reference
 
+Use `DictSQLite` for normal code, `AsyncDictSQLite` for asyncio, and `table()` / `TableProxy` for namespaces.
+
 ## `DictSQLite`
 
 ```python

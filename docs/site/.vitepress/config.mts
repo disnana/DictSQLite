@@ -15,7 +15,6 @@ export default defineConfig({
     ],
     sidebar: [
       {
-        text: 'DictSQLite',
         items: [
           { text: 'ガイド', link: '/guide' },
           { text: 'API', link: '/api' },
@@ -51,7 +50,6 @@ export default defineConfig({
         ],
         sidebar: [
           {
-            text: 'DictSQLite',
             items: [
               { text: 'Guide', link: '/en/guide' },
               { text: 'API', link: '/en/api' },
