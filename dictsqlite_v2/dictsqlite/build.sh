@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build script for DictSQLite v4.0
+# Build script for DictSQLite v2
 
 set -e
 # 最後に一時停止するのはローカル実行時のみ
@@ -8,7 +8,7 @@ if [ -z "$CI" ]; then
 fi
 
 echo "================================"
-echo "DictSQLite v4.0 Build Script"
+echo "DictSQLite v2 Build Script"
 echo "================================"
 echo ""
 
@@ -30,10 +30,10 @@ fi
 echo "✅ Maturin found: $(maturin --version)"
 echo ""
 
-# Navigate to dictsqlite_v4 directory
+# Navigate to the package directory
 cd "$(dirname "$0")"
 
-echo "🔨 Building DictSQLite v4.0 in release mode..."
+echo "🔨 Building DictSQLite v2 in release mode..."
 echo ""
 
 # Optional: clean wheels directory before build
@@ -112,11 +112,11 @@ echo ""
 echo "🎉 Done!"
 echo ""
 echo "To run examples:"
-echo "  python examples/v4_usage_examples.py"
+echo "  python examples/jsonb_table_usage_example.py"
 echo ""
 echo "To run benchmarks:"
-echo "  python examples/v4_benchmark.py"
+echo "  python benchmark/benchmark_all.py --profile quick"
 echo ""
 echo "To run tests:"
-echo "  pytest tests/test_v4_security.py -v"
+echo "  pytest tests/ -v"
 echo ""
