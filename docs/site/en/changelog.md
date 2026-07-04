@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.1.3] - 2026-07-04
+## v2.1.3 - 2026-07-04
 
 ### Fixed
 - Hardened write-buffer flushing so pending writes are restored if storage flush fails.
@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.1.1] - 2026-03-03
+## v2.1.1 - 2026-03-03
 
 ### Security
 - Updated pyo3 to v0.28.2 (Rust-Python bindings security and compatibility fixes)
@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.1.0] - 2026-02-11
+## v2.1.0 - 2026-02-11
 
 ### Security
 - Fixed vulnerabilities in used libraries
@@ -57,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.0.9] - 2026-01-08
+## v2.0.9 - 2026-01-08
 
 ### Changed
 - Internal code organization and cleanup for improved code quality and maintainability
@@ -70,7 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.0.8] - 2026-01-03
+## v2.0.8 - 2026-01-03
 
 ### Added
 - **ARM Package Distribution**: Pre-built packages for ARM64 (aarch64) and ARM32 (armv7l)
@@ -93,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.0.7] - 2025-12-29
+## v2.0.7 - 2025-12-29
 
 ### Added
 - Updated dependencies to latest versions (pyo3 0.27.2, dashmap 6.1, tokio 1.42)
@@ -109,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.0.6] - 2025-12-06
+## v2.0.6 - 2025-12-06
 
 ### Added
 - Final optimization achieving 1.31x better overall performance than fastest version
@@ -126,7 +126,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.0.5] - 2025-11-15
+## v2.0.5 - 2025-11-15
 
 ### Added
 - Python 3.13 compatibility preparation
@@ -142,7 +142,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.0.4] - 2025-11-01
+## v2.0.4 - 2025-11-01
 
 ### Security
 - **CRITICAL**: Fixed RUSTSEC-2025-0020 (buffer overflow in pyo3 0.20.3)
@@ -157,7 +157,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.0.3] - 2025-10-25
+## v2.0.3 - 2025-10-25
 
 ### Fixed
 - **CRITICAL**: Resolved database lock issues in async operations
@@ -175,7 +175,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.0.2] - 2025-10-20
+## v2.0.2 - 2025-10-20
 
 ### Added
 - Dictionary-compatible API methods
@@ -191,7 +191,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.0.1] - 2025-10-15
+## v2.0.1 - 2025-10-15
 
 ### Added
 - AsyncDictSQLite persistence implementation
@@ -207,7 +207,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.0.0] - 2025-10-09
+## v2.0.0 - 2025-10-09
 
 ### Added
 - **MAJOR**: Complete rewrite in Rust using PyO3 bindings
@@ -234,7 +234,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.8.8] - 2025-09-20
+## v1.8.8 - 2025-09-20
 
 ### Added
 - Experimental JSON mode implementation
@@ -246,7 +246,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.8.7] - 2025-09-20
+## v1.8.7 - 2025-09-20
 
 ### Fixed
 - PyPI package fixes
@@ -254,14 +254,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.8.6] - 2025-09-18
+## v1.8.6 - 2025-09-18
 
 ### Security
 - **CRITICAL**: Fixed pickle deserialization vulnerability
 
 ---
 
-## [1.8.5] - 2025-09-18
+## v1.8.5 - 2025-09-18
 
 ### Added
 - AI-generated comprehensive documentation
@@ -269,7 +269,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.8.4] - 2025-09-18
+## v1.8.4 - 2025-09-18
 
 ### Changed
 - Code quality improvements
@@ -277,21 +277,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.8.3] - 2025-09-18
+## v1.8.3 - 2025-09-18
 
 ### Added
 - Experimental security updates
 
 ---
 
-## [1.8.2] - 2025-09-15
+## v1.8.2 - 2025-09-15
 
 ### Fixed
 - Python version support corrections
 
 ---
 
-## [1.8.1] - 2025-09-15
+## v1.8.1 - 2025-09-15
 
 ### Changed
 - File organization improvements
@@ -301,14 +301,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.8.0] - 2025-09-13
+## v1.8.0 - 2025-09-13
 
 ### Added
 - **MAJOR**: Initial stable release
 
 ---
 
-## [1.7.3] - 2025-09-10
+## v1.7.3 - 2025-09-10
 
 ### Added
 - Pydantic integration
@@ -317,7 +317,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.3.7] - 2025-08-15
+## v1.3.7 - 2025-08-15
 
 ### Added
 - Performance improvements
@@ -325,7 +325,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.3.3] - 2025-08-01
+## v1.3.3 - 2025-08-01
 
 ### Added
 - **Initial practical release** - Core functionality established
@@ -343,29 +343,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Performance**: Performance improvements
 
 ---
-
-[2.1.3]: https://github.com/disnana/DictSQLite/compare/v2.1.1...v2.1.3
-[2.1.1]: https://github.com/disnana/DictSQLite/compare/v2.1.0...v2.1.1
-[2.1.0]: https://github.com/disnana/DictSQLite/compare/v2.0.9...v2.1.0
-[2.0.9]: https://github.com/disnana/DictSQLite/compare/v2.0.8...v2.0.9
-[2.0.8]: https://github.com/disnana/DictSQLite/compare/v2.0.7...v2.0.8
-[2.0.7]: https://github.com/disnana/DictSQLite/compare/v2.0.6...v2.0.7
-[2.0.6]: https://github.com/disnana/DictSQLite/compare/v2.0.5...v2.0.6
-[2.0.5]: https://github.com/disnana/DictSQLite/compare/v2.0.4...v2.0.5
-[2.0.4]: https://github.com/disnana/DictSQLite/compare/v2.0.3...v2.0.4
-[2.0.3]: https://github.com/disnana/DictSQLite/compare/v2.0.2...v2.0.3
-[2.0.2]: https://github.com/disnana/DictSQLite/compare/v2.0.1...v2.0.2
-[2.0.1]: https://github.com/disnana/DictSQLite/compare/v2.0.0...v2.0.1
-[2.0.0]: https://github.com/disnana/DictSQLite/compare/v1.8.8...v2.0.0
-[1.8.8]: https://github.com/disnana/DictSQLite/compare/v1.8.7...v1.8.8
-[1.8.7]: https://github.com/disnana/DictSQLite/compare/v1.8.6...v1.8.7
-[1.8.6]: https://github.com/disnana/DictSQLite/compare/v1.8.5...v1.8.6
-[1.8.5]: https://github.com/disnana/DictSQLite/compare/v1.8.4...v1.8.5
-[1.8.4]: https://github.com/disnana/DictSQLite/compare/v1.8.3...v1.8.4
-[1.8.3]: https://github.com/disnana/DictSQLite/compare/v1.8.2...v1.8.3
-[1.8.2]: https://github.com/disnana/DictSQLite/compare/v1.8.1...v1.8.2
-[1.8.1]: https://github.com/disnana/DictSQLite/compare/v1.8.0...v1.8.1
-[1.8.0]: https://github.com/disnana/DictSQLite/compare/v1.7.3...v1.8.0
-[1.7.3]: https://github.com/disnana/DictSQLite/compare/v1.3.7...v1.7.3
-[1.3.7]: https://github.com/disnana/DictSQLite/compare/v1.3.3...v1.3.7
-[1.3.3]: https://github.com/disnana/DictSQLite/releases/tag/v1.3.3
