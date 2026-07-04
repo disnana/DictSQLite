@@ -1,0 +1,1 @@
+import{_ as i,o as a,c as t,a0 as h}from"./chunks/framework.BXmxXpv-.js";const o=JSON.parse('{"title":"非同期 API","description":"","frontmatter":{},"headers":[],"relativePath":"async.md","filePath":"async.md"}'),n={name:"async.md"};function l(k,s,p,e,E,d){return a(),t("div",null,[...s[0]||(s[0]=[h("",7)])])}const g=i(n,[["render",l]]);export{o as __pageData,g as default};

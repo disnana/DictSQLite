@@ -1,0 +1,1 @@
+import{_ as a,o,c as t,a0 as r}from"./chunks/framework.BXmxXpv-.js";const m=JSON.parse('{"title":"保存形式と永続化","description":"","frontmatter":{},"headers":[],"relativePath":"storage.md","filePath":"storage.md"}'),l={name:"storage.md"};function d(i,e,s,c,n,h){return o(),t("div",null,[...e[0]||(e[0]=[r("",7)])])}const p=a(l,[["render",d]]);export{m as __pageData,p as default};
