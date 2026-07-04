@@ -27,10 +27,10 @@ import asyncio
 from dictsqlite import AsyncDictSQLite
 
 async def main():
-db = AsyncDictSQLite("cache.db")
-await db.set("job:1", {"status": "queued"})
-print(await db.get("job:1"))
-await db.close()
+    db = AsyncDictSQLite("cache.db")
+    await db.set("job:1", {"status": "queued"})
+    print(await db.get("job:1"))
+    await db.close()
 
 asyncio.run(main())
 ```

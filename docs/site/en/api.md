@@ -10,11 +10,11 @@ outline: [2, 3]
 from dictsqlite import DictSQLite
 
 db = DictSQLite(
-"data.db",
-storage_mode="pickle",
-persist_mode="lazy",
-table_mode="prefix",
-safe_pickle=True,
+    "data.db",
+    storage_mode="pickle",
+    persist_mode="lazy",
+    table_mode="prefix",
+    safe_pickle=True,
 )
 ```
 

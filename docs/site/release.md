@@ -1,6 +1,6 @@
 # リリース
 
-## [2.1.3] - 2026-07-04
+    ## [2.1.3] - 2026-07-04
 
 ### 修正
 - ストレージへの flush 失敗時に保留中の書き込みが失われないよう、write buffer を復元するようにしました。
@@ -21,12 +21,12 @@
 ### 変更
 - パッケージバージョンを `2.1.3` に更新しました。
 
-## リリース前チェック
+    ## リリース前チェック
 
-```bash
-cd dictsqlite_v2/dictsqlite
-cargo test
-python -m py_compile benchmark/benchmark_all.py benchmark/analyze_results.py benchmark/export_for_github_action_benchmark.py
-```
+    ```bash
+    cd dictsqlite_v2/dictsqlite
+    cargo test
+    python -m py_compile benchmark/benchmark_all.py benchmark/analyze_results.py benchmark/export_for_github_action_benchmark.py
+    ```
 
-ビルドと公開は maintainer 環境で行います。ドキュメントは Actions の deploy workflow で自動生成・公開できます。
+    ビルドと公開は maintainer 環境で行います。ドキュメントは Actions の deploy workflow で自動生成・公開できます。

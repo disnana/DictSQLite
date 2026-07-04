@@ -4,21 +4,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-"docs:gen": "python ../../scripts/gen_api_docs.py",
-"dev": "vitepress dev",
-"build": "vitepress build",
-"preview": "vitepress preview"
+    "docs:gen": "python ../../scripts/gen_api_docs.py",
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview"
   },
   "devDependencies": {
-"@tailwindcss/postcss": "^4.2.2",
-"autoprefixer": "^10.4.27",
-"postcss": "^8.5.9",
-"tailwindcss": "^4.2.2",
-"vite": "^6.4.3",
-"vitepress": "^1.6.4",
-"vue": "^3.5.32"
+    "@tailwindcss/postcss": "^4.2.2",
+    "autoprefixer": "^10.4.27",
+    "postcss": "^8.5.9",
+    "tailwindcss": "^4.2.2",
+    "vite": "^6.4.3",
+    "vitepress": "^1.6.4",
+    "vue": "^3.5.32"
   },
   "overrides": {
-"vite": "^6.4.3"
+    "vite": "^6.4.3"
   }
 }

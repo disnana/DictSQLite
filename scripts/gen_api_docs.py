@@ -17,7 +17,6 @@ V2_DOCS = ROOT / "dictsqlite_v2" / "dictsqlite" / "docs"
 def write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     text = inspect.cleandoc(content).strip()
-    text = "\n".join(line[4:] if line.startswith("    ") else line for line in text.splitlines())
     path.write_text(text + "\n", encoding="utf-8")
 
 

@@ -1,6 +1,6 @@
 # Release
 
-## [2.1.3] - 2026-07-04
+    ## [2.1.3] - 2026-07-04
 
 ### Fixed
 - Hardened write-buffer flushing so pending writes are restored if storage flush fails.
@@ -21,12 +21,12 @@
 ### Changed
 - Bumped package version to `2.1.3`.
 
-## Pre-release checks
+    ## Pre-release checks
 
-```bash
-cd dictsqlite_v2/dictsqlite
-cargo test
-python -m py_compile benchmark/benchmark_all.py benchmark/analyze_results.py benchmark/export_for_github_action_benchmark.py
-```
+    ```bash
+    cd dictsqlite_v2/dictsqlite
+    cargo test
+    python -m py_compile benchmark/benchmark_all.py benchmark/analyze_results.py benchmark/export_for_github_action_benchmark.py
+    ```
 
-Build and publish from the maintainer environment. Documentation can be generated and deployed by the docs deploy workflow.
+    Build and publish from the maintainer environment. Documentation can be generated and deployed by the docs deploy workflow.
