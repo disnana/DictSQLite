@@ -1,12 +1,11 @@
-# ValidKit Documentation
+# DictSQLite Documentation
 
-ValidKit is a lightweight Python library for validating dictionary data with expressive schemas.
-
-## Contents
+This directory is generated. Update `scripts/gen_api_docs.py` when changing generated documentation.
 
 - [Guide](guide/guide.md)
-- [Tutorial](guide/tutorial.md)
-- [Validation](guide/validation.md)
-- [Precompiled validation](guide/compile.md)
+- [API](api/dictsqlite.md)
+- [Storage and persistence](guide/storage.md)
+- [Async API](guide/async.md)
+- [Safety](guide/security.md)
 - [Performance](guide/performance.md)
-- [API](api/validkit.md)
+- [Release](guide/release.md)

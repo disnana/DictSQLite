@@ -1,44 +1,44 @@
-# ValidKit ガイド
+# ガイド
 
-ValidKit は、辞書ベースのデータを小さなスキーマで検証するための Python ライブラリです。
+DictSQLite は、SQLite をバックエンドにした高速な永続化辞書です。v2 は Rust/PyO3 実装で、同期 API と非同期 API の両方を提供します。
 
 ## インストール
 
 ```bash
-pip install validkit-py
+pip install dictsqlite
 ```
 
 ## 最小例
 
 ```python
-from validkit import v, validate
+from dictsqlite import DictSQLite
 
-schema = {
-"name": v.str().min(3),
-"age": v.int().range(0, 150),
-"tags": v.list(v.str()).default([]),
-}
+db = DictSQLite("cache.db")
+db["user:1"] = {"name": "Alice", "score": 42}
 
-user = validate({"name": "Alice", "age": 30}, schema)
-print(user)
+print(db["user:1"])
+db.close()
 ```
 
-## スキーマの考え方
-
-スキーマは Python の辞書です。キーは検証後の出力キーになり、値には `v.str()` などのバリデータ、ネストした辞書、または `str` / `int` / `float` / `bool` の短縮表記を置けます。
+## 非同期 API
 
 ```python
-schema = {
-"account": {
-    "email": v.str().regex(r"^[^@]+@[^@]+$"),
-    "admin": bool,
-}
-}
+import asyncio
+from dictsqlite import AsyncDictSQLite
+
+async def main():
+db = AsyncDictSQLite("cache.db")
+await db.set("job:1", {"status": "queued"})
+print(await db.get("job:1"))
+await db.close()
+
+asyncio.run(main())
 ```
 
-## 次に読むもの
+## 保存形式と永続化モード
 
-- [チュートリアル](./tutorial)
-- [バリデーション機能](./validation)
-- [パフォーマンス](./performance)
-- [API](./api)
+- `storage_mode`: `pickle`, `jsonb`, `json`, `bytes`
+- `persist_mode`: `memory`, `lazy`, `writethrough`
+- `table_mode`: `prefix`, `separate`
+
+Safe Pickle や暗号化が必要な場合は、信頼境界に合わせて設定してください。大量の書き込みでは `lazy`、確実な即時保存では `writethrough` が向いています。

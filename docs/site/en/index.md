@@ -2,27 +2,27 @@
 layout: home
 
 hero:
-  name: "ValidKit"
-  text: "Lightweight, expressive Python validation"
-  tagline: "Dictionary schemas, class-style schemas, Japanese keys, and precompiled validation in one small API."
+  name: "DictSQLite"
+  text: "Fast, safe SQLite-backed Python dictionaries"
+  tagline: "A Rust/PyO3 persistent dictionary with async APIs, encryption, Safe Pickle, table support, and benchmark tooling."
   actions:
-    - theme: brand
-      text: Get Started
-      link: /en/guide
-    - theme: alt
-      text: API
-      link: /en/api
-    - theme: alt
-      text: Benchmark
-      link: /en/performance
+- theme: brand
+  text: Get Started
+  link: /en/guide
+- theme: alt
+  text: API
+  link: /en/api
+- theme: alt
+  text: Benchmark
+  link: /en/performance
 
 features:
-  - title: "Schemas are plain dictionaries"
-    details: "Validate settings, API payloads, and JSON-like data directly."
-  - title: "Precompiled validation"
-    details: "Turn hot schemas into optimized validation functions."
-  - title: "IDE-friendly typing"
-    details: "Use Schema[T] and class-style schemas without giving up runtime flexibility."
-  - title: "Unicode key support"
-    details: "Unicode field names work naturally, including error paths."
+  - title: "Use it like a dict"
+details: "Get, set, delete, and batch operations feel close to normal Python dictionaries."
+  - title: "Safety and persistence"
+details: "Choose AES-256-GCM encryption, Safe Pickle, and lazy, writethrough, or memory persistence."
+  - title: "Async and table support"
+details: "AsyncDictSQLite and TableProxy support asyncio workflows and separated namespaces."
+  - title: "Benchmark-ready"
+details: "Compare performance by size, quantity, batch size, storage mode, and persistence mode."
 ---

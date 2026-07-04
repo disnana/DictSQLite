@@ -1,12 +1,11 @@
-# ValidKit ドキュメント
+# DictSQLite ドキュメント
 
-ValidKit は、Python の辞書データを直感的なスキーマで検証する軽量ライブラリです。
-
-## 目次
+このディレクトリは自動生成されます。編集する場合は `scripts/gen_api_docs.py` を更新してください。
 
 - [ガイド](guide/guide.md)
-- [チュートリアル](guide/tutorial.md)
-- [バリデーション](guide/validation.md)
-- [事前コンパイル](guide/compile.md)
+- [API](api/dictsqlite.md)
+- [保存形式と永続化](guide/storage.md)
+- [非同期 API](guide/async.md)
+- [安全性](guide/security.md)
 - [パフォーマンス](guide/performance.md)
-- [API](api/validkit.md)
+- [リリース](guide/release.md)

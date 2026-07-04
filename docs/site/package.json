@@ -1,6 +1,6 @@
 {
-  "name": "validkit-docs",
-  "version": "1.0.0",
+  "name": "dictsqlite-docs",
+  "version": "2.1.3",
   "private": true,
   "type": "module",
   "scripts": {

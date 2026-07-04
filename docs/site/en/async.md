@@ -1,16 +1,24 @@
-# Using ValidKit in Async Code
-
-ValidKit validation is synchronous, but it performs lightweight CPU work without I/O, so it can usually be called directly inside async handlers.
+# Async API
 
 ```python
-from validkit import v, validate
+from dictsqlite import AsyncDictSQLite
 
-schema = {"name": v.str(), "age": v.int()}
-
-async def create_user(request):
-payload = await request.json()
-data = validate(payload, schema)
-return data
+db = AsyncDictSQLite("async.db", persist_mode="lazy")
+await db.set("k", "v")
+value = await db.get("k")
+await db.flush()
+await db.close()
 ```
 
-For very large payloads or hot paths, precompile schemas with `compile()` to reduce validation latency.
+## Batch operations
+
+```python
+await db.batch_set({"a": 1, "b": 2})
+values = await db.batch_get(["a", "b", "missing"])
+```
+
+Version 2.1.3 routes batch-get cache misses through bulk reads, reducing small SQLite round trips.
+
+## Shutdown
+
+Call `flush()` or `close()` in `lazy` mode. If a flush fails, pending writes are restored so they can be retried.

@@ -1,25 +1,21 @@
 # パフォーマンスとベンチマーク
 
-ベンチマークは `benchmarks/benchmark_validation.py` にあります。外部依存なしで通常版とコンパイル版を比較できます。
+ベンチマークは v2 パッケージ配下で実行します。quick/full/stress プロファイルで測定量を切り替えられます。
 
 ```bash
-python benchmarks/benchmark_validation.py
-python benchmarks/benchmark_validation.py --json
+cd dictsqlite_v2/dictsqlite
+python benchmark/benchmark_all.py --profile quick
+python benchmark/analyze_results.py
 ```
 
-## 測定内容
+## 測定軸
 
-- `flat_basic`: 基本型中心の平坦なスキーマ
-- `nested_payload`: ネストした辞書とリスト
-- `collect_errors`: 複数エラー収集モード
-- `class_schema`: クラス記法スキーマ
+- データサイズ
+- レコード数
+- バッチサイズ
+- 保存形式と永続化モード
+- cold read / hot write / delete / clear / threaded access
 
-## 読み方
+## GitHub Actions
 
-`speedup` が 1 より大きいほど、コンパイル版が高速です。特殊バリデータやカスタム処理が多い場合は通常版との差が小さくなります。
-
-## コンパイル版の最適化対象
-
-`compile(schema)` は、通常検証と `collect_errors=True` の検証で別々の生成関数を使います。ホットパスでは、同じスキーマを一度だけコンパイルして再利用してください。
-
-`collect_errors=True` は複数の `ErrorDetail` を作成するため、通常検証より速度差は小さくなります。大量の正常データを検証する経路では通常検証、入力全体のエラー一覧が必要な経路では `collect_errors=True` を使い分けるのがおすすめです。
+自動・手動の performance workflow は CSV、画像、GitHub benchmark 用 JSON、Actions Summary の Markdown を出力します。runner 差による誤検知を避けるため、比較は警告ではなく情報表示です。

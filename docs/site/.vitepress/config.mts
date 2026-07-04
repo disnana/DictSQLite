@@ -1,44 +1,35 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
-  title: 'ValidKit',
-  description: 'Lightweight Python validation library',
+  title: 'DictSQLite',
+  description: 'Fast, safe SQLite-backed Python dictionaries',
   base: '/',
+  cleanUrls: true,
   themeConfig: {
 nav: [
   { text: 'ホーム', link: '/' },
   { text: 'ガイド', link: '/guide' },
   { text: 'API', link: '/api' },
-  { text: 'Benchmark', link: '/performance' }
+  { text: 'Benchmark', link: '/performance' },
+  { text: 'Release', link: '/release' }
 ],
 sidebar: [
   {
-    text: 'はじめに',
+    text: 'DictSQLite',
     items: [
       { text: 'ガイド', link: '/guide' },
-      { text: 'チュートリアル', link: '/tutorial' },
-      { text: '変更履歴', link: '/changelog' }
-    ]
-  },
-  {
-    text: '機能',
-    items: [
-      { text: 'バリデーション', link: '/validation' },
-      { text: '事前コンパイル', link: '/compile' },
-      { text: 'エラーハンドリング', link: '/error_handling' },
-      { text: 'ベストプラクティス', link: '/best_practices' }
-    ]
-  },
-  {
-    text: 'リファレンス',
-    items: [
       { text: 'API', link: '/api' },
-      { text: 'パフォーマンス', link: '/performance' }
+      { text: '保存形式と永続化', link: '/storage' },
+      { text: '非同期 API', link: '/async' },
+      { text: '安全性', link: '/security' },
+      { text: 'パフォーマンス', link: '/performance' },
+      { text: 'リリース', link: '/release' },
+      { text: '変更履歴', link: '/changelog' }
     ]
   }
 ],
 socialLinks: [
-  { icon: 'github', link: 'https://github.com/disnana/ValidKit' }
+  { icon: 'github', link: 'https://github.com/disnana/DictSQLite' }
 ]
   },
   locales: {
@@ -55,31 +46,21 @@ en: {
       { text: 'Home', link: '/en/' },
       { text: 'Guide', link: '/en/guide' },
       { text: 'API', link: '/en/api' },
-      { text: 'Benchmark', link: '/en/performance' }
+      { text: 'Benchmark', link: '/en/performance' },
+      { text: 'Release', link: '/en/release' }
     ],
     sidebar: [
       {
-        text: 'Getting Started',
+        text: 'DictSQLite',
         items: [
           { text: 'Guide', link: '/en/guide' },
-          { text: 'Tutorial', link: '/en/tutorial' },
-          { text: 'Changelog', link: '/en/changelog' }
-        ]
-      },
-      {
-        text: 'Features',
-        items: [
-          { text: 'Validation', link: '/en/validation' },
-          { text: 'Precompiled Validation', link: '/en/compile' },
-          { text: 'Error Handling', link: '/en/error_handling' },
-          { text: 'Best Practices', link: '/en/best_practices' }
-        ]
-      },
-      {
-        text: 'Reference',
-        items: [
           { text: 'API', link: '/en/api' },
-          { text: 'Performance', link: '/en/performance' }
+          { text: 'Storage and Persistence', link: '/en/storage' },
+          { text: 'Async API', link: '/en/async' },
+          { text: 'Safety', link: '/en/security' },
+          { text: 'Performance', link: '/en/performance' },
+          { text: 'Release', link: '/en/release' },
+          { text: 'Changelog', link: '/en/changelog' }
         ]
       }
     ]

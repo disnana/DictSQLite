@@ -1,177 +1,375 @@
 # Changelog
 
-このファイルは `git tag`・コミット履歴・バージョン更新コミットをもとに再構成した変更履歴です。
+All notable changes to DictSQLite will be documented in this file.
 
-- `v1.0.0` 〜 `v1.2.0` はリポジトリ内のタグを基準に整理しています。
-- `1.2.1` は `src/validkit/__init__.py` の `__version__ = "1.2.1"` と 2026-03-07 の関連コミットを基準に整理しています（現時点で対応タグは未確認）。
-- 変更点は読みやすさのために `Added` / `Changed` / `Fixed` に要約しています。
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.2] - 2026-07-04
+> **日本語版**: [CHANGELOG.ja.md](./CHANGELOG.ja.md)
 
-### Changed
-- コンパイル済みスキーマの通常検証パスを高速化し、不要なエラーリスト生成とキーワード引数呼び出しを避けるようにしました。
-- コンパイル時にクラススキーマの復元方法を判定し、dataclass / `NamedTuple` 変換時の実行時判定を削減しました。
-- dict スキーマの生成コードを最適化し、成功パスでの余分なフラグ分岐、辞書参照、トップレベル path 計算を減らしました。
-- `base` が無い通常ケースで、欠損補完用の空 dict 生成を避けるようにしました。
-- コンパイル済みスキーマで通常検証用と `collect_errors=True` 用の生成関数を分け、実行モードごとの分岐を減らしました。
-- コンパイル済みスキーマの非収集パスで、内部呼び出しを位置引数ベースにして呼び出しオーバーヘッドを削減しました。
+---
+
+## [2.1.3] - 2026-07-04
 
 ### Fixed
-- コンパイル済みの入れ子 dict スキーマで `base` の子要素が再帰先に渡らず、`partial=True` や `.when(...)` のスキップ時に既存値を補完できない問題を修正しました。
+- Hardened write-buffer flushing so pending writes are restored if storage flush fails.
+- Fixed delete/clear paths that could allow pending buffered writes to reappear after removal.
+- Fixed table-name prefix handling in async deletion paths.
+- Fixed separate-table persistence so durable modes write table data directly instead of losing lazy-mode table updates.
+- Fixed compression/decompression consistency for separate-table storage.
+- Updated `anyhow` lockfile entry to `1.0.103` to resolve RUSTSEC-2026-0190.
 
-## [1.3.1] - 2026-07-03
-
-### Added
-- `v.list(...)` に `.min(length)` / `.max(length)` / `.length(length)` を追加し、要素数を検証できるようにしました。
-- 数値バリデータの `.min()` / `.max()` に `exclusive=True`、`.range()` に `exclusive_min=True` / `exclusive_max=True` を追加しました。
-- dataclass と `NamedTuple` をクラススキーマとして渡した場合、検証済みのインスタンスを返すようにしました。
-- `benchmarks/benchmark_validation.py` を追加し、通常の `validate()` と `compile(...).validate()` の速度を依存なしで比較できるようにしました。
-- ValidKit 用の VitePress ドキュメント生成スクリプトと日英ドキュメントを整備しました。
+### Improved
+- Added bulk storage reads for batch cache misses to reduce SQLite round trips.
+- Reworked warm-cache byte accounting to avoid O(n) cache scans on hot read promotion.
+- Improved benchmark coverage across data sizes, batch sizes, record counts, persistence modes, storage modes, table modes, cold reads, mutation operations, and threaded access.
+- Improved benchmark graph generation with compact labels, aggregation, p95 latency views, and less label overlap.
+- Added GitHub Actions benchmark CSV/graph artifacts, benchmark-history export, and Markdown run summaries.
+- Configured GitHub benchmark comparison as informational only to avoid false alerts from runner variance.
 
 ### Changed
-- `Schema.generate_sample()` がリストの最小要素数と数値の排他的境界を考慮して、有効なサンプルを生成するようになりました。
-- dataclass の `default_factory` を欠損値の補完に使用し、`init=False` フィールドは入力スキーマから除外するようにしました。
-- dataclass / `NamedTuple` の partial 検証は、必須コンストラクタ引数が不足し得るため従来どおり辞書を返します。
-- GitHub Actions の CI / Security / docs preview / deploy ワークフローを ValidKit 用に整理し、GitHub Pages の `validkit.disnana.com` 配置に合わせました。
+- Bumped package version to `2.1.3`.
+
+---
+
+## [2.1.1] - 2026-03-03
+
+### Security
+- Updated pyo3 to v0.28.2 (Rust-Python bindings security and compatibility fixes)
+- Updated pythonize to 0.28 (aligned with pyo3 0.28)
+- Updated papaya to 0.2 (concurrent hash map security fixes)
+- Updated base64 to 0.22
+
+### Changed
+- Updated actions/cache to v5
+- Updated actions/checkout to v6
+- Updated actions/setup-python to v6
+- Updated google/osv-scanner-action to v2.3.3
+- Updated criterion to 0.8 (benchmarking dependency)
+
+---
+
+## [2.1.0] - 2026-02-11
+
+### Security
+- Fixed vulnerabilities in used libraries
 
 ### Fixed
-- 排他的な上下限が同値で、有効値が存在しない数値範囲を定義時に拒否するようにしました。
-- 新規コードに含まれていた末尾空白とスタイル上の問題を修正しました。
-- コンパイル済みスキーマで入れ子の `v.list(...)` / `v.dict(...)` を検証したとき、一時変数の衝突により結果が壊れる問題を修正しました。
-- `env(..., decryptor=...)` を含むコンパイル済みスキーマが、復号失敗を `collect_errors=True` で扱うと生成コードの構文エラーになる問題を修正しました。
-- フォールバック検証される特殊バリデータで `.custom(...)` が二重実行される問題を修正しました。
+- Fixed internal bugs
 
-## [1.3.0dev2] - 2026-03-31
+---
+
+## [2.0.9] - 2026-01-08
 
 ### Changed
-- **.env(key, decryptor=None)**
-  入力データが欠損している場合に、指定した環境変数から値を自動補完します。必要に応じて `decryptor` 引数に関数を渡すことで、取得した値を復号（または加工）してから検証できます。
-- **decryptor 引数の詳細**
-  `decryptor` に渡す関数は `(value: str) -> Any` のシグネチャを持つ必要があります。これにより、環境変数から取得した文字列を検証前に任意の型へ変換・復号することが可能です。
+- Internal code organization and cleanup for improved code quality and maintainability
 
-## [1.3.0dev1] - 2026-03-31
+### Note
+- No functional changes or improvements
+- No performance impact
+- API remains identical to v2.0.8
+- Full backward compatibility with v2.0.8
 
-### Added
-- すべてのバリデータで利用可能なセキュリティ・開発体験向上メソッドを追加しました。
-  - `.secret()`: バリデーションエラー時に元の入力値を例外メッセージからマスク (`***`) する機能を追加しました。
-  - `.env(key)`: 入力データが欠損している場合に、指定した環境変数（例: `os.environ[key]`）から値を自動補完する機能を追加しました。
-  - `.error_msg(msg)`: 検証エラー時のメッセージを、開発者が指定した独自のメッセージに上書きできる機能を追加しました。
-- 新しいバリデータクラスを追加しました。
-  - `v.url()`: URL フォーマットを検証します。チェインメソッドで特定のスキーム (`.schemes()`)、ドメイン (`.domains()`)、サブドメイン (`.subdomains()`)、パス (`.paths()`)、必須クエリパラメータ (`.query_keys()`) に制限可能です。
-  - `v.enum(enum_cls)`: Python 標準の `enum.Enum` とのシームレスな統合。`.coerce()` で文字列から自動的に Enum インスタンスへ変換します。
+---
 
-## [1.3.0dev0] - 2026-03-31
+## [2.0.8] - 2026-01-03
 
 ### Added
-- ライセンス認証システム向けの高度なバリデータ群を追加しました。
-- `v.datetime()`: 日時 (`datetime.datetime` / `datetime.date`) の検証、および `.after_now()` / `.before_now()` による期限チェックに対応しました。
-- `v.uuid()`: UUID 形式の検証、および `.version(n)` によるバージョン制限をサポートしました。
-- `v.mac()`: MAC アドレス形式 (`00:11:22...`) の検証に対応しました。
-- `v.sid()`: Windows Security Identifier (SID) 形式 (`S-1-5-21-...`) の検証に対応しました。
-- `v.hwid()`: 汎用ハードウェア ID を検証するバリデータを追加しました。`.length(n)` や `.hex()` で制限可能です。
-- `v.ip()`: IP アドレス (IPv4/IPv6) の検証、および `.v4_only()` / `.v6_only()` によるプロトコル特定に対応しました。
-- `v.snowflake()`: Discord Snowflake ID の検証に対応しました。`.coerce()` で文字列から整数への自動変換をサポートします。
-- `v.version()`: Semantic Versioning (SemVer) 形式を検証するバリデータを追加しました。
+- **ARM Package Distribution**: Pre-built packages for ARM64 (aarch64) and ARM32 (armv7l)
+- Windows on ARM (ARM64) package support
+- Multi-architecture CI/CD pipeline with GitHub Actions
+- Automated PyPI deployment for all architectures
+
+### Changed
+- PyPI package distribution now includes ARM architecture wheels
+- GitHub Actions automated build and release workflow
+
+### Improved
+- Installation on ARM platforms (no compilation needed)
+- Cross-platform deployment consistency
+
+### Note
+- Functionality and API remain identical across all architectures
+- Performance characteristics maintained from v2.0.7
+- ARM benchmark testing under consideration for future releases
+
+---
+
+## [2.0.7] - 2025-12-29
+
+### Added
+- Updated dependencies to latest versions (pyo3 0.27.2, dashmap 6.1, tokio 1.42)
+- Enhanced documentation with migration guide and examples
+
+### Changed
+- Improved Python-Rust data conversion performance
+- Enhanced async runtime stability
 
 ### Fixed
-- `v.datetime()` において、タイムゾーンを持つ日時（aware）と持たない日時（naive）を比較した際に `TypeError` が発生する問題を修正しました。入力データのタイムゾーンに合わせて現在時刻を取得および補間するように改善しました。
-- `v.ip()` において、無効な入力があった場合のエラーメッセージに元の値を表示するように改善しました。
+- Fixed test stability issues with pytest-v6
+- Resolved import errors in benchmark tests
 
-## [1.2.3] - 2026-03-15
+---
+
+## [2.0.6] - 2025-12-06
 
 ### Added
-- `v.str()` で文字列の長さを検証する `min()`, `max()`, `range()` メソッドを追加しました。
-- クラス記法スキーマ (`class Config: ...`) を追加し、型アノテーションと `Validator` クラス属性を既存の dict スキーマ検証経路へ変換できるようになりました。
-- `v.instance(type_cls)` / `InstanceValidator` を追加し、任意クラスに対する `isinstance` ベースの検証と `.coerce()` をサポートしました。
+- Final optimization achieving 1.31x better overall performance than fastest version
+- LRU tracking optimization for Memory/Lazy modes
 
 ### Changed
-- `Schema(...)` は実行時に dict スキーマだけでなく class 記法スキーマも直接ラップできるようになりました。
-- README / `docs/index.md` / 回帰テストをクラス記法スキーマと Python 3.9+ 型ヒント対応に合わせて更新しました。
+- Write performance improved to 154K ops/sec (4.4x improvement)
+- Read performance: 8.42x faster than fastest version
+- Bulk insert optimization with single transaction
+
+### Performance
+- Read: 510,256 ops/sec (WriteThrough mode)
+- Mixed operations: 285,657 ops/sec (Lazy mode)
+
+---
+
+## [2.0.5] - 2025-11-15
+
+### Added
+- Python 3.13 compatibility preparation
+
+### Changed
+- Updated pyo3 to 0.26 for improved Python-Rust data conversion
+- Updated dashmap to 6.0 for better concurrent access performance
+- Updated tokio to 1.40 for enhanced async processing
+
+### Performance
+- Write operations: ~5% faster
+- Concurrent operations: ~12% faster
+
+---
+
+## [2.0.4] - 2025-11-01
+
+### Security
+- **CRITICAL**: Fixed RUSTSEC-2025-0020 (buffer overflow in pyo3 0.20.3)
+- Upgraded pyo3 to 0.24.1 with Bound API support
+- Fixed sensitive data logging in examples
+- Replaced unsafe tempfile.mktemp() with mkstemp()
+
+### Security Validation
+- Cargo Audit: 0 vulnerabilities (was 1)
+- CodeQL (Python): 0 alerts (was 5)
+- CodeQL (Rust): 0 alerts
+
+---
+
+## [2.0.3] - 2025-10-25
 
 ### Fixed
-- クラス記法スキーマで `Optional[T]` / `Union[T, None]` が必須扱いになっていた問題を修正しました。
-- `typing.Union` / PEP 604 (`T | None`) のうち、`None` 以外の複数メンバーを持つ型がサイレントにパススルーされる問題を修正し、明示的に `TypeError` を送出するようにしました。
-- Python 3.9 で `types.UnionType` や `_UnionType: type | None` に起因する import / 実行時エラーが発生しないよう互換性を改善しました。
-- `InstanceValidator.coerce()` が元例外を失っていた問題を修正し、例外チェーンを保持するようにしました。
-
-## [1.2.1] - 2026-03-07
+- **CRITICAL**: Resolved database lock issues in async operations
+- Implemented queue-based operation serialization
+- Fixed concurrent access conflicts
 
 ### Added
-- `v.auto_infer(data, type_map=None, schema_overrides=None)` を追加し、既存データから ValidKit スキーマを逆生成できるようになりました。
-- `type_map` によるカスタム型対応を追加しました。callable が `Validator` を返す場合はそのまま使い、プリミティブ値を返す場合は変換後の値で再推論できます。
-- `schema_overrides` により、トップレベルの dict フィールドを明示的なバリデータで上書きできるようになりました。
+- Persistent ThreadPoolExecutor for stable async operations
+- NORMAL locking mode for better concurrency
+
+### Performance
+- 50 concurrent writes: 10,027 ops/s
+- 50 concurrent reads: 145,345 ops/s
+- Cache hit rate: 80%
+
+---
+
+## [2.0.2] - 2025-10-20
+
+### Added
+- Dictionary-compatible API methods
+  - `items()` - Returns iterator of (key, value) tuples
+  - `values()` - Returns iterator of all values
+  - `update(dict)` - Bulk update from dictionary
+  - `pop(key, default)` - Remove key and return value
+  - `setdefault(key, default)` - Set default if key doesn't exist
 
 ### Changed
-- `v.auto_infer()` の型ヒントと回帰テストを拡充し、mypy / IDE で扱いやすい API に整理しました。
-- ドキュメントとサンプルを `auto_infer()`・`schema_overrides`・`generate_sample()` の現在仕様に合わせて更新しました。
+- Enhanced compatibility with v1.8.8 codebases
+- All persistence modes (Memory/Lazy/WriteThrough) support new methods
+
+---
+
+## [2.0.1] - 2025-10-15
+
+### Added
+- AsyncDictSQLite persistence implementation
+- LRU cache eviction for automatic memory management
+- Storage fallback functionality
+
+### Changed
+- Improved async processing stability
+- Enhanced cache miss handling
 
 ### Fixed
-- `schema_overrides` がネストした dict やリスト要素に漏れて適用される問題を修正しました。
-- `type_map` の callable による再推論時に `schema_overrides` が意図せず伝播する問題を修正しました。
-- `NumberValidator.range()` で `min > max` の不正な境界を定義時に `ValueError` として拒否し、`.min()` / `.max()` との組み合わせでも矛盾を防ぐようにしました。
-- `Schema.generate_sample()` が生成候補を各バリデータで再検証するようになり、`regex()` や `custom()` を満たせない不正なサンプルを返さず `ValueError` を送出するようになりました。
+- Memory leak prevention with LRU eviction
 
-## [1.2.0] - 2026-02-27
+---
+
+## [2.0.0] - 2025-10-09
+
 ### Added
-- すべてのバリデータに `.default(value)` を追加しました。欠損キーを自動補完し、設定したフィールドは自動的に optional として扱われます。
-- すべてのバリデータに `.examples(list)` を追加しました。サンプル生成やドキュメント補助に使える例を保持できます。
-- すべてのバリデータに `.description(text)` を追加しました。フィールドの説明文を保持できます。
-- `Schema.generate_sample()` を追加しました。スキーマからサンプルデータを再帰的に生成でき、優先順位は `.default()` → `.examples()[0]` → 型ごとの代表値です。
+- **MAJOR**: Complete rewrite in Rust using PyO3 bindings
+- True Python asyncio support with awaitable methods
+- AES-256-GCM encryption (upgraded from AES-CBC)
+- Safe Pickle validation with whitelist-based verification
+- Multiple persistence modes (Memory/Lazy/WriteThrough)
+- LRU cache for efficient memory management
+
+### Performance
+- Async writes: 300x faster (30s → 0.1s for 1000 items)
+- Sync writes: 43x faster (29.79K → 1.30M ops/sec)
+- Batch reads: 5-10x faster
 
 ### Changed
-- `example.py` とドキュメントを更新し、新しい補完・サンプル生成 API を反映しました。
-- 型チェック関連の修正を行い、公開 API の利用時に静的解析しやすくしました。
+- Mutex lock count reduced 100x in async operations
+- SQL transaction count reduced 100x
+- PBKDF2 key derivation with 100,000 iterations
 
-## [1.1.3] - 2026-02-27
+### Security
+- AES-256-GCM with authenticated encryption
+- SQL injection protection with parameterized queries
+- Integrity verification with GCM tags
+
+---
+
+## [1.8.8] - 2025-09-20
 
 ### Added
-- 各型バリデータの coercion（自動型変換）を実装しました。
-- 型変換の挙動を検証する専用テストを追加しました。
-- `validkit` パッケージ初期化を整備し、主要な関数・クラスをトップレベルから import できるようにしました。
-
-## [1.1.2] - 2026-02-27
-
-### Added
-- 宣言的なスキーマ定義によるバリデーションライブラリ本体を実装しました。
-- カスタムルールを含む基本的な検証機能を追加しました。
-
-## [1.1.1] - 2026-02-27
-
-### Changed
-- `example.py` を更新し、利用例を見直しました。
+- Experimental JSON mode implementation
+- AI-generated documentation (Japanese and English)
 
 ### Fixed
-- 軽微な不具合を修正しました。
+- Fixed schema parameter type annotation (bool → str | None)
+- Fixed multiple Pylint warnings
 
-## [1.1.0] - 2026-02-27
+---
+
+## [1.8.7] - 2025-09-20
+
+### Fixed
+- PyPI package fixes
+- License file updates
+
+---
+
+## [1.8.6] - 2025-09-18
+
+### Security
+- **CRITICAL**: Fixed pickle deserialization vulnerability
+
+---
+
+## [1.8.5] - 2025-09-18
 
 ### Added
-- `Schema[T]` ジェネリックラッパーを追加し、`validate()` の戻り値を IDE / 型チェッカーがより正確に推論できるようにしました。
-- `validate()` に型補完向けのオーバーロードを追加し、TypedDict と組み合わせた補完体験を改善しました。
+- AI-generated comprehensive documentation
+- Extended test coverage
+
+---
+
+## [1.8.4] - 2025-09-18
 
 ### Changed
-- 実行時に不要なオーバーロード定義を `TYPE_CHECKING` 配下へ移し、静的解析向けの実装に整理しました。
-- `1.1.0` へバージョンを更新し、`Schema[T]` を公開 API として位置づけました。
+- Code quality improvements
+- Stability enhancements
 
-## [1.0.2] - 2026-01-24
+---
+
+## [1.8.3] - 2025-09-18
 
 ### Added
-- `SECURITY.md` を追加し、セキュリティポリシーを整備しました。
+- Experimental security updates
+
+---
+
+## [1.8.2] - 2025-09-15
+
+### Fixed
+- Python version support corrections
+
+---
+
+## [1.8.1] - 2025-09-15
 
 ### Changed
-- `SECURITY.md` の日英構成と書式を整理しました。
-- ライセンス表記まわりの説明を見直しました。
+- File organization improvements
 
-## [1.0.1] - 2026-01-24
+### Fixed
+- Various bug fixes
 
-### Added
-- MIT ライセンスを追加しました。
+---
 
-### Changed
-- `README.md` に追加情報とバッジを反映しました。
-
-## [1.0.0] - 2026-01-24
+## [1.8.0] - 2025-09-13
 
 ### Added
-- CI ワークフローと自動チェック基盤を追加しました。
-- パッケージ設定を整備し、最初の公開リリースを作成しました。
+- **MAJOR**: Initial stable release
+
+---
+
+## [1.7.3] - 2025-09-10
+
+### Added
+- Pydantic integration
+- WAL mode support
+- Preparation for v2.0
+
+---
+
+## [1.3.7] - 2025-08-15
+
+### Added
+- Performance improvements
+- Feature enhancements
+
+---
+
+## [1.3.3] - 2025-08-01
+
+### Added
+- **Initial practical release** - Core functionality established
+
+---
+
+## Legend
+
+- **Added**: New features
+- **Changed**: Changes in existing functionality
+- **Deprecated**: Soon-to-be removed features
+- **Removed**: Removed features
+- **Fixed**: Bug fixes
+- **Security**: Security-related changes
+- **Performance**: Performance improvements
+
+---
+
+For detailed release notes, see [others/release-notes/](./others/release-notes/)
+
+[2.1.3]: https://github.com/disnana/DictSQLite/compare/v2.1.1...v2.1.3
+[2.1.1]: https://github.com/disnana/DictSQLite/compare/v2.1.0...v2.1.1
+[2.1.0]: https://github.com/disnana/DictSQLite/compare/v2.0.9...v2.1.0
+[2.0.9]: https://github.com/disnana/DictSQLite/compare/v2.0.8...v2.0.9
+[2.0.8]: https://github.com/disnana/DictSQLite/compare/v2.0.7...v2.0.8
+[2.0.7]: https://github.com/disnana/DictSQLite/compare/v2.0.6...v2.0.7
+[2.0.6]: https://github.com/disnana/DictSQLite/compare/v2.0.5...v2.0.6
+[2.0.5]: https://github.com/disnana/DictSQLite/compare/v2.0.4...v2.0.5
+[2.0.4]: https://github.com/disnana/DictSQLite/compare/v2.0.3...v2.0.4
+[2.0.3]: https://github.com/disnana/DictSQLite/compare/v2.0.2...v2.0.3
+[2.0.2]: https://github.com/disnana/DictSQLite/compare/v2.0.1...v2.0.2
+[2.0.1]: https://github.com/disnana/DictSQLite/compare/v2.0.0...v2.0.1
+[2.0.0]: https://github.com/disnana/DictSQLite/compare/v1.8.8...v2.0.0
+[1.8.8]: https://github.com/disnana/DictSQLite/compare/v1.8.7...v1.8.8
+[1.8.7]: https://github.com/disnana/DictSQLite/compare/v1.8.6...v1.8.7
+[1.8.6]: https://github.com/disnana/DictSQLite/compare/v1.8.5...v1.8.6
+[1.8.5]: https://github.com/disnana/DictSQLite/compare/v1.8.4...v1.8.5
+[1.8.4]: https://github.com/disnana/DictSQLite/compare/v1.8.3...v1.8.4
+[1.8.3]: https://github.com/disnana/DictSQLite/compare/v1.8.2...v1.8.3
+[1.8.2]: https://github.com/disnana/DictSQLite/compare/v1.8.1...v1.8.2
+[1.8.1]: https://github.com/disnana/DictSQLite/compare/v1.8.0...v1.8.1
+[1.8.0]: https://github.com/disnana/DictSQLite/compare/v1.7.3...v1.8.0
+[1.7.3]: https://github.com/disnana/DictSQLite/compare/v1.3.7...v1.7.3
+[1.3.7]: https://github.com/disnana/DictSQLite/compare/v1.3.3...v1.3.7
+[1.3.3]: https://github.com/disnana/DictSQLite/releases/tag/v1.3.3

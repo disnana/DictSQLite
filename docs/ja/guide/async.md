@@ -1,16 +1,24 @@
-# 非同期コードでの利用
-
-ValidKit の検証処理は同期関数ですが、I/O を行わない軽量な CPU 処理なので、通常は async ハンドラ内でそのまま呼び出せます。
+# 非同期 API
 
 ```python
-from validkit import v, validate
+from dictsqlite import AsyncDictSQLite
 
-schema = {"name": v.str(), "age": v.int()}
-
-async def create_user(request):
-payload = await request.json()
-data = validate(payload, schema)
-return data
+db = AsyncDictSQLite("async.db", persist_mode="lazy")
+await db.set("k", "v")
+value = await db.get("k")
+await db.flush()
+await db.close()
 ```
 
-非常に大きい payload を大量に処理する場合は、ホットパスのスキーマを `compile()` しておくとレイテンシを抑えやすくなります。
+## バッチ操作
+
+```python
+await db.batch_set({"a": 1, "b": 2})
+values = await db.batch_get(["a", "b", "missing"])
+```
+
+v2.1.3 では batch get のキャッシュミスを一括読み込みに寄せ、SQLite への細かい往復を減らしています。
+
+## 終了処理
+
+`lazy` モードでは `flush()` または `close()` を呼んでください。flush 失敗時は保留データを戻して再試行できるようにしています。
