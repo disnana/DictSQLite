@@ -75,8 +75,27 @@ pre {
   font-weight: 700;
 }
 
+.VPNavBar,
+.VPNavBar .divider,
+.VPNavBar .divider-line,
+.VPNav .divider,
+.VPNav .divider-line,
+.VPLocalNav,
+.VPLocalNav .container {
+  border: 0;
+  box-shadow: none;
+}
+
+.VPNavBarTitle {
+  border-bottom: 0;
+}
+
 .VPSidebar {
-  border-right: 1px solid var(--vp-c-divider);
+  border-right: 0;
+}
+
+.VPSidebar .curtain {
+  display: none;
 }
 
 .VPSidebar .nav {
@@ -120,7 +139,7 @@ pre {
 .vp-doc h2 {
   margin-top: 42px;
   padding-top: 26px;
-  border-top: 1px solid var(--vp-c-divider);
+  border-top: 0;
 }
 
 .vp-doc p {
@@ -129,7 +148,7 @@ pre {
 
 .vp-doc div[class*='language-'] {
   margin: 20px 0 28px;
-  border: 1px solid rgba(125, 125, 135, 0.16);
+  border: 0;
   border-radius: 8px;
 }
 
@@ -138,7 +157,7 @@ pre {
 }
 
 .VPDocAsideOutline .content {
-  border-left-color: var(--vp-c-divider);
+  border-left-color: transparent;
 }
 
 .quick-grid {
@@ -154,7 +173,7 @@ pre {
   gap: 7px;
   min-height: 104px;
   padding: 17px 18px;
-  border: 1px solid var(--vp-c-divider);
+  border: 0;
   border-radius: 8px;
   background: var(--vp-c-bg-soft);
   transition:
@@ -164,7 +183,6 @@ pre {
 }
 
 .quick-card:hover {
-  border-color: var(--vp-c-brand-1);
   background: var(--vp-c-brand-soft);
   transform: translateY(-1px);
   text-decoration: none;
