@@ -319,6 +319,9 @@ def changelog(lang: str) -> str:
     text = path.read_text(encoding="utf-8")
     text = re.sub(r"^> \*\*.*(?:version|版)\*\*:.*\n\n?", "", text, flags=re.M | re.I)
     text = re.sub(r"^.*others/release-notes.*\n\n?", "", text, flags=re.M)
+    text = re.sub(r"^## \[(\d+\.\d+\.\d+)\](.*)$", r"## v\1\2", text, flags=re.M)
+    text = re.sub(r"^\[(\d+\.\d+\.\d+)\]: .*$", "", text, flags=re.M)
+    text = re.sub(r"\n{3,}", "\n\n", text)
     return text
 
 
