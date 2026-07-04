@@ -948,10 +948,9 @@ impl DictSQLiteV4 {
         let storage = if config.persist_mode == PersistMode::Memory {
             None
         } else {
-            Some(Arc::new(
-                StorageEngine::new(&db_path, &config)
-                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?,
-            ))
+            Some(Arc::new(StorageEngine::new(&db_path, &config).map_err(
+                |e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()),
+            )?))
         };
 
         // パスワードが提供された場合、暗号化エンジンを初期化
@@ -1258,25 +1257,26 @@ impl DictSQLiteV4 {
     /// - `Ok(())`: フラッシュ成功
     /// - `Err(PyErr)`: ストレージ書き込みエラー
     fn flush_write_buffer(&self) -> PyResult<()> {
-        let mut buffer = self.write_buffer.lock();
+        let buffered_items = {
+            let mut buffer = self.write_buffer.lock();
+            if buffer.is_empty() {
+                return Ok(());
+            }
+            std::mem::take(&mut *buffer)
+        };
 
-        // バッファが空の場合は何もしない
-        if buffer.is_empty() {
-            return Ok(());
-        }
-
-        // バッファからHashMapを構築（bulk_insert用）
-        let items: HashMap<String, Vec<u8>> = buffer.drain(..).collect();
-
-        // 早期にバッファのロックを解放
-        drop(buffer);
+        let items: HashMap<String, Vec<u8>> = buffered_items.iter().cloned().collect();
 
         // ストレージハンドルを取得してバルクインサート
         if let Some(ref storage) = self.storage {
             // bulk_insert()を使用して単一トランザクションで高速書き込み
-            storage
-                .bulk_insert(&items)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+            if let Err(e) = storage.bulk_insert(&items) {
+                let mut buffer = self.write_buffer.lock();
+                let current = std::mem::take(&mut *buffer);
+                buffer.extend(buffered_items);
+                buffer.extend(current);
+                return Err(PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()));
+            }
         }
 
         Ok(())
@@ -1362,12 +1362,13 @@ impl DictSQLiteV4 {
 
     /// Bulk insert (optimized batch operation)
     fn bulk_insert(&self, items: Bound<'_, PyDict>) -> PyResult<()> {
+        let mut batch = Vec::with_capacity(items.len());
         for (key, value) in items.iter() {
             let key_str: String = key.extract()?;
             let value_bytes: Vec<u8> = value.extract()?;
-            self.hot_tier.insert(key_str, value_bytes);
+            batch.push((key_str, value_bytes));
         }
-        Ok(())
+        self.batch_set(batch)
     }
 
     /// v7.0: 複数キーの一括取得（バッチ読み込み最適化）
@@ -1411,8 +1412,8 @@ impl DictSQLiteV4 {
 
         // 3. ストレージからキャッシュミスを取得
         if let Some(ref storage) = self.storage {
-            for key in cache_misses {
-                if let Ok(Some(value)) = storage.get(&key) {
+            if let Ok(fetched) = storage.bulk_get(&cache_misses) {
+                for (key, value) in fetched {
                     let data = if let Some(ref crypto) = self.crypto {
                         crypto.decrypt(&value).map_err(|e| {
                             PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
@@ -1433,7 +1434,17 @@ impl DictSQLiteV4 {
     /// # 引数
     /// * `items` - (キー, 値)のタプルのリスト
     fn batch_set(&self, items: Vec<(String, Vec<u8>)>) -> PyResult<()> {
+        let mut buffered_items = Vec::new();
+
         for (key, value) in items {
+            if let Some(ref validator) = self.safe_pickle {
+                if self.config.storage_mode == StorageMode::Pickle {
+                    validator.validate(&value).map_err(|e| {
+                        PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+                    })?;
+                }
+            }
+
             // 暗号化が有効な場合
             let data = if let Some(ref crypto) = self.crypto {
                 crypto
@@ -1448,13 +1459,15 @@ impl DictSQLiteV4 {
 
             // WriteThroughモードではバッファに追加
             if self.config.persist_mode == PersistMode::WriteThrough {
-                let mut buffer = self.write_buffer.lock();
-                buffer.push((key, data));
+                buffered_items.push((key, data));
             }
         }
 
         // WriteThroughモードではバッファをフラッシュ
         if self.config.persist_mode == PersistMode::WriteThrough {
+            if !buffered_items.is_empty() {
+                self.write_buffer.lock().extend(buffered_items);
+            }
             self.flush_write_buffer()?;
         }
 
@@ -2142,8 +2155,9 @@ impl TableProxy {
                     .insert(cache_key.clone(), encrypted_data.clone());
                 db.access_tracker.lock().put(cache_key, ());
 
-                // Write to storage in WriteThrough mode
-                if db.config.persist_mode == PersistMode::WriteThrough {
+                // Separate tables bypass the generic write buffer, so durable modes
+                // must persist them directly.
+                if db.config.persist_mode != PersistMode::Memory {
                     if let Some(ref storage) = db.storage {
                         storage
                             .set_with_table(&self.table_name, &key, &encrypted_data)
@@ -2173,6 +2187,9 @@ impl TableProxy {
                 // Remove from hot tier
                 db.access_tracker.lock().pop(&cache_key);
                 db.hot_tier.remove(&cache_key);
+                if db.config.persist_mode == PersistMode::WriteThrough {
+                    db.write_buffer.lock().retain(|(k, _)| k != &cache_key);
+                }
 
                 // Remove from storage
                 if db.config.persist_mode != PersistMode::Memory {
@@ -2369,6 +2386,11 @@ impl TableProxy {
                 for key in keys_to_remove {
                     db.hot_tier.remove(&key);
                     db.access_tracker.lock().pop(&key);
+                }
+                if db.config.persist_mode == PersistMode::WriteThrough {
+                    db.write_buffer
+                        .lock()
+                        .retain(|(key, _)| !key.starts_with(&prefix));
                 }
 
                 // Clear storage table

@@ -13,10 +13,19 @@ DictSQLite v2 is a high-performance library that provides a dict-like Python API
 
 ## Versioning
 
-- **Package Version**: v2.0.7 (PyPI release version)
+- **Package Version**: v2.1.3 (PyPI release version)
 - **Internal Implementation**: v4 (internal architecture)
 
 Internally, the implementation is labeled "v4", but this refers to the internal architecture. The package is published on PyPI as `dictsqlite 2.x.x`.
+
+## What's New in v2.1.3
+
+- Robust write-buffer recovery if a storage flush fails.
+- Safer delete/clear behavior that prevents pending writes from restoring removed values.
+- Faster batch reads for cold cache misses via bulk SQLite queries.
+- Improved warm-cache memory accounting.
+- Fixed separate-table persistence and compression consistency.
+- Expanded benchmark suite and GitHub Actions benchmark summaries.
 
 ## Installation
 

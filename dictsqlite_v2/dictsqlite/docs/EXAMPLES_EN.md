@@ -462,7 +462,7 @@ db = DictSQLite(':memory:', storage_mode='json')
 
 # Standard JSON
 db['config'] = {
-    'version': '2.0.7',
+    'version': '2.1.3',
     'features': ['encryption', 'async', 'safe_pickle']
 }
 

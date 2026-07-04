@@ -1,7 +1,16 @@
-> **BETA / ベータ版:** このドキュメントは DictSQLite v2 のベータ版に対応しています。機能やドキュメントの場所は変更される可能性があります。
+# DictSQLite Version 2
 
-> BETA: This document corresponds to the beta version of DictSQLite v2. Features and documentation may be subject to change.
-# DictSQLite Version 2（Beta）
+High-performance dict-like SQLite storage for Python, backed by a Rust native extension.
+
+## Release Highlights — v2.1.3
+
+- More robust write-buffer flushing: pending writes are restored if a storage flush fails.
+- Safer delete/clear behavior: pending buffered writes no longer reappear after removal.
+- Faster batch cache-miss reads using bulk SQLite queries.
+- Improved warm-cache memory accounting to avoid repeated full-cache scans.
+- Fixed separate-table persistence and compression/decompression consistency.
+- Expanded benchmark coverage across sizes, record counts, storage modes, table modes, cold reads, mutations, and threaded access.
+- GitHub Actions now publishes benchmark artifacts, comparison data, and Markdown summaries.
 
 ## English Version  
 (日本語のREADMEは下にあります)
@@ -55,7 +64,17 @@ You are free to modify the code, but you must give appropriate credit to the ori
 ## 日本語版
 (English version is above)
 
-PythonでSQLiteの基本的な操作をDictのように扱うことができます。
+Rust製ネイティブ拡張をバックエンドにした、辞書ライクな高性能 SQLite ストレージです。
+
+## リリースハイライト — v2.1.3
+
+- flush 失敗時に保留中の書き込みが失われないように改善
+- delete/clear 後に未 flush の値が復活する問題を修正
+- batch 取得のキャッシュミス時に一括 SQLite 読み込みを使用
+- warm cache のメモリ使用量管理を改善し、不要な全走査を削減
+- separate table の永続化と圧縮/展開の整合性を修正
+- サイズ、件数、保存形式、テーブルモード、cold read、削除/clear、並行アクセスを含むベンチマークを拡充
+- GitHub Actions でベンチ結果 artifact、比較データ、Markdown Summary を出力
 
 ## インストール
 

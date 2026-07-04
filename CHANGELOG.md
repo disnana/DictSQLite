@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.3] - 2026-07-04
+
+### Fixed
+- Hardened write-buffer flushing so pending writes are restored if storage flush fails.
+- Fixed delete/clear paths that could allow pending buffered writes to reappear after removal.
+- Fixed table-name prefix handling in async deletion paths.
+- Fixed separate-table persistence so durable modes write table data directly instead of losing lazy-mode table updates.
+- Fixed compression/decompression consistency for separate-table storage.
+- Updated `anyhow` lockfile entry to `1.0.103` to resolve RUSTSEC-2026-0190.
+
+### Improved
+- Added bulk storage reads for batch cache misses to reduce SQLite round trips.
+- Reworked warm-cache byte accounting to avoid O(n) cache scans on hot read promotion.
+- Improved benchmark coverage across data sizes, batch sizes, record counts, persistence modes, storage modes, table modes, cold reads, mutation operations, and threaded access.
+- Improved benchmark graph generation with compact labels, aggregation, p95 latency views, and less label overlap.
+- Added GitHub Actions benchmark CSV/graph artifacts, benchmark-history export, and Markdown run summaries.
+- Configured GitHub benchmark comparison as informational only to avoid false alerts from runner variance.
+
+### Changed
+- Bumped package version to `2.1.3`.
+
+---
+
 ## [2.1.1] - 2026-03-03
 
 ### Security
@@ -325,6 +348,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 For detailed release notes, see [others/release-notes/](./others/release-notes/)
 
+[2.1.3]: https://github.com/disnana/DictSQLite/compare/v2.1.1...v2.1.3
+[2.1.1]: https://github.com/disnana/DictSQLite/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/disnana/DictSQLite/compare/v2.0.9...v2.1.0
 [2.0.9]: https://github.com/disnana/DictSQLite/compare/v2.0.8...v2.0.9
 [2.0.8]: https://github.com/disnana/DictSQLite/compare/v2.0.7...v2.0.8

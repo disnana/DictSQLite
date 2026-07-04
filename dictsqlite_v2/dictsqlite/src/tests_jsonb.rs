@@ -93,8 +93,6 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.table_name, "main");
 
-        // Keys without prefix should go to main table
-        let key = "key1";
         let table_name = &config.table_name;
 
         let should_prefix = !table_name.is_empty() && table_name != "main";

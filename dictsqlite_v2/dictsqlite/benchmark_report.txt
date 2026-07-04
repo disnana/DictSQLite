@@ -1,0 +1,105 @@
+============================================================
+DictSQLite ベンチマークレポート
+============================================================
+
+### DictSQLiteV4 ###
+Operation        Scenario           Mode         Store    Size     Batch    Ops/sec      p95(ms)   
+--------------------------------------------------------------------------------------------------------
+set              hot_write          memory       bytes    32       1        376336.0     0.005     
+get              hot_read           memory       bytes    32       1        1769285.4    0.001     
+set              hot_write          memory       bytes    1024     1        381621.1     0.005     
+get              hot_read           memory       bytes    1024     1        1093613.3    0.001     
+set              hot_write          memory       bytes    16384    1        130005.2     0.023     
+get              hot_read           memory       bytes    16384    1        491545.4     0.002     
+set              hot_write          memory       jsonb    32       1        249004.0     0.004     
+get              hot_read           memory       jsonb    32       1        804634.7     0.001     
+set              hot_write          memory       jsonb    1024     1        212278.2     0.007     
+get              hot_read           memory       jsonb    1024     1        515463.9     0.002     
+set              hot_write          memory       jsonb    16384    1        36223.0      0.041     
+get              hot_read           memory       jsonb    16384    1        203483.6     0.008     
+set              hot_write          memory       pickle   32       1        244810.0     0.006     
+get              hot_read           memory       pickle   32       1        773754.2     0.001     
+set              hot_write          memory       pickle   1024     1        257546.1     0.005     
+get              hot_read           memory       pickle   1024     1        541829.2     0.002     
+set              hot_write          memory       pickle   16384    1        94550.1      0.016     
+get              hot_read           memory       pickle   16384    1        266042.4     0.004     
+set              hot_write          lazy         bytes    32       1        335660.6     0.004     
+get              hot_read           lazy         bytes    32       1        1905487.9    0.001     
+set              hot_write          lazy         bytes    1024     1        399936.0     0.003     
+get              hot_read           lazy         bytes    1024     1        1184834.1    0.001     
+set              hot_write          lazy         bytes    16384    1        139821.0     0.022     
+get              hot_read           lazy         bytes    16384    1        288850.4     0.005     
+set              hot_write          lazy         jsonb    32       1        224396.4     0.006     
+get              hot_read           lazy         jsonb    32       1        717978.2     0.001     
+set              hot_write          lazy         jsonb    1024     1        203948.4     0.006     
+get              hot_read           lazy         jsonb    1024     1        609458.8     0.002     
+set              hot_write          lazy         jsonb    16384    1        77010.8      0.019     
+get              hot_read           lazy         jsonb    16384    1        221591.9     0.004     
+set              hot_write          lazy         pickle   32       1        288983.9     0.006     
+get              hot_read           lazy         pickle   32       1        753012.1     0.002     
+set              hot_write          lazy         pickle   1024     1        280615.1     0.006     
+get              hot_read           lazy         pickle   1024     1        652400.8     0.002     
+set              hot_write          lazy         pickle   16384    1        90730.9      0.019     
+get              hot_read           lazy         pickle   16384    1        249053.6     0.004     
+set              hot_write          writethrough bytes    32       1        399297.2     0.003     
+get              hot_read           writethrough bytes    32       1        1896813.3    0.001     
+set              hot_write          writethrough bytes    1024     1        70627.5      0.014     
+get              hot_read           writethrough bytes    1024     1        1578282.9    0.001     
+set              hot_write          writethrough bytes    16384    1        58590.5      0.036     
+get              hot_read           writethrough bytes    16384    1        482905.1     0.002     
+set              hot_write          writethrough jsonb    32       1        214426.6     0.005     
+get              hot_read           writethrough jsonb    32       1        867453.2     0.001     
+set              hot_write          writethrough jsonb    1024     1        64994.2      0.018     
+get              hot_read           writethrough jsonb    1024     1        664540.1     0.002     
+set              hot_write          writethrough jsonb    16384    1        55720.2      0.023     
+get              hot_read           writethrough jsonb    16384    1        237914.0     0.004     
+set              hot_write          writethrough pickle   32       1        282869.4     0.004     
+get              hot_read           writethrough pickle   32       1        798466.9     0.001     
+set              hot_write          writethrough pickle   1024     1        76017.9      0.011     
+get              hot_read           writethrough pickle   1024     1        619886.0     0.002     
+set              hot_write          writethrough pickle   16384    1        69986.8      0.017     
+get              hot_read           writethrough pickle   16384    1        293392.8     0.003     
+batch_set        batch_hot_write    lazy         bytes    80       10       210792.6     0.008     
+batch_get        warm_batch_read    lazy         bytes    80       10       232126.3     0.006     
+batch_set        batch_hot_write    lazy         bytes    80       100      33163.1      0.034     
+batch_get        warm_batch_read    lazy         bytes    80       100      36778.2      0.029     
+batch_set        batch_hot_write    lazy         bytes    80       1000     2989.9       0.391     
+batch_get        warm_batch_read    lazy         bytes    80       1000     3230.7       0.340     
+flush            lazy_flush         lazy         bytes    80       0        269.0        4.266     
+batch_get        cold_storage_read  lazy         bytes    10       100      3332.7       2.651     
+batch_get        cold_storage_read  lazy         bytes    10       1000     314.2        28.439    
+delete           set_then_delete    writethrough bytes    5        1        26060.7      0.073     
+clear            clear_100_items    writethrough bytes    5        100      1909.9       0.773     
+mixed_get_set    threaded_2         memory       bytes    5        2        325828.4     0.000     
+mixed_get_set    threaded_4         memory       bytes    5        4        536322.4     0.000     
+
+### AsyncTableProxy ###
+Operation        Scenario           Mode         Store    Size     Batch    Ops/sec      p95(ms)   
+--------------------------------------------------------------------------------------------------------
+table_set        table_write        lazy         bytes    11       1        372578.3     0.003     
+table_get        table_read         lazy         bytes    11       1        1824817.3    0.001     
+table_contains   table_membership   lazy         bytes    11       1        2207504.3    0.001     
+table_set        table_write        lazy         bytes    11       1        396668.0     0.003     
+table_get        table_read         lazy         bytes    11       1        1818182.0    0.001     
+table_contains   table_membership   lazy         bytes    11       1        1988071.7    0.001     
+
+### TableProxy ###
+Operation        Scenario           Mode         Store    Size     Batch    Ops/sec      p95(ms)   
+--------------------------------------------------------------------------------------------------------
+table_set        table_write        lazy         bytes    11       1        295246.5     0.004     
+table_get        table_read         lazy         bytes    11       1        1261033.9    0.001     
+table_contains   table_membership   lazy         bytes    11       1        1404494.5    0.001     
+table_set        table_write        lazy         bytes    11       1        285632.7     0.004     
+table_get        table_read         lazy         bytes    11       1        2487561.7    0.001     
+table_contains   table_membership   lazy         bytes    11       1        2865328.6    0.000     
+
+### AsyncDictSQLite ###
+Operation        Scenario           Mode         Store    Size     Batch    Ops/sec      p95(ms)   
+--------------------------------------------------------------------------------------------------------
+batch_set        batch_hot_write    lazy         bytes    80       10       5842.2       0.230     
+batch_get        warm_batch_read    lazy         bytes    80       10       7990.4       0.213     
+batch_set        batch_hot_write    lazy         bytes    80       100      4023.5       0.376     
+batch_get        warm_batch_read    lazy         bytes    80       100      3821.2       0.414     
+batch_set        batch_hot_write    lazy         bytes    80       1000     1570.4       0.837     
+batch_get        warm_batch_read    lazy         bytes    80       1000     1981.9       0.663     
+flush            lazy_flush         lazy         bytes    80       0        8.9          134.153   
