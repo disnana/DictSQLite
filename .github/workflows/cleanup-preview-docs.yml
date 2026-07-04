@@ -1,0 +1,68 @@
+name: Cleanup Preview Documentation
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove preview directory from gh-pages
+        run: |
+          PR_NUMBER=${{ github.event.number }}
+
+          # Check if gh-pages branch exists
+          if ! git fetch origin gh-pages:gh-pages 2>/dev/null; then
+            echo "No gh-pages branch found, skipping cleanup"
+            exit 0
+          fi
+
+          git checkout gh-pages
+
+          if [ -d "docs/preview/pr-${PR_NUMBER}" ]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email 'github-actions[bot]@users.noreply.github.com'
+            git rm -rf "docs/preview/pr-${PR_NUMBER}"
+            git commit -m "docs: remove preview for PR #${PR_NUMBER} [skip ci]"
+            git push origin gh-pages
+            echo "Removed preview for PR #${PR_NUMBER}"
+          else
+            echo "No preview found for PR #${PR_NUMBER}, skipping cleanup"
+          fi
+
+      - name: Delete preview comment from PR
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const previewComment = comments.find(
+              c => c.user.login === 'github-actions[bot]' && c.body.includes('ドキュメントプレビュー')
+            );
+
+            if (previewComment) {
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: previewComment.id,
+              });
+              console.log(`Deleted preview comment ${previewComment.id}`);
+            } else {
+              console.log('No preview comment found, skipping deletion');
+            }

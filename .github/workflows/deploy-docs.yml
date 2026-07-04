@@ -1,0 +1,85 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'src/**'
+      - 'scripts/gen_api_docs.py'
+      - '.github/workflows/deploy-docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+
+      - name: Generate API Docs
+        run: python scripts/gen_api_docs.py
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: docs/site/package.json
+
+      - name: Install dependencies
+        working-directory: docs/site
+        run: npm install
+
+      - name: Build with VitePress
+        working-directory: docs/site
+        run: npm run build
+
+      - name: Run benchmark smoke
+        run: python benchmarks/benchmark_validation.py --iterations 1000 --json
+
+      - name: Preserve Benchmark History and Previews
+        run: |
+          # Fetch existing gh-pages branch to pull benchmark data and previews.
+          git fetch origin gh-pages:gh-pages || echo "gh-pages branch not found, skipping preservation"
+          # GitHub Pages is configured to publish from gh-pages:/docs.
+          if git ls-tree -r gh-pages | grep -q 'docs/dev/'; then
+            git checkout gh-pages -- docs/dev
+            cp -r docs/dev docs/site/.vitepress/dist/
+            echo "Successfully preserved benchmark history from gh-pages"
+          else
+            echo "No benchmark history found on gh-pages"
+          fi
+          # Preserve PR preview deployments (stored in docs/preview/pr-*).
+          if git ls-tree -r gh-pages | grep -q 'docs/preview/'; then
+            git checkout gh-pages -- docs/preview
+            cp -r docs/preview docs/site/.vitepress/dist/
+            echo "Successfully preserved PR preview deployments from gh-pages"
+          else
+            echo "No PR preview deployments found on gh-pages"
+          fi
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs/site/.vitepress/dist
+          destination_dir: docs
+          force_orphan: true
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          commit_message: "docs: deploy to GitHub Pages [skip ci]"

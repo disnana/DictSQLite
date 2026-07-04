@@ -1,0 +1,1 @@
+import{_ as a,H as i,f as n,i as t}from"./chunks/framework.8jXCK2gG.js";const o=JSON.parse('{"title":"非同期コードでの利用","description":"","frontmatter":{},"headers":[],"relativePath":"async.md","filePath":"async.md"}'),e={name:"async.md"};function p(l,s,h,k,r,d){return i(),n("div",null,[...s[0]||(s[0]=[t("",4)])])}const c=a(e,[["render",p]]);export{o as __pageData,c as default};
