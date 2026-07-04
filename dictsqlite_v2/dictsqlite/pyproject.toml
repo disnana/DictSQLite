@@ -20,6 +20,12 @@ authors = [
 	{ name = "Disnana", email = "support@disnana.com" }
 ]
 
+[project.urls]
+Homepage = "https://github.com/disnana/DictSQLite"
+Documentation = "https://dictsqlite.disnana.com/"
+Repository = "https://github.com/disnana/DictSQLite"
+Issues = "https://github.com/disnana/DictSQLite/issues"
+
 classifiers = [
 	"License :: OSI Approved :: MIT License",
     "Development Status :: 5 - Production/Stable",

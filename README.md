@@ -4,6 +4,7 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/dictsqlite.svg)](https://pypi.org/project/dictsqlite/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/disnana/DictSQLite/blob/main/LICENSE)
 [![Downloads](https://static.pepy.tech/badge/dictsqlite)](https://pepy.tech/project/dictsqlite)
+[![Documentation](https://img.shields.io/badge/docs-dictsqlite.disnana.com-4f46e5)](https://dictsqlite.disnana.com/)
 
 **Handle SQLite databases in Python with the simplicity of a dictionary.**
 
@@ -90,10 +91,11 @@ db.close()
 
 ## 📚 Documentation
 
-For detailed usage, API reference, and advanced topics, please refer to our official documentation:
+For detailed usage, API reference, storage modes, async usage, safety notes, and benchmarks, please refer to the official documentation:
 
-- [**English Documentation**](./documents/english.md)
-- [**Japanese Documentation**](./documents/japanese.md)
+- [**Official Documentation**](https://dictsqlite.disnana.com/)
+- [**English Documentation**](https://dictsqlite.disnana.com/en/)
+- [**日本語ドキュメント**](https://dictsqlite.disnana.com/)
 
 ## 🤝 Contributing
 
