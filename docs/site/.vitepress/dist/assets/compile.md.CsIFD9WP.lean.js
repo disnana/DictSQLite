@@ -1,1 +1,0 @@
-import{_ as i,H as a,f as t,i as n}from"./chunks/framework.8jXCK2gG.js";const o=JSON.parse('{"title":"事前コンパイル","description":"","frontmatter":{},"headers":[],"relativePath":"compile.md","filePath":"compile.md"}'),l={name:"compile.md"};function e(h,s,p,k,r,E){return a(),t("div",null,[...s[0]||(s[0]=[n("",7)])])}const c=i(l,[["render",e]]);export{o as __pageData,c as default};

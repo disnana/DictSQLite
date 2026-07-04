@@ -1,1 +1,0 @@
-import{_ as i,H as a,f as n,i as t}from"./chunks/framework.8jXCK2gG.js";const g=JSON.parse('{"title":"チュートリアル","description":"","frontmatter":{},"headers":[],"relativePath":"tutorial.md","filePath":"tutorial.md"}'),h={name:"tutorial.md"};function l(k,s,p,e,E,r){return a(),n("div",null,[...s[0]||(s[0]=[t("",7)])])}const o=i(h,[["render",l]]);export{g as __pageData,o as default};

@@ -1,1 +1,0 @@
-import{_ as i,H as a,f as t,i as n}from"./chunks/framework.8jXCK2gG.js";const o=JSON.parse('{"title":"ValidKit ガイド","description":"","frontmatter":{},"headers":[],"relativePath":"guide.md","filePath":"guide.md"}'),h={name:"guide.md"};function l(e,s,p,k,d,r){return a(),t("div",null,[...s[0]||(s[0]=[n("",11)])])}const g=i(h,[["render",l]]);export{o as __pageData,g as default};
