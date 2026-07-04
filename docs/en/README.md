@@ -8,4 +8,3 @@ This directory is generated. Update `scripts/gen_api_docs.py` when changing gene
 - [Async API](guide/async.md)
 - [Safety](guide/security.md)
 - [Performance](guide/performance.md)
-- [Release](guide/release.md)

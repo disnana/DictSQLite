@@ -10,22 +10,16 @@ export default defineConfig({
       { text: 'ホーム', link: '/' },
       { text: 'ガイド', link: '/guide' },
       { text: 'API', link: '/api' },
-      { text: 'Benchmark', link: '/performance' },
-      { text: 'Release', link: '/release' }
+      { text: 'Benchmark', link: '/performance' }
     ],
     sidebar: [
-      {
-        items: [
-          { text: 'ガイド', link: '/guide' },
-          { text: 'API', link: '/api' },
-          { text: '保存形式と永続化', link: '/storage' },
-          { text: '非同期 API', link: '/async' },
-          { text: '安全性', link: '/security' },
-          { text: 'パフォーマンス', link: '/performance' },
-          { text: 'リリース', link: '/release' },
-          { text: '変更履歴', link: '/changelog' }
-        ]
-      }
+      { text: 'ガイド', link: '/guide' },
+      { text: 'API', link: '/api' },
+      { text: '保存形式と永続化', link: '/storage' },
+      { text: '非同期 API', link: '/async' },
+      { text: '安全性', link: '/security' },
+      { text: 'パフォーマンス', link: '/performance' },
+      { text: '変更履歴', link: '/changelog' }
     ],
     socialLinks: [
       { icon: 'github', link: 'https://github.com/disnana/DictSQLite' }
@@ -45,22 +39,16 @@ export default defineConfig({
           { text: 'Home', link: '/en/' },
           { text: 'Guide', link: '/en/guide' },
           { text: 'API', link: '/en/api' },
-          { text: 'Benchmark', link: '/en/performance' },
-          { text: 'Release', link: '/en/release' }
+          { text: 'Benchmark', link: '/en/performance' }
         ],
         sidebar: [
-          {
-            items: [
-              { text: 'Guide', link: '/en/guide' },
-              { text: 'API', link: '/en/api' },
-              { text: 'Storage and Persistence', link: '/en/storage' },
-              { text: 'Async API', link: '/en/async' },
-              { text: 'Safety', link: '/en/security' },
-              { text: 'Performance', link: '/en/performance' },
-              { text: 'Release', link: '/en/release' },
-              { text: 'Changelog', link: '/en/changelog' }
-            ]
-          }
+          { text: 'Guide', link: '/en/guide' },
+          { text: 'API', link: '/en/api' },
+          { text: 'Storage and Persistence', link: '/en/storage' },
+          { text: 'Async API', link: '/en/async' },
+          { text: 'Safety', link: '/en/security' },
+          { text: 'Performance', link: '/en/performance' },
+          { text: 'Changelog', link: '/en/changelog' }
         ]
       }
     }
