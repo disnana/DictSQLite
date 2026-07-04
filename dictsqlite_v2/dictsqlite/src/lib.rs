@@ -1362,12 +1362,13 @@ impl DictSQLiteV4 {
 
     /// Bulk insert (optimized batch operation)
     fn bulk_insert(&self, items: Bound<'_, PyDict>) -> PyResult<()> {
+        let mut batch = Vec::with_capacity(items.len());
         for (key, value) in items.iter() {
             let key_str: String = key.extract()?;
             let value_bytes: Vec<u8> = value.extract()?;
-            self.hot_tier.insert(key_str, value_bytes);
+            batch.push((key_str, value_bytes));
         }
-        Ok(())
+        self.batch_set(batch)
     }
 
     /// v7.0: 複数キーの一括取得（バッチ読み込み最適化）
@@ -1411,8 +1412,8 @@ impl DictSQLiteV4 {
 
         // 3. ストレージからキャッシュミスを取得
         if let Some(ref storage) = self.storage {
-            for key in cache_misses {
-                if let Ok(Some(value)) = storage.get(&key) {
+            if let Ok(fetched) = storage.bulk_get(&cache_misses) {
+                for (key, value) in fetched {
                     let data = if let Some(ref crypto) = self.crypto {
                         crypto.decrypt(&value).map_err(|e| {
                             PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
@@ -1433,7 +1434,17 @@ impl DictSQLiteV4 {
     /// # 引数
     /// * `items` - (キー, 値)のタプルのリスト
     fn batch_set(&self, items: Vec<(String, Vec<u8>)>) -> PyResult<()> {
+        let mut buffered_items = Vec::new();
+
         for (key, value) in items {
+            if let Some(ref validator) = self.safe_pickle {
+                if self.config.storage_mode == StorageMode::Pickle {
+                    validator.validate(&value).map_err(|e| {
+                        PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
+                    })?;
+                }
+            }
+
             // 暗号化が有効な場合
             let data = if let Some(ref crypto) = self.crypto {
                 crypto
@@ -1448,13 +1459,15 @@ impl DictSQLiteV4 {
 
             // WriteThroughモードではバッファに追加
             if self.config.persist_mode == PersistMode::WriteThrough {
-                let mut buffer = self.write_buffer.lock();
-                buffer.push((key, data));
+                buffered_items.push((key, data));
             }
         }
 
         // WriteThroughモードではバッファをフラッシュ
         if self.config.persist_mode == PersistMode::WriteThrough {
+            if !buffered_items.is_empty() {
+                self.write_buffer.lock().extend(buffered_items);
+            }
             self.flush_write_buffer()?;
         }
 
