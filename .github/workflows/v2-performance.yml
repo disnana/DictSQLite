@@ -54,7 +54,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install maturin pytest pytest-asyncio
       
-      - name: Build DictSQLite v4.2
+      - name: Build DictSQLite v2
         working-directory: dictsqlite_v2/dictsqlite
         run: |
           chmod +x build.sh
@@ -62,7 +62,7 @@ jobs:
         env:
           CI: true
       
-      - name: Run performance tests (3 iterations)
+      - name: Run comprehensive performance tests
         working-directory: dictsqlite_v2/dictsqlite
         run: |
           python tests/test_v4.2_comprehensive_performance.py \
