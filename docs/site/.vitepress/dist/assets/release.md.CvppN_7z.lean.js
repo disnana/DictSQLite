@@ -1,0 +1,1 @@
+import{_ as i,H as e,f as l,i as s}from"./chunks/framework.8jXCK2gG.js";const k=JSON.parse('{"title":"リリース","description":"","frontmatter":{},"headers":[],"relativePath":"release.md","filePath":"release.md"}'),t={name:"release.md"};function r(n,a,h,o,p,c){return e(),l("div",null,[...a[0]||(a[0]=[s("",8)])])}const u=i(t,[["render",r]]);export{k as __pageData,u as default};

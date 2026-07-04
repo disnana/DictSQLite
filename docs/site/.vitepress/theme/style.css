@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+/* Prevent logo dragging and selection for a more native feel */
+.VPNavBarTitle .logo,
+.VPHero .image-src {
+  user-drag: none;
+  -webkit-user-drag: none;
+  user-select: none;
+  pointer-events: none;
+  /* Make it completely non-interactive */
+}
+
+/* Optimize logo visibility in dark mode */
+.dark .VPNavBarTitle .logo,
+.dark .VPHero .image-src {
+  /* Invert dark colors to light while maintaining hue (indigo) */
+  filter: invert(0.9) hue-rotate(180deg) drop-shadow(0 0 12px rgba(99, 102, 241, 0.4));
+}
+
+:root {
+  --vp-c-brand-1: #4f46e5;
+  --vp-c-brand-2: #6366f1;
+  --vp-c-brand-3: #3730a3;
+  --vp-c-brand-soft: rgba(79, 70, 229, 0.1);
+}
+
+/* Glassmorphism effects */
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3 {
+  letter-spacing: -0.02em;
+}
+
+.custom-block.tip {
+  border-radius: 12px;
+  background-color: var(--vp-c-brand-soft);
+  border-color: var(--vp-c-brand-1);
+}
+
+/* 
+  Mobile optimization for hero image 
+  Fixes user issue: image is too large on mobile
+*/
+@media (max-width: 639px) {
+  .VPHero .image-src {
+    display: none;
+  }
+
+  /* Reduce top padding to pull content up */
+  .VPHero {
+    padding-top: 2rem !important;
+  }
+}
