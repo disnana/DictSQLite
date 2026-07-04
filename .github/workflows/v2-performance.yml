@@ -65,7 +65,7 @@ jobs:
       - name: Run comprehensive performance tests
         working-directory: dictsqlite_v2/dictsqlite
         run: |
-          python tests/test_comprehensive_performance.py \
+          python tests/test_v4.2_comprehensive_performance.py \
             --iterations 3 \
             --output performance_results_${{ matrix.os }}_py${{ matrix.python-version }}.json
       
@@ -246,7 +246,7 @@ jobs:
               pip install --break-system-packages pytest pytest-asyncio &&
               pip install --break-system-packages /workspace/dictsqlite_v2/dictsqlite/dist/*.whl &&
               cd /workspace/dictsqlite_v2/dictsqlite &&
-              python3 tests/test_comprehensive_performance.py \
+              python3 tests/test_v4.2_comprehensive_performance.py \
                 --iterations 1 \
                 --output /workspace/performance_results_ARM64_py3.11.json
             "
