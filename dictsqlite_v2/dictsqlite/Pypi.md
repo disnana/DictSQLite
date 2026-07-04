@@ -2,6 +2,8 @@
 
 High-performance dict-like SQLite storage for Python, backed by a Rust native extension.
 
+**Documentation:** https://dictsqlite.disnana.com/
+
 ## Release Highlights — v2.1.3
 
 - More robust write-buffer flushing: pending writes are restored if a storage flush fails.
@@ -28,9 +30,9 @@ pip install dictsqlite
 
 ## Documentation
 
-* [Japanese Documentation](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/README_JP.md)
-
-* [English Documentation](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/README_EN.md)
+* [Official Documentation](https://dictsqlite.disnana.com/)
+* [English Documentation](https://dictsqlite.disnana.com/en/)
+* [日本語ドキュメント](https://dictsqlite.disnana.com/)
 
 ### Additional Guides / 追加ガイド
 
@@ -66,6 +68,8 @@ You are free to modify the code, but you must give appropriate credit to the ori
 
 Rust製ネイティブ拡張をバックエンドにした、辞書ライクな高性能 SQLite ストレージです。
 
+**公式ドキュメント:** https://dictsqlite.disnana.com/
+
 ## リリースハイライト — v2.1.3
 
 - flush 失敗時に保留中の書き込みが失われないように改善
@@ -86,9 +90,9 @@ pip install dictsqlite
 
 ## ドキュメント
 
-- [日本語のドキュメント](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/README_JP.md)
-
-- [英語ドキュメント](https://github.com/disnana/DictSQLite/blob/main/dictsqlite_v2/dictsqlite/docs/README_EN.md)
+- [公式ドキュメント](https://dictsqlite.disnana.com/)
+- [日本語ドキュメント](https://dictsqlite.disnana.com/)
+- [English Documentation](https://dictsqlite.disnana.com/en/)
 
 ### ガイド / 追加リソース
 

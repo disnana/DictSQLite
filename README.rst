@@ -9,6 +9,8 @@ DictSQLite
    :target: https://github.com/disnana/DictSQLite/blob/main/LICENSE
 .. image:: https://static.pepy.tech/badge/dictsqlite
    :target: https://pepy.tech/project/dictsqlite
+.. image:: https://img.shields.io/badge/docs-dictsqlite.disnana.com-4f46e5
+   :target: https://dictsqlite.disnana.com/
 
 **Handle SQLite databases in Python with the simplicity of a dictionary.**
 
@@ -97,10 +99,11 @@ Quick Example
 📚 Documentation
 ----------------
 
-For detailed usage, API reference, and advanced topics, please refer to our official documentation:
+For detailed usage, API reference, storage modes, async usage, safety notes, and benchmarks, please refer to the official documentation:
 
-- `English Documentation <./documents/english.md>`_
-- `Japanese Documentation <./documents/japanese.md>`_
+- `Official Documentation <https://dictsqlite.disnana.com/>`_
+- `English Documentation <https://dictsqlite.disnana.com/en/>`_
+- `日本語ドキュメント <https://dictsqlite.disnana.com/>`_
 
 🤝 Contributing
 ---------------
