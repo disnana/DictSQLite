@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a lightweight code health report for ValidKit.
+"""Generate a lightweight code health report for DictSQLite.
 
 This scanner is intentionally dependency-free.  It summarizes Python functions,
 basic complexity, public API surface, and validation-related hotspots so a
@@ -130,7 +130,7 @@ def scan(root: Path) -> dict[str, object]:
 
 
 def print_markdown(report: dict[str, object]) -> None:
-    print("# ValidKit Code Health Report\n")
+    print("# DictSQLite Code Health Report\n")
     print(f"- Files scanned: {report['files']}")
     print(f"- Functions found: {report['functions']}")
     print(f"- Public functions/methods: {report['public_functions']}\n")
@@ -145,8 +145,8 @@ def print_markdown(report: dict[str, object]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Scan ValidKit Python sources.")
-    parser.add_argument("target", nargs="?", default="src/validkit", type=Path)
+    parser = argparse.ArgumentParser(description="Scan DictSQLite Rust/Python sources.")
+    parser.add_argument("target", nargs="?", default="dictsqlite_v2/dictsqlite/src", type=Path)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 

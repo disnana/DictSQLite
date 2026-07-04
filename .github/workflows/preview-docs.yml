@@ -5,7 +5,9 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - 'docs/**'
-      - 'src/**'
+      - 'dictsqlite_v2/dictsqlite/src/**'
+      - 'dictsqlite_v2/dictsqlite/docs/**'
+      - 'dictsqlite_v2/dictsqlite/benchmark/**'
       - 'scripts/gen_api_docs.py'
       - '.github/workflows/preview-docs.yml'
 
@@ -63,7 +65,7 @@ jobs:
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
-            const previewUrl = `https://validkit.disnana.com/preview/pr-${prNumber}/`;
+            const previewUrl = `https://dictsqlite.disnana.com/preview/pr-${prNumber}/`;
             const body = [
               '## 📖 ドキュメントプレビュー / Documentation Preview',
               '',
