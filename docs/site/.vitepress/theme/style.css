@@ -160,50 +160,6 @@ pre {
   border-left-color: transparent;
 }
 
-.quick-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin: 26px 0 34px;
-}
-
-.quick-card {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  min-height: 104px;
-  padding: 17px 18px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--vp-c-bg-soft);
-  transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease,
-    transform 0.15s ease;
-}
-
-.quick-card:hover {
-  background: var(--vp-c-brand-soft);
-  transform: translateY(-1px);
-  text-decoration: none;
-}
-
-.quick-card strong {
-  color: var(--vp-c-text-1);
-  font-size: 15px;
-}
-
-.quick-card span {
-  color: var(--vp-c-text-2);
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-@media (max-width: 720px) {
-  .quick-grid {
-    grid-template-columns: 1fr;
-  }
-}
 
 .custom-block.tip {
   border-radius: 12px;
