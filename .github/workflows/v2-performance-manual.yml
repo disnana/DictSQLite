@@ -233,20 +233,6 @@ jobs:
             git switch "$current_branch"
           fi
 
-      - name: Publish benchmark comparison
-        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        uses: benchmark-action/github-action-benchmark@v1
-        with:
-          tool: customBiggerIsBetter
-          output-file-path: dictsqlite_v2/dictsqlite/benchmark/github_benchmark_results.json
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          benchmark-data-dir-path: dictsqlite-v2-performance
-          auto-push: true
-          summary-always: true
-          alert-threshold: '1000%'
-          comment-on-alert: false
-          fail-on-alert: false
-
       - name: Add benchmark summary
         run: |
           python - <<'PY'
@@ -297,6 +283,34 @@ jobs:
             dictsqlite_v2/dictsqlite/benchmark/benchmark_report.txt
             dictsqlite_v2/dictsqlite/benchmark/images/*.png
           retention-days: 30
+
+      - name: Prepare benchmark history publish
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        run: |
+          cp dictsqlite_v2/dictsqlite/benchmark/github_benchmark_results.json "$RUNNER_TEMP/dictsqlite-v2-github-benchmark.json"
+          git restore --worktree --staged -- \
+            dictsqlite_v2/dictsqlite/benchmark/benchmark_results.csv \
+            dictsqlite_v2/dictsqlite/benchmark/images/benchmark_avg_latency.png \
+            dictsqlite_v2/dictsqlite/benchmark/images/benchmark_by_batch_size.png \
+            dictsqlite_v2/dictsqlite/benchmark/images/benchmark_by_data_size.png \
+            dictsqlite_v2/dictsqlite/benchmark/images/benchmark_category_comparison.png \
+            dictsqlite_v2/dictsqlite/benchmark/images/benchmark_ops_per_sec.png \
+            dictsqlite_v2/dictsqlite/benchmark/images/benchmark_p95_latency.png || true
+          git clean -fd -- dictsqlite_v2/dictsqlite/benchmark
+
+      - name: Publish benchmark comparison
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: customBiggerIsBetter
+          output-file-path: ${{ runner.temp }}/dictsqlite-v2-github-benchmark.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          benchmark-data-dir-path: dictsqlite-v2-performance
+          auto-push: true
+          summary-always: true
+          alert-threshold: '1000%'
+          comment-on-alert: false
+          fail-on-alert: false
 
   arm-benchmark:
     name: ARM Performance Benchmark
