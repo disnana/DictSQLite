@@ -1,0 +1,12 @@
+# Requirements for DictSQLite v2.0.6 Auto-Sync System
+
+## Core Dependencies
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+websockets>=11.0.0
+msgpack>=1.0.0
+
+## Optional Dependencies for Development
+pytest-cov>=4.0.0  # For code coverage
+pytest-xdist>=3.0.0  # For parallel test execution
+pytest-timeout>=2.1.0  # For test timeouts
